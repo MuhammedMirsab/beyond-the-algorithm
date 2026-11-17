@@ -65,7 +65,12 @@ describe("COMPARISON_PAIRS", () => {
   test("no invented sources or tool names", () => {
     const text = JSON.stringify(COMPARISON_PAIRS);
     expect(text).not.toMatch(/Archive|Forensic AI Lab|Gemini Diffusion|Optical|Neural Diffusion|Exhibition Custom/i);
-    for (const pair of COMPARISON_PAIRS) expect(pair.realItem.credit.source).toBe("Wikimedia Commons");
+    for (const pair of COMPARISON_PAIRS) {
+      const { source, license } = pair.realItem.credit;
+      // Either a real Commons credit with its licence, or honestly unknown.
+      if (source === null) expect(license).toBeNull();
+      else expect([source, typeof license]).toEqual(["Wikimedia Commons", "string"]);
+    }
   });
 
   test("the shared crop box sits between the two photos' shapes", () => {

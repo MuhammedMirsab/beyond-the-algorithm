@@ -68,11 +68,12 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
     id: "pair-indian-thali",
     subject: "A thali plate with rice, curries and papad",
     difficulty: "easy",
+    // The original credited an invented "Culinary Documentary Archive". Source not known.
     realItem: real("real-indian-thali", "thali-1.jpg", 1000, 750, {
       author: null,
-      source: "Wikimedia Commons",
+      source: null,
       file: null,
-      license: "CC BY-SA 3.0",
+      license: null,
     }),
     aiItem: ai(
       "ai-thali-platter",
@@ -91,11 +92,12 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
     id: "pair-vegetable-stall",
     subject: "A vegetable stall with tomatoes, okra and pumpkins",
     difficulty: "easy",
+    // The original credited an invented "Field Documentary Archive". Source not known.
     realItem: real("real-fruit-stand", "stall-2.jpg", 1000, 710, {
       author: null,
-      source: "Wikimedia Commons",
+      source: null,
       file: null,
-      license: "CC BY-SA 4.0",
+      license: null,
     }),
     aiItem: ai(
       "ai-vegetable-stall",

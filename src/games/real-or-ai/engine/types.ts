@@ -13,10 +13,15 @@ export type Side = "A" | "B";
 export interface PhotoCredit {
   /** Photographer as listed on the source, or null when it wasn't recorded. */
   author: string | null;
-  source: "Wikimedia Commons";
+  /**
+   * Null when the original app never recorded where the photo came from (its
+   * credit for it was invented). A Commons search on 2026-11-17 didn't find it.
+   */
+  source: "Wikimedia Commons" | null;
   /** File title on Wikimedia Commons, when it was recorded. */
   file: string | null;
-  license: string;
+  /** Null when it wasn't recorded. */
+  license: string | null;
 }
 
 interface PhotoBase {

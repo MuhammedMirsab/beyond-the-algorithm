@@ -1,11 +1,12 @@
 import { ChevronDown } from "lucide-react";
 import type { ActiveQuestion, PhotoCredit } from "../engine/types";
 
-/** Only what was recorded. A missing photographer is said plainly, never guessed. */
+/** Only what was recorded. Anything missing is said plainly, never guessed. */
 export function creditLine(credit: PhotoCredit): string {
+  if (!credit.source) return "Source and photographer not recorded.";
   const parts = [credit.author ?? "Photographer not recorded", credit.source];
   if (credit.file) parts.push(`"${credit.file}"`);
-  parts.push(credit.license);
+  parts.push(credit.license ?? "licence not recorded");
   return `${parts.join(", ")}.`;
 }
 
@@ -32,7 +33,7 @@ export function PhotoCredits({ questions }: { questions: readonly ActiveQuestion
       </summary>
       <div className="flex flex-col gap-3 px-5 pb-5">
         <p className="type-small max-w-[40rem] text-fg-subtle">
-          The real photos come from Wikimedia Commons. Each AI version was made from the real photo beside it.
+          Most real photos come from Wikimedia Commons. Each AI version was made from the real photo beside it.
         </p>
         <ul className="flex flex-col divide-y divide-line">
           {questions.map((q) => (
