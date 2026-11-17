@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import { ButtonLink } from "@/components/ui/button";
 import { SpectrumMark } from "@/components/hub/spectrum-mark";
+
+export const metadata: Metadata = { title: "Page not found" };
 
 export default function NotFound() {
   return (
