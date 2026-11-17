@@ -1,5 +1,6 @@
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
-import { LENSES, wrapLens } from "./lenses";
+import { CARTOON_LENS, LENSES, wrapLens } from "./lenses";
+import { FaceFollower, loadFaceTracker, type FaceTracker } from "./face";
 import { bounds, centroid, edgeLines } from "./geometry";
 import { FrameGesture, type FrameState, type GestureEvent, type RawHand } from "./gesture";
 import { Overlay } from "./overlay";
@@ -59,6 +60,11 @@ export class ViewfinderEngine {
   private readonly glCanvas: HTMLCanvasElement;
   private readonly gesture = new FrameGesture();
   private readonly edges = new Float32Array(12);
+  private readonly faceUniform = new Float32Array(16);
+  private readonly faceFollower = new FaceFollower();
+  /** Loaded the first time the Cartoon lens is picked. */
+  private face: FaceTracker | null = null;
+  private faceLoading = false;
   private readonly resizeObserver: ResizeObserver;
   private readonly motionQuery: MediaQueryList | null;
 
@@ -98,6 +104,7 @@ export class ViewfinderEngine {
     this.skeleton = opts.skeleton ?? false;
     this.lens = wrapLens(opts.lens ?? 0);
     this.prevLens = this.lens;
+    if (this.lens === CARTOON_LENS) this.ensureFace();
     this.renderer = new Renderer(opts.glCanvas);
     try {
       this.overlay = new Overlay(opts.overlayCanvas);
@@ -156,8 +163,32 @@ export class ViewfinderEngine {
     this.prevLens = this.lens;
     this.lens = next;
     this.lensChangedAt = performance.now() / 1000;
+    if (next === CARTOON_LENS) this.ensureFace();
     if (this.state.locked) this.session.tried |= 1 << next;
     this.store.update({ lens: next, lensesTried: countBits(this.session.tried) });
+  }
+
+  /** Starts loading the face model in the background; the lens works without it meanwhile. */
+  private ensureFace() {
+    if (this.face || this.faceLoading) return;
+    this.faceLoading = true;
+    loadFaceTracker(this.tracker.delegate).then(
+      (face) => {
+        this.faceLoading = false;
+        if (!this.disposed) this.face = face;
+      },
+      (err: unknown) => {
+        this.faceLoading = false;
+        console.warn("[viewfinder] face model unavailable; the Cartoon lens runs without it", err);
+      },
+    );
+  }
+
+  /** The Cartoon lens is (part of) what the frame shows right now. */
+  private cartoonOnScreen(t: number) {
+    if (this.state.active <= 0) return false;
+    if (this.lens === CARTOON_LENS) return true;
+    return this.prevLens === CARTOON_LENS && t - this.lensChangedAt < TRANSITION_S;
   }
 
   stepLens(delta: number) {
@@ -236,13 +267,30 @@ export class ViewfinderEngine {
       } catch (err) {
         console.error("[viewfinder] detect failed", err);
       }
-      const inferMs = performance.now() - t0;
 
       // 2 · gesture interpretation
       const events: GestureEvent[] = [];
       const raw = result ? this.toRaw(result, rect) : [];
       this.state = this.gesture.update(raw, t, { w: this.cssW, h: this.cssH }, events);
       this.handle(events, t);
+
+      // 2b · Cartoon lens only: the face model on the same frame.
+      if (this.face && this.cartoonOnScreen(t)) {
+        let lms = null;
+        try {
+          lms = this.face.detect(video, performance.now());
+        } catch (err) {
+          console.error("[viewfinder] face detect failed", err);
+        }
+        this.faceFollower.update(
+          lms,
+          (l) => ({ x: rect.x + (this.mirror ? 1 - l.x : l.x) * rect.w, y: rect.y + l.y * rect.h }),
+          t,
+        );
+      } else if (this.faceFollower.presence > 0) {
+        this.faceFollower.reset();
+      }
+      const inferMs = performance.now() - t0;
 
       // 3 · same frame to the GPU, then composite
       this.renderer.upload(video);
@@ -307,6 +355,7 @@ export class ViewfinderEngine {
       lens: this.lens,
       prevLens: this.prevLens,
       mix: easeOutCubic(mix),
+      face: this.faceUniforms(),
     });
 
     const lens = LENSES[this.lens];
@@ -317,10 +366,33 @@ export class ViewfinderEngine {
       accent: lens.accent,
       time: t,
       showSkeleton: this.skeleton,
+      face: this.facePoints(),
       reducedMotion: this.reducedMotion,
     });
 
     this.lastDraw = performance.now();
+  }
+
+  private faceUniforms() {
+    const u = this.faceUniform;
+    const f = this.faceFollower.shape;
+    if (!f) {
+      u.fill(0);
+      return u;
+    }
+    const d = this.renderer.dpr;
+    u.set([
+      f.eyeRight.x * d, f.eyeRight.y * d, f.eyeLeft.x * d, f.eyeLeft.y * d,
+      f.center.x * d, f.center.y * d, f.faceWidth * d, f.eyeWidth * d,
+      f.chin.x * d, f.chin.y * d, this.faceFollower.presence, 0,
+      f.cheekRight.x * d, f.cheekRight.y * d, f.cheekLeft.x * d, f.cheekLeft.y * d,
+    ]);
+    return u;
+  }
+
+  private facePoints() {
+    const f = this.faceFollower.shape;
+    return f ? [f.eyeRight, f.eyeLeft, f.center, f.chin, f.cheekRight, f.cheekLeft] : [];
   }
 
   private flushStats(now: number) {

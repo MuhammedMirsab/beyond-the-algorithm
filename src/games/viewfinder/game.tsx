@@ -21,6 +21,7 @@ import {
   type ViewfinderIssue,
 } from "./engine/camera";
 import { ViewfinderEngine } from "./engine/engine";
+import { disposeFaceTracker } from "./engine/face";
 import { EngineStore } from "./engine/store";
 import {
   disposeHandTracker,
@@ -299,6 +300,7 @@ export function ViewfinderGame() {
     () => () => {
       stop();
       disposeHandTracker();
+      disposeFaceTracker();
       setHowOpen(false);
       setPhase("intro");
     },
@@ -310,7 +312,7 @@ export function ViewfinderGame() {
     window.scrollTo(0, 0);
   }, [phase]);
 
-  // Keyboard: 1 to 0 lenses, ← → cycle, M mirror, H what the AI sees, F full screen.
+  // Keyboard: 1 to 0 and - lenses, ← → cycle, M mirror, H what the AI sees, F full screen.
   useEffect(() => {
     if (phase !== "live" || howOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -324,6 +326,8 @@ export function ViewfinderGame() {
       if (/^[0-9]$/.test(key)) {
         const n = Number(key);
         engine.setLens(n === 0 ? 9 : n - 1);
+      } else if (key === "-") {
+        engine.setLens(10);
       } else if (key === "arrowright") {
         e.preventDefault();
         engine.stepLens(1);

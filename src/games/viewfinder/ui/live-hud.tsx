@@ -175,7 +175,7 @@ function LensReadout({ index }: { index: number }) {
 }
 
 /**
- * Ten lenses as one segmented row (the Segmented look, sized for ten).
+ * Eleven lenses as one segmented row (the Segmented look, sized for many).
  * Scrolls sideways on narrow screens and keeps the active lens centred.
  */
 function LensPicker({
@@ -247,7 +247,7 @@ function KeyLegend() {
       <span className="inline-flex items-center gap-1.5">
         <Kbd>1</Kbd>
         <span>to</span>
-        <Kbd>0</Kbd>
+        <Kbd aria-label="Minus">-</Kbd>
         <Kbd aria-label="Left arrow">←</Kbd>
         <Kbd aria-label="Right arrow">→</Kbd>
         <span className="ml-0.5">Lens</span>

@@ -34,6 +34,9 @@ uniform int uLens;
 uniform int uPrevLens;
 uniform float uMix;       // 0..1 lens transition progress (1 = settled)
 uniform float uDpr;
+// Cartoon lens face (device px): [0] eyeR.xy eyeL.xy · [1] center.xy faceW eyeW
+// [2] chin.xy presence 0 · [3] cheekR.xy cheekL.xy. presence 0 = no face.
+uniform vec4 uFace[4];
 
 out vec4 outColor;
 
@@ -238,6 +241,130 @@ vec3 lensLoupe(vec2 p) {
   return col * (1.06 - 0.12 * k * k);
 }
 
+
+// ───────────────────────────── 10 · cartoon (3D animated film look)
+// What makes the look, and how each part is faked in one pass:
+//   big eyes, big head, small chin → three local warps around face points
+//   smooth "subsurface" skin       → edge-preserving (bilateral) blur + warm glow in skin tones
+//   simple, rounded forms           → soft tone bands blended into the shading
+//   soft warm key light, cool fill  → warm highlights, lifted blue-ish shadows, glow
+//   shallow depth of field          → the background blurs away from the face
+//   bright, rich colour + eye shine → saturation boost, cheek blush, catchlights
+vec2 bulge(vec2 p, vec2 c, float R, float s) {
+  vec2 d = p - c;
+  float k = max(0.0, 1.0 - dot(d, d) / (R * R));
+  return -d * s * k * k; // s > 0 magnifies, s < 0 shrinks
+}
+
+vec2 cartoonWarp(vec2 p) {
+  float w = uFace[2].z;
+  if (w < 0.001) return p;
+  float faceW = uFace[1].z;
+  float eyeW = uFace[1].w;
+  vec2 chin = uFace[2].xy + (uFace[2].xy - uFace[1].xy) * 0.12;
+  vec2 off = bulge(p, uFace[1].xy, faceW * 0.95, 0.12 * w);
+  off += bulge(p, uFace[0].xy, eyeW * 1.6, 0.5 * w);
+  off += bulge(p, uFace[0].zw, eyeW * 1.6, 0.5 * w);
+  off += bulge(p, chin, faceW * 0.55, -0.28 * w);
+  return p + off;
+}
+
+vec3 bilateral(vec2 q, float r, out vec3 bright) {
+  vec3 c0 = cam(q);
+  vec3 sum = c0;
+  float wsum = 1.0;
+  bright = max(c0 - 0.72, 0.0);
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * 0.5235988 + 0.26;
+    vec2 o = vec2(cos(a), sin(a)) * r * ((i & 1) == 0 ? 1.0 : 0.5);
+    vec3 c = cam(q + o);
+    vec3 dc = c - c0;
+    float w = exp(-dot(dc, dc) * 45.0);
+    sum += c * w;
+    wsum += w;
+    bright += max(c - 0.72, 0.0);
+  }
+  bright /= 13.0;
+  return sum / wsum;
+}
+
+vec3 discBlur(vec2 q, float r) {
+  vec3 sum = cam(q);
+  for (int i = 0; i < 14; i++) {
+    float a = float(i) * 2.39996; // golden angle spiral
+    float rr = r * sqrt((float(i) + 0.5) / 14.0);
+    sum += cam(q + vec2(cos(a), sin(a)) * rr);
+  }
+  return sum / 15.0;
+}
+
+float skinTone(vec3 c) {
+  float cb = -0.1687 * c.r - 0.3313 * c.g + 0.5 * c.b;
+  float cr = 0.5 * c.r - 0.4187 * c.g - 0.0813 * c.b;
+  return smoothstep(0.03, 0.0, abs(cb + 0.07)) * smoothstep(0.075, 0.02, abs(cr - 0.1));
+}
+
+float softDot(vec2 p, vec2 c, float r) {
+  return 1.0 - smoothstep(r * 0.55, r, length(p - c));
+}
+
+vec3 lensCartoon(vec2 p) {
+  float face = uFace[2].z;
+  float faceW = uFace[1].z;
+  float eyeW = uFace[1].w;
+  vec2 q = cartoonWarp(p);
+
+  // Skin and surfaces: smooth away pores and noise, keep edges.
+  float r = face > 0.001 ? clamp(faceW * 0.04, 3.0 * uDpr, 14.0 * uDpr) : 5.0 * uDpr;
+  vec3 bright;
+  vec3 col = bilateral(q, r, bright);
+
+  // Depth of field: the further from the face, the softer.
+  if (face > 0.001) {
+    vec2 d = (p - uFace[1].xy) / faceW;
+    float dof = smoothstep(0.8, 1.7, length(d * vec2(1.0, 0.7))) * face;
+    if (dof > 0.01) col = mix(col, discBlur(q, 16.0 * uDpr), dof);
+  }
+
+  // Simple rounded forms: soft tone bands blended into the shading.
+  float l = luma(col);
+  float b = l * 5.0;
+  float lb = (floor(b) + smoothstep(0.3, 0.7, fract(b))) / 5.0;
+  col *= mix(1.0, lb / max(l, 0.02), 0.3);
+
+  // Rich colour, warm key light, cool lifted shadows.
+  float g = luma(col);
+  col = max(mix(vec3(g), col, 1.22), 0.0);
+  col *= mix(vec3(0.94, 0.98, 1.06), vec3(1.05, 1.0, 0.93), smoothstep(0.15, 0.8, g));
+  col = col * 0.86 + vec3(0.05, 0.06, 0.08);
+
+  // Subsurface glow: light seems to pass through skin, so skin tones redden softly.
+  float skin = skinTone(cam(q));
+  col += vec3(0.07, 0.03, 0.01) * skin * (1.0 - g);
+
+  if (face > 0.001) {
+    // Cheek blush.
+    float blush = softDot(p, uFace[3].xy, faceW * 0.13) + softDot(p, uFace[3].zw, faceW * 0.13);
+    col = mix(col, col * vec3(1.1, 0.86, 0.86) + vec3(0.06, 0.0, 0.01), min(blush, 1.0) * 0.28 * face);
+
+    // Catchlights: the bright window reflection animated eyes always have.
+    vec2 ex = normalize(uFace[0].zw - uFace[0].xy + vec2(1e-4, 0.0));
+    vec2 up = vec2(ex.y, -ex.x);
+    if (up.y > 0.0) up = -up;
+    vec2 side = ex.x > 0.0 ? -ex : ex;
+    float shine = 0.0;
+    for (int e = 0; e < 2; e++) {
+      vec2 c = e == 0 ? uFace[0].xy : uFace[0].zw;
+      shine += softDot(p, c + (up * 0.17 + side * 0.13) * eyeW, eyeW * 0.085);
+    }
+    col = mix(col, vec3(1.0, 0.99, 0.96), min(shine, 1.0) * 0.92 * face);
+  }
+
+  // Soft glow around bright areas.
+  col += bright * vec3(1.0, 0.85, 0.7) * 0.9;
+  return col;
+}
+
 vec3 lens(int id, vec2 p) {
   switch (id) {
     case 0: return lensHalftone(p);
@@ -250,6 +377,7 @@ vec3 lens(int id, vec2 p) {
     case 7: return lensPixel(p);
     case 8: return lensGlitch(p);
     case 9: return lensLoupe(p);
+    case 10: return lensCartoon(p);
   }
   return cam(p);
 }

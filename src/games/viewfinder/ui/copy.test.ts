@@ -91,7 +91,7 @@ describe("the reveal", () => {
     expect(steps[0].title).toBe("It finds 21 points on each hand");
     expect(steps[0].yours).toBe("It checked 2,914 pictures of you, about 28 every second. It found 5,120 hands in them.");
     expect(steps[1].yours).toBe("You made a frame 6 times.");
-    expect(steps[2].yours).toBe("You tried 4 of 10 lenses.");
+    expect(steps[2].yours).toBe("You tried 4 of 11 lenses.");
     expect(howSteps({ ...numbers, locks: 1, perSecond: null })[1].yours).toBe("You made a frame 1 time.");
     expect(howSteps({ ...numbers, perSecond: null })[0].yours).toBe(
       "It checked 2,914 pictures of you. It found 5,120 hands in them.",

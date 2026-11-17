@@ -17,9 +17,9 @@ function hue(hex: string) {
 }
 
 describe("lenses", () => {
-  test("ten lenses, unique ids", () => {
-    expect(LENS_COUNT).toBe(10);
-    expect(new Set(LENSES.map((l) => l.id)).size).toBe(10);
+  test("eleven lenses, unique ids", () => {
+    expect(LENS_COUNT).toBe(11);
+    expect(new Set(LENSES.map((l) => l.id)).size).toBe(11);
   });
 
   test("array index matches the shader's switch (index = lens id)", () => {
@@ -31,14 +31,14 @@ describe("lenses", () => {
     for (const [index, fn] of cases) expect<string>(LENSES[index].id).toBe(fn);
   });
 
-  test("keys 1 to 9, then 0 for the tenth", () => {
-    expect(LENSES.map((_, i) => lensKey(i)).join("")).toBe("1234567890");
+  test("keys 1 to 9, 0 for the tenth, minus for the eleventh", () => {
+    expect(LENSES.map((_, i) => lensKey(i)).join("")).toBe("1234567890-");
   });
 
   test("wrapping in both directions", () => {
-    expect(wrapLens(-1)).toBe(9);
-    expect(wrapLens(10)).toBe(0);
-    expect(wrapLens(23)).toBe(3);
+    expect(wrapLens(-1)).toBe(10);
+    expect(wrapLens(11)).toBe(0);
+    expect(wrapLens(23)).toBe(1);
   });
 
   test("no purple accents (DESIGN.md: no purple anywhere)", () => {

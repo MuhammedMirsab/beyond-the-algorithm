@@ -25,6 +25,8 @@ export interface OverlayParams {
   accent: string;
   time: number;
   showSkeleton: boolean;
+  /** Face points the Cartoon lens is using (shown with the skeleton). */
+  face: Vec2[];
   /** prefers-reduced-motion: ripples fade in place instead of expanding. */
   reducedMotion: boolean;
 }
@@ -91,7 +93,10 @@ export class Overlay {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     const { state } = p;
-    if (p.showSkeleton) for (const hand of state.hands) this.skeleton(hand);
+    if (p.showSkeleton) {
+      for (const hand of state.hands) this.skeleton(hand);
+      this.facePoints(p.face, p.accent);
+    }
 
     const guide = 1 - state.active;
     if (guide > 0.02) for (const hand of state.hands) this.fingertips(hand, guide);
@@ -115,6 +120,16 @@ export class Overlay {
     for (const pt of hand.points) {
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 2, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  private facePoints(points: Vec2[], accent: string) {
+    const { ctx } = this;
+    ctx.fillStyle = rgba(accent, 0.9);
+    for (const pt of points) {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 3, 0, TAU);
       ctx.fill();
     }
   }

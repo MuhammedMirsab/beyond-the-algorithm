@@ -25,11 +25,20 @@ export const LENSES = [
   { id: "pixel", name: "8-bit", blurb: "Big square pixels and only 16 colours, like old video games.", accent: "#ff3d7f" },
   { id: "glitch", name: "Glitch", blurb: "Rows of pixels slide sideways and the colours split apart.", accent: "#3df5c4" },
   { id: "loupe", name: "Loupe", blurb: "The middle of your frame, 2.2 times bigger.", accent: "#ffd166" },
+  {
+    id: "cartoon",
+    name: "Cartoon",
+    blurb: "A face model finds your eyes and chin. Eyes grow, skin smooths and the light warms, like an animated film.",
+    accent: "#ffb38a",
+  },
 ] as const satisfies readonly Lens[];
 
 export const LENS_COUNT = LENSES.length;
 
-/** Keyboard label for a lens: 1 to 9, then 0 for the tenth. */
-export const lensKey = (index: number) => String((index + 1) % 10);
+/** The Cartoon lens (the only one that also runs the face model). */
+export const CARTOON_LENS = LENSES.findIndex((l) => l.id === "cartoon");
+
+/** Keyboard label for a lens: 1 to 9, 0 for the tenth, then the minus key (next to 0). */
+export const lensKey = (index: number) => (index < 10 ? String((index + 1) % 10) : "-");
 
 export const wrapLens = (index: number) => ((index % LENS_COUNT) + LENS_COUNT) % LENS_COUNT;

@@ -14,6 +14,8 @@ export interface DrawParams {
   lens: number;
   prevLens: number;
   mix: number;
+  /** Cartoon lens face points in device px (4 × vec4), presence in [10]; all zero = no face. */
+  face: Float32Array;
 }
 
 const UNIFORMS = [
@@ -30,6 +32,7 @@ const UNIFORMS = [
   "uPrevLens",
   "uMix",
   "uDpr",
+  "uFace",
 ] as const;
 
 type UniformName = (typeof UNIFORMS)[number];
@@ -170,6 +173,7 @@ export class Renderer {
     gl.uniform1i(u.uPrevLens, p.prevLens);
     gl.uniform1f(u.uMix, p.mix);
     gl.uniform1f(u.uDpr, d);
+    gl.uniform4fv(u.uFace, p.face);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
