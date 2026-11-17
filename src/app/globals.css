@@ -1,0 +1,339 @@
+@import "tailwindcss";
+
+/*
+ * Beyond the Algorithm design tokens. Read DESIGN.md before changing anything here.
+ *
+ * The default Tailwind colour palette is switched off on purpose: every colour
+ * in the product comes from a semantic token below, so nothing drifts.
+ */
+
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: oklch(1 0 0);
+  --color-black: oklch(0 0 0);
+
+  /* Neutrals: a cool console dark. One ramp carries most of the interface. */
+  --color-canvas: oklch(0.16 0.011 262);
+  --color-sunken: oklch(0.125 0.009 262);
+  --color-surface: oklch(0.205 0.012 262);
+  --color-raised: oklch(0.245 0.014 262);
+  --color-overlay: oklch(0.29 0.016 262);
+  --color-line: oklch(1 0 0 / 0.09);
+  --color-line-strong: oklch(1 0 0 / 0.16);
+  --color-fg: oklch(0.975 0.004 262);
+  --color-fg-muted: oklch(0.81 0.012 262);
+  --color-fg-subtle: oklch(0.68 0.015 262);
+  --color-fg-faint: oklch(0.53 0.015 262);
+
+  /* Status. Only for states the product actually shows. */
+  --color-success: oklch(0.8 0.16 152);
+  --color-danger: oklch(0.71 0.19 25);
+  --color-warning: oklch(0.86 0.15 85);
+
+  /* The spectrum: one hue per game. Use the scoped --game tokens inside a game. */
+  --color-mind-reader: oklch(0.75 0.19 355);
+  --color-viewfinder: oklch(0.73 0.18 30);
+  --color-real-or-ai: oklch(0.81 0.16 62);
+  --color-rock-paper-scissors: oklch(0.89 0.17 98);
+  --color-face-control: oklch(0.88 0.2 130);
+  --color-train-the-machine: oklch(0.84 0.15 165);
+  --color-how-ai-learns: oklch(0.83 0.13 205);
+  --color-airwrite: oklch(0.79 0.13 238);
+  --color-phone: oklch(0.72 0.16 262);
+
+  /* Type families (variables come from next/font in app/layout.tsx). */
+  --font-sans: var(--font-mona), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-martian), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-dots: var(--font-doto), ui-monospace, monospace;
+
+  /* Shape */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-2xl: 36px;
+
+  /* Elevation: one composed ring + shadow, never a border plus a shadow. */
+  --shadow-ring: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --shadow-ring-strong: 0 0 0 1px oklch(1 0 0 / 0.14);
+  --shadow-float:
+    0 0 0 1px oklch(1 0 0 / 0.09), 0 16px 40px -12px oklch(0 0 0 / 0.65),
+    0 4px 12px -2px oklch(0 0 0 / 0.35);
+  --shadow-tile: inset 0 1px 0 oklch(1 0 0 / 0.35), inset 0 -1px 0 oklch(0 0 0 / 0.12);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Game-scoped colours. A wrapper with data-game="<slug>" sets these. */
+@theme inline {
+  --color-game: var(--game);
+  --color-game-deep: var(--game-deep);
+  --color-game-ink: var(--game-ink);
+  --color-game-soft: var(--game-soft);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+    /* Neutral fallback so game utilities never resolve to nothing. */
+    --game: var(--color-fg);
+    --game-deep: var(--color-fg-muted);
+    --game-ink: var(--color-canvas);
+    --game-soft: oklch(1 0 0 / 0.08);
+  }
+
+  html {
+    background: var(--color-canvas);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.55;
+    font-weight: 450;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis: none;
+  }
+
+  /* No italics anywhere in this product, by design. */
+  em,
+  i,
+  cite,
+  dfn,
+  var,
+  address {
+    font-style: normal;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  ::selection {
+    background: var(--color-fg);
+    color: var(--color-canvas);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-fg);
+    outline-offset: 2px;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+}
+
+/* ── Game palettes ───────────────────────────────────────────────── */
+[data-game] {
+  --game-soft: color-mix(in oklab, var(--game) 16%, transparent);
+}
+[data-game="mind-reader"] {
+  --game: oklch(0.75 0.19 355);
+  --game-deep: oklch(0.64 0.21 8);
+  --game-ink: oklch(0.2 0.05 355);
+}
+[data-game="viewfinder"] {
+  --game: oklch(0.73 0.18 30);
+  --game-deep: oklch(0.63 0.2 34);
+  --game-ink: oklch(0.2 0.05 30);
+}
+[data-game="real-or-ai"] {
+  --game: oklch(0.81 0.16 62);
+  --game-deep: oklch(0.71 0.18 48);
+  --game-ink: oklch(0.21 0.05 55);
+}
+[data-game="rock-paper-scissors"] {
+  --game: oklch(0.89 0.17 98);
+  --game-deep: oklch(0.8 0.17 78);
+  --game-ink: oklch(0.22 0.05 90);
+}
+[data-game="face-control"] {
+  --game: oklch(0.88 0.2 130);
+  --game-deep: oklch(0.78 0.2 145);
+  --game-ink: oklch(0.21 0.05 140);
+}
+[data-game="train-the-machine"] {
+  --game: oklch(0.84 0.15 165);
+  --game-deep: oklch(0.73 0.15 175);
+  --game-ink: oklch(0.2 0.04 170);
+}
+[data-game="how-ai-learns"] {
+  --game: oklch(0.83 0.13 205);
+  --game-deep: oklch(0.71 0.14 220);
+  --game-ink: oklch(0.2 0.04 220);
+}
+[data-game="airwrite"] {
+  --game: oklch(0.79 0.13 238);
+  --game-deep: oklch(0.67 0.17 252);
+  --game-ink: oklch(0.2 0.05 250);
+}
+[data-game="phone"] {
+  --game: oklch(0.74 0.15 262);
+  --game-deep: oklch(0.63 0.19 266);
+  --game-ink: oklch(0.19 0.05 266);
+}
+
+/* ── Type roles. Use these instead of ad-hoc sizes. ─────────────── */
+@utility type-display-1 {
+  font-size: clamp(2.75rem, 1.15rem + 5.2vw, 6rem);
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  font-weight: 800;
+  font-stretch: 112%;
+  text-wrap: balance;
+}
+@utility type-display-2 {
+  font-size: clamp(2.25rem, 1.35rem + 3.3vw, 4.25rem);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  font-weight: 800;
+  font-stretch: 110%;
+  text-wrap: balance;
+}
+@utility type-title-1 {
+  font-size: 2rem;
+  line-height: 1.08;
+  letter-spacing: -0.022em;
+  font-weight: 760;
+  font-stretch: 108%;
+  text-wrap: balance;
+}
+@utility type-title-2 {
+  font-size: 1.5rem;
+  line-height: 1.15;
+  letter-spacing: -0.016em;
+  font-weight: 740;
+  font-stretch: 106%;
+  text-wrap: balance;
+}
+@utility type-title-3 {
+  font-size: 1.25rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-weight: 700;
+  font-stretch: 104%;
+  text-wrap: balance;
+}
+@utility type-body-lg {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  font-weight: 450;
+  text-wrap: pretty;
+}
+@utility type-body {
+  font-size: 1rem;
+  line-height: 1.55;
+  font-weight: 450;
+  text-wrap: pretty;
+}
+@utility type-small {
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 480;
+}
+@utility type-caption {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-weight: 500;
+}
+/* The machine's voice: readouts, model names, coordinates. Never for headings. */
+@utility type-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  font-stretch: 90%;
+  text-transform: uppercase;
+}
+/* Scoreboard numerals. 40px and up only. */
+@utility type-score {
+  font-family: var(--font-dots);
+  font-size: clamp(3rem, 1.8rem + 4.4vw, 6.5rem);
+  line-height: 0.9;
+  font-weight: 800;
+  font-variation-settings: "ROND" 70;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* ── Surfaces ───────────────────────────────────────────────────── */
+
+/* A game tile: the game's colour as a lit, slightly glossy cartridge. */
+@utility tile-surface {
+  background:
+    radial-gradient(120% 90% at 0% 0%, oklch(1 0 0 / 0.32), transparent 55%),
+    linear-gradient(in oklab 155deg, var(--game) 10%, var(--game-deep) 100%);
+  color: var(--game-ink);
+  box-shadow: var(--shadow-tile);
+}
+
+/* Static film grain for large colour fields, so gradients never band. */
+@utility grain {
+  position: relative;
+  isolation: isolate;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+    opacity: 0.16;
+    mix-blend-mode: overlay;
+    z-index: 1;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* A dotted field: the way a model sees a picture, one sample at a time. */
+@utility dot-field {
+  background-image: radial-gradient(circle at center, oklch(1 0 0 / 0.11) 1.1px, transparent 1.6px);
+  background-size: 14px 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
