@@ -516,6 +516,12 @@ export class PlayScene extends Phaser.Scene {
   // -------------------------------------------------------------------------
 
   override update(_time: number, deltaMs: number) {
+    // Game over and victory unload the level from inside this scene's own step (a
+    // delayed call fires, the session stops the scene), and Phaser still calls
+    // update() once afterwards. The ball's body is gone by then; touching it would
+    // throw, and a throw here kills Phaser's animation loop for good, so the next
+    // level would load into a world that never draws again (a blank screen).
+    if (!this.sys.isActive() || !this.ball?.body) return;
     const dt = Math.min(deltaMs, 50) / 1000;
     if (this.running) {
       this.t += dt;
