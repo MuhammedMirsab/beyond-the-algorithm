@@ -8,7 +8,7 @@ export type ButtonSize = "sm" | "md" | "lg";
 
 const base =
   "group/button relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold " +
-  "transition-[background-color,color,box-shadow,transform,opacity] duration-150 ease-out " +
+  "transition-[background-color,color,box-shadow,scale,translate,opacity] duration-150 ease-out " +
   "active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 aria-disabled:pointer-events-none aria-disabled:opacity-45 " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg " +
   "[&_svg]:shrink-0";
@@ -187,7 +187,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       aria-pressed={pressed}
-      className={cn(base, variants[variant], iconSizes[size], "px-0", className)}
+      className={cn(base, variants[variant], iconSizes[size], "px-0", pressed && "bg-fg text-canvas hover:bg-white hover:text-canvas", className)}
       {...props}
     >
       {icon}

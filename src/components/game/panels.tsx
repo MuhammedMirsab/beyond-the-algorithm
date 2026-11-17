@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/cn";
 
 /**
@@ -9,20 +9,35 @@ export function HowItWorks({
   title = "How the AI did it",
   intro,
   steps,
+  heading = true,
+  columns = "auto",
   className,
 }: {
   title?: string;
+  /** Lead under the title. May hold block content (lists, small charts). */
   intro?: ReactNode;
   steps: { title: string; text: ReactNode; visual?: ReactNode }[];
+  /** Hide the title and intro, e.g. inside a Modal that already shows the title. */
+  heading?: boolean;
+  /** "auto" fits as many 15rem columns as there is room for. */
+  columns?: "auto" | 1 | 3;
   className?: string;
 }) {
   return (
     <section className={cn("flex flex-col gap-6", className)} aria-label={title}>
-      <div className="flex flex-col gap-2">
-        <h2 className="type-title-1 text-fg">{title}</h2>
-        {intro ? <p className="type-body-lg max-w-[40rem] text-fg-muted">{intro}</p> : null}
-      </div>
-      <ol className="grid gap-3 md:grid-cols-[repeat(auto-fit,minmax(15rem,1fr))]">
+      {heading ? (
+        <div className="flex flex-col gap-2">
+          <h2 className="type-title-1 text-fg">{title}</h2>
+          {intro ? <div className="type-body-lg max-w-[40rem] text-fg-muted">{intro}</div> : null}
+        </div>
+      ) : null}
+      <ol
+        className={cn(
+          "grid gap-3",
+          columns === "auto" && "md:grid-cols-[repeat(auto-fit,minmax(15rem,1fr))]",
+          columns === 3 && "md:grid-cols-3",
+        )}
+      >
         {steps.map((step, i) => (
           <li key={step.title} className="flex flex-col gap-3 rounded-lg bg-surface p-5 shadow-ring">
             <span className="type-label text-game">Step {i + 1}</span>
@@ -42,7 +57,9 @@ export function HowItWorks({
  */
 export function ResultPanel({
   label,
+  badge,
   title,
+  headingRef,
   score,
   stats,
   actions,
@@ -51,8 +68,12 @@ export function ResultPanel({
 }: {
   /** Machine-voice context, e.g. "Game over · 6 rounds". */
   label?: string;
+  /** A status chip next to the label, e.g. a win or loss Chip with an icon. */
+  badge?: ReactNode;
   /** The verdict, e.g. "You spotted 5 of 6". */
   title: string;
+  /** Focus target when the screen changes (the heading takes tabIndex -1). */
+  headingRef?: Ref<HTMLHeadingElement>;
   /** The number that matters, rendered large (use <Score/>). */
   score?: ReactNode;
   stats?: ReactNode;
@@ -64,8 +85,15 @@ export function ResultPanel({
     <section className={cn("mx-auto flex w-full max-w-[69rem] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12", className)}>
       <div className="grid items-end gap-8 rounded-xl bg-surface p-6 shadow-ring sm:p-8 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex min-w-0 flex-col gap-4">
-          {label ? <span className="type-label text-game">{label}</span> : null}
-          <h1 className="type-display-2 text-fg">{title}</h1>
+          {label || badge ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {label ? <span className="type-label text-game">{label}</span> : null}
+              {badge}
+            </div>
+          ) : null}
+          <h1 ref={headingRef} tabIndex={-1} className="type-display-2 text-fg outline-none">
+            {title}
+          </h1>
           {stats ? <div className="flex flex-wrap gap-x-10 gap-y-4 pt-2">{stats}</div> : null}
         </div>
         {score ? <div className="md:text-right">{score}</div> : null}

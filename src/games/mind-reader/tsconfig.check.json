@@ -1,0 +1,1 @@
+{"extends":"../../../tsconfig.json","compilerOptions":{"incremental":false},"include":["../../../next-env.d.ts","./**/*.ts","./**/*.tsx","../../app/(games)/mind-reader/**/*.ts","../../app/(games)/mind-reader/**/*.tsx"]}

@@ -49,9 +49,12 @@ export function SliderRow({
   max = 100,
   step = 1,
   valueText,
+  description,
 }: {
   label: string;
   value: number;
+  /** One line under the slider saying what changes. */
+  description?: string;
   onValueChange: (value: number) => void;
   min?: number;
   max?: number;
@@ -81,6 +84,7 @@ export function SliderRow({
           />
         </BaseSlider.Track>
       </BaseSlider.Control>
+      {description ? <p className="type-small -mt-1 text-fg-subtle">{description}</p> : null}
     </BaseSlider.Root>
   );
 }
@@ -99,18 +103,22 @@ export function Segmented<T extends string>({
   onValueChange,
   options,
   label,
+  activateOnFocus,
   className,
 }: {
   value: T;
   onValueChange: (value: T) => void;
   options: SegmentOption<T>[];
   label: string;
+  /** Select the option as soon as arrow keys focus it. */
+  activateOnFocus?: boolean;
   className?: string;
 }) {
   return (
     <BaseTabs.Root value={value} onValueChange={(v) => onValueChange(v as T)} className={className}>
       <BaseTabs.List
         aria-label={label}
+        activateOnFocus={activateOnFocus}
         className="relative inline-flex h-11 items-center gap-1 rounded-full bg-surface p-1 shadow-ring"
       >
         {options.map((option) => (

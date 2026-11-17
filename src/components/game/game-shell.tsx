@@ -7,6 +7,7 @@ import { gameBySlug, type GameSlug } from "@/content/games";
 import { IconButton } from "@/components/ui/button";
 import { GameGlyph } from "@/components/art/game-glyph";
 import { useSoundOn } from "@/lib/sound";
+import { GameSlugContext } from "@/lib/game-context";
 import { cn } from "@/lib/cn";
 
 /**
@@ -34,12 +35,13 @@ export function GameShell({
 }) {
   const game = gameBySlug(slug);
   return (
+    <GameSlugContext.Provider value={slug}>
     <div data-game={slug} className={cn("relative flex min-h-dvh flex-col bg-canvas", className)}>
       <header
         className={cn(
           "z-30 flex h-16 shrink-0 items-center gap-3 px-4 pt-[env(safe-area-inset-top)] sm:px-6 lg:px-8",
           immersive
-            ? "absolute inset-x-0 top-0 bg-gradient-to-b from-canvas/85 via-canvas/40 to-transparent"
+            ? "absolute inset-x-0 top-0 bg-linear-to-b from-canvas/85 via-canvas/40 to-transparent"
             : "relative",
         )}
       >
@@ -47,7 +49,7 @@ export function GameShell({
           href="/"
           className={cn(
             "group/back -ml-2 inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-full px-2.5 text-[0.9375rem] font-semibold text-fg-muted sm:pr-4",
-            "transition-[background-color,color,transform] duration-150 ease-out hover:bg-fg/[0.07] hover:text-fg active:scale-[0.97]",
+            "transition-[background-color,color,scale] duration-150 ease-out hover:bg-fg/[0.07] hover:text-fg active:scale-[0.97]",
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
           )}
         >
@@ -70,6 +72,7 @@ export function GameShell({
       </header>
       <main className="relative flex min-h-0 flex-1 flex-col">{children}</main>
     </div>
+    </GameSlugContext.Provider>
   );
 }
 

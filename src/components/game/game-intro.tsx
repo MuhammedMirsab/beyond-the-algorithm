@@ -1,7 +1,7 @@
 "use client";
 
 import { Camera, Clock3, Mic, Smartphone, Wifi } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { gameBySlug, type GameSlug, type Need } from "@/content/games";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -51,6 +51,8 @@ export function GameIntro({
   secondary,
   footnote,
   children,
+  below,
+  headingRef,
   className,
 }: {
   slug: GameSlug;
@@ -65,6 +67,10 @@ export function GameIntro({
   footnote?: ReactNode;
   /** Extra controls between steps and actions (e.g. a range picker). */
   children?: ReactNode;
+  /** Secondary content after the actions and small print (e.g. a QR handoff). */
+  below?: ReactNode;
+  /** Focus target when returning to the intro (the heading takes tabIndex -1). */
+  headingRef?: Ref<HTMLHeadingElement>;
   className?: string;
 }) {
   const game = gameBySlug(slug);
@@ -78,7 +84,9 @@ export function GameIntro({
       <div className="order-2 flex min-w-0 flex-col gap-7 lg:order-1">
         <div className="flex flex-col gap-4">
           <span className="type-label text-game">{game.skill}</span>
-          <h1 className="type-display-2 text-fg">{title ?? game.title}</h1>
+          <h1 ref={headingRef} tabIndex={-1} className="type-display-2 text-fg outline-none">
+            {title ?? game.title}
+          </h1>
           <p className="type-body-lg max-w-[34rem] text-fg-muted">{lead ?? game.hook}</p>
         </div>
 
@@ -130,6 +138,7 @@ export function GameIntro({
           <NeedChips slug={slug} />
           {footnote ? <p className="type-small max-w-[34rem] text-fg-subtle">{footnote}</p> : null}
         </div>
+        {below}
       </div>
 
       <div className="order-1 lg:order-2">

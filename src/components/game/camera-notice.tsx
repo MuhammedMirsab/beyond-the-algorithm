@@ -3,11 +3,11 @@
 import { Camera, CameraOff, LoaderCircle, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { Progress, StepDots } from "@/components/ui/progress";
 import { Notice } from "./panels";
 
 /** Every camera failure maps to one of these, so all games speak the same way. */
-export type CameraIssue = "denied" | "missing" | "busy" | "insecure" | "unsupported" | "model" | "unknown";
+export type CameraIssue = "denied" | "missing" | "busy" | "stopped" | "tracking" | "insecure" | "unsupported" | "webgl" | "model" | "unknown";
 
 export const CAMERA_ISSUE_COPY: Record<CameraIssue, { title: string; text: string }> = {
   denied: {
@@ -22,6 +22,14 @@ export const CAMERA_ISSUE_COPY: Record<CameraIssue, { title: string; text: strin
     title: "Camera is in use",
     text: "Another app or tab is using the camera. Close it, then try again.",
   },
+  stopped: {
+    title: "The camera stopped",
+    text: "It may have been unplugged or taken by another app. Check the camera, then try again.",
+  },
+  tracking: {
+    title: "Tracking stopped",
+    text: "The AI model stopped responding. Try again. If it keeps happening, reload the page.",
+  },
   insecure: {
     title: "Camera needs a secure page",
     text: "Open this site with an https:// address to use the camera.",
@@ -30,9 +38,13 @@ export const CAMERA_ISSUE_COPY: Record<CameraIssue, { title: string; text: strin
     title: "This browser can't use the camera",
     text: "Open the arcade in the latest Chrome, Edge or Safari.",
   },
+  webgl: {
+    title: "This browser can't draw this game",
+    text: "It needs WebGL 2. Open the arcade in the latest Chrome or Edge.",
+  },
   model: {
-    title: "The tracking model didn't load",
-    text: "Check the internet connection, then reload the page.",
+    title: "The tracking model didn't start",
+    text: "Reload the page to try again. If it keeps happening, this computer may be too slow for this game.",
   },
   unknown: {
     title: "The camera didn't start",
@@ -93,18 +105,33 @@ export function CameraPrompt({
 }
 
 /** While the browser permission prompt is open. */
-export function CameraWaiting() {
+export function CameraWaiting({ actions }: { actions?: ReactNode }) {
   return (
-    <Notice icon={<LoaderCircle className="animate-spin" />} title="Waiting for permission">
+    <Notice icon={<LoaderCircle className="animate-spin" />} title="Waiting for permission" actions={actions}>
       <p>Choose Allow in the box your browser just opened.</p>
     </Notice>
   );
 }
 
 /** Model download / warm-up. `progress` is 0 to 1, or null when unknown. */
-export function ModelLoading({ label = "Loading the AI model", detail, progress }: { label?: string; detail?: string; progress: number | null }) {
+export function ModelLoading({
+  label = "Loading the AI model",
+  detail,
+  progress,
+  step,
+  actions,
+}: {
+  label?: string;
+  detail?: string;
+  progress: number | null;
+  /** Where this stage sits in a multi-stage start, shown as dots. */
+  step?: { current: number; total: number };
+  /** e.g. a "Play with keyboard" alternative while the model loads. */
+  actions?: ReactNode;
+}) {
   return (
     <div role="status" className="mx-auto flex w-full max-w-[22rem] flex-col items-center gap-4 text-center">
+      {step ? <StepDots total={step.total} current={step.current} label="Starting" /> : null}
       <span className="type-title-3 text-fg">{label}</span>
       {progress == null ? (
         <LoaderCircle className="size-6 animate-spin text-game" aria-hidden />
@@ -112,6 +139,7 @@ export function ModelLoading({ label = "Loading the AI model", detail, progress 
         <Progress value={progress} label={label} tone="game" />
       )}
       {detail ? <span className="type-label text-fg-subtle">{detail}</span> : null}
+      {actions ? <div className="mt-2 flex flex-wrap justify-center gap-3">{actions}</div> : null}
     </div>
   );
 }

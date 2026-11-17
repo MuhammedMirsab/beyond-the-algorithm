@@ -82,7 +82,7 @@ function Row({ rank, entry, own, value }: { rank: number; entry: BoardEntry; own
           {entry.name}
         </span>
         {entry.detail ? (
-          <span className={cn("type-caption truncate", own ? "text-game-ink/75" : "text-fg-subtle")}>{entry.detail}</span>
+          <span className={cn("type-caption truncate", own ? "text-game-ink/80" : "text-fg-subtle")}>{entry.detail}</span>
         ) : null}
       </span>
       <span className={cn("font-semibold tabular-nums", own ? "text-game-ink" : "text-fg")}>{value}</span>

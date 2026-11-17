@@ -7,7 +7,7 @@ Nine short games that show what AI can work out about you. Built by IISJ Compute
 | It predicts you | Can AI read your mind? | `/mind-reader` | Binary search |
 | | Rock, paper, scissors | `/rock-paper-scissors` | Learns your habits, locks its move first |
 | It sees you | Face Control | `/face-control` | 478 face landmarks become a controller |
-| | AirWrite | `/airwrite` | 21 hand landmarks write; Gemini reads the ink |
+| | AirWrite | `/airwrite` | 21 hand landmarks write; an on-device matcher reads the letters |
 | | Viewfinder | `/viewfinder` | Two-hand tracking frames a live lens |
 | It learns from you | Train the machine | `/train-the-machine` | Pose classification from your examples |
 | | See how AI learns | `/how-ai-learns` | Transfer learning on MobileNet |
@@ -29,11 +29,11 @@ Other scripts: `bun run build`, `bun run start`, `bun run typecheck`, `bun run l
 
 ## Environment
 
-| Variable | Needed for | Notes |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | AirWrite reading the handwriting | Server only. Without it AirWrite still tracks and draws, and says reading is switched off. |
-| `GEMINI_MODEL` | Optional | Overrides the first model AirWrite tries. |
-| `NEXT_PUBLIC_SITE_URL` | Optional | Absolute base for share images. Vercel sets its own URL automatically. |
+Nothing is required. Every game runs in the browser with self-hosted models, so the arcade works offline once it has loaded.
+
+| Variable | Notes |
+| --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | Optional. Absolute base for share images; Vercel sets its own URL automatically. |
 
 ## How it's built
 

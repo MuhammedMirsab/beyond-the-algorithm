@@ -14,6 +14,7 @@ export function Score({
   suffix,
   className,
   tone = "fg",
+  animated = true,
 }: {
   value: number;
   /** Shown under the number in the machine voice, and used as the accessible name. */
@@ -22,6 +23,8 @@ export function Score({
   suffix?: string;
   className?: string;
   tone?: "fg" | "game" | "on-game";
+  /** Turn off the digit roll for live readouts that change many times a second. */
+  animated?: boolean;
 }) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -29,8 +32,8 @@ export function Score({
         value={value}
         format={format}
         suffix={suffix}
-        willChange
-        animated
+        willChange={animated}
+        animated={animated}
         className={cn(
           "type-score",
           tone === "fg" && "text-fg",
@@ -40,7 +43,7 @@ export function Score({
         aria-label={label ? `${label}: ${value}${suffix ?? ""}` : undefined}
       />
       {label ? (
-        <span aria-hidden className={cn("type-label", tone === "on-game" ? "text-game-ink/70" : "text-fg-subtle")}>
+        <span aria-hidden className={cn("type-label", tone === "on-game" ? "text-game-ink/80" : "text-fg-subtle")}>
           {label}
         </span>
       ) : null}

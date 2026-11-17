@@ -4,6 +4,7 @@ import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useGameSlug } from "@/lib/game-context";
 
 /**
  * Modal built on Base UI (focus trap, Escape, return focus, scroll lock).
@@ -31,6 +32,8 @@ export function Modal({
   /** Set false for decisions that must be answered (no backdrop click / Escape). */
   dismissible?: boolean;
 }) {
+  // Portals leave the GameShell subtree, so put the game colour back on.
+  const game = useGameSlug() ?? undefined;
   return (
     <BaseDialog.Root
       open={open}
@@ -41,12 +44,14 @@ export function Modal({
     >
       <BaseDialog.Portal>
         <BaseDialog.Backdrop
+          data-game={game}
           className={cn(
             "fixed inset-0 z-50 bg-black/60",
             "transition-opacity duration-250 ease-out data-[ending-style]:duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
           )}
         />
         <BaseDialog.Popup
+          data-game={game}
           className={cn(
             "fixed z-50 flex max-h-[calc(100dvh-24px)] flex-col overflow-hidden bg-raised text-fg shadow-float outline-none",
             // Phone: bottom sheet, attached to the edge.

@@ -134,8 +134,8 @@ function About() {
               and never recorded or sent anywhere.
             </li>
             <li className="type-body max-w-[34rem] text-fg-muted">
-              <strong className="font-semibold text-fg">AirWrite sends only your drawing,</strong> black lines on white, to Google&apos;s
-              Gemini so it can read it. Never a photo of you.
+              <strong className="font-semibold text-fg">Nothing needs the internet once a game has loaded.</strong> Even the
+              handwriting in AirWrite is read on this device.
             </li>
             <li className="type-body max-w-[34rem] text-fg-muted">
               <strong className="font-semibold text-fg">Scoreboards stay on this screen.</strong> A name only appears if you type one

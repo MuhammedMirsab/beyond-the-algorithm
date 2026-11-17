@@ -20,6 +20,7 @@ export function PhoneFrame({
   statusBar = "light",
   time,
   island,
+  interactive = false,
   className,
   screenClassName,
 }: {
@@ -33,6 +34,8 @@ export function PhoneFrame({
   time?: string;
   /** Content inside the Dynamic Island (expands it). */
   island?: ReactNode;
+  /** The screen holds live, interactive content: don't present the frame as one image. */
+  interactive?: boolean;
   className?: string;
   screenClassName?: string;
 }) {
@@ -66,8 +69,8 @@ export function PhoneFrame({
     <div
       className={cn("relative shrink-0 select-none", className)}
       style={{ width: W, height: H }}
-      role="img"
-      aria-label="Phone"
+      role={interactive ? undefined : "img"}
+      aria-label={interactive ? undefined : "Phone"}
     >
       {/* Side buttons: action, volume up, volume down, side button. */}
       <span aria-hidden style={button("left", 0.168, 0.034)} />

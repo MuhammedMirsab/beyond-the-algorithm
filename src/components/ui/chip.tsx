@@ -53,7 +53,7 @@ export function ToggleChip({
       aria-pressed={pressed}
       className={cn(
         "inline-flex h-10 select-none items-center gap-2 whitespace-nowrap rounded-full px-4 text-[0.9375rem] font-semibold",
-        "transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+        "transition-[background-color,color,box-shadow,scale] duration-150 ease-out active:scale-[0.97]",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg [&_svg]:size-4",
         pressed ? "bg-fg text-canvas" : "bg-surface text-fg-muted shadow-ring hover:bg-raised hover:text-fg",
         className,
