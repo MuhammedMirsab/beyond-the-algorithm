@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 import { PLAY_STEPS, type StepId } from "./state";
 
 const STEP_NAMES: Partial<Record<StepId, string>> = {
-  pick: "Pick",
+  pick: "Name",
   examples: "Examples",
   train: "Train",
   test: "Test",

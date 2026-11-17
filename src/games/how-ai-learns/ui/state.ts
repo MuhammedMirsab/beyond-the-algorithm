@@ -5,14 +5,32 @@
 
 import type { EpochLog } from "../engine/classifier";
 import type { DatasetPhoto } from "../engine/dataset";
-import { decide, DEFAULT_THRESHOLD, outcomeOf, tally, type Candidate, type Tally } from "../engine/rules";
+import { decide, DEFAULT_THRESHOLD, NONE_LABEL, outcomeOf, tally, type Candidate, type Tally } from "../engine/rules";
 
 export type StepId = "intro" | "pick" | "examples" | "train" | "test" | "results";
 
 /** The four steps the visitor works through, for the step counter. */
 export const PLAY_STEPS: StepId[] = ["pick", "examples", "train", "test"];
 
-export const DEFAULT_PICK = ["pens", "cups"];
+/**
+ * One thing the visitor teaches. They name it themselves and show it to the
+ * camera; a library category is the backup for when they have nothing to show.
+ */
+export interface Group {
+  id: string;
+  /** What the visitor typed. The model answers with it. */
+  name: string;
+  /** Library category whose photos it may use, e.g. "pens". */
+  library: string | null;
+}
+
+/** The built-in group: the empty background, or photos of other things. */
+export const NONE_GROUP = "none";
+export const NAME_MAX = 24;
+
+const GROUP_IDS = ["g1", "g2", "g3"];
+const emptyGroup = (id: string): Group => ({ id, name: "", library: null });
+export const DEFAULT_GROUPS: Group[] = [emptyGroup("g1"), emptyGroup("g2")];
 export const MIN_GROUPS = 2;
 export const MAX_GROUPS = 3;
 /** Examples per group before the Train button works. */
@@ -24,8 +42,9 @@ export const EXPERIMENT_EXAMPLES = 3;
 
 export interface ExamplePhoto {
   id: string;
+  /** The group it belongs to (a group id or NONE_GROUP). */
   category: string;
-  /** Category label, e.g. "Pen". */
+  /** Group name when it was added; training uses the group's current name. */
   label: string;
   url: string;
   kind: "library" | "camera";
@@ -68,7 +87,7 @@ export interface PreviousRun {
 
 export interface GameState {
   step: StepId;
-  picked: string[];
+  groups: Group[];
   examples: Record<string, ExamplePhoto[]>;
   train: TrainState;
   /** Test photo id → what the model said. Filled in the background after training. */
@@ -90,7 +109,7 @@ export interface GameState {
 
 export const initialState: GameState = {
   step: "intro",
-  picked: DEFAULT_PICK,
+  groups: DEFAULT_GROUPS,
   examples: {},
   train: { phase: "idle" },
   results: {},
@@ -106,7 +125,10 @@ export const initialState: GameState = {
 
 export type Action =
   | { type: "go"; step: StepId }
-  | { type: "toggle-pick"; id: string }
+  | { type: "rename"; id: string; name: string }
+  | { type: "add-group" }
+  | { type: "remove-group"; id: string }
+  | { type: "use-library"; category: string; label: string }
   | { type: "add-examples"; category: string; photos: ExamplePhoto[] }
   | { type: "remove-example"; category: string; id: string }
   | { type: "keep-first"; count: number }
@@ -128,12 +150,27 @@ export function reducer(state: GameState, action: Action): GameState {
     case "go":
       return { ...state, step: action.step, capture: null };
 
-    case "toggle-pick": {
-      const has = state.picked.includes(action.id);
-      if (has) return { ...state, picked: state.picked.filter((id) => id !== action.id) };
-      if (state.picked.length >= MAX_GROUPS) return state;
-      return { ...state, picked: [...state.picked, action.id] };
+    case "rename":
+      return {
+        ...state,
+        groups: state.groups.map((g) => (g.id === action.id ? { ...g, name: action.name.slice(0, NAME_MAX) } : g)),
+      };
+
+    case "add-group": {
+      if (state.groups.length >= MAX_GROUPS) return state;
+      const id = GROUP_IDS.find((gid) => !state.groups.some((g) => g.id === gid));
+      return id ? { ...state, groups: [...state.groups, emptyGroup(id)] } : state;
     }
+
+    case "remove-group": {
+      if (state.groups.length <= MIN_GROUPS) return state;
+      const examples = { ...state.examples };
+      delete examples[action.id];
+      return { ...state, groups: state.groups.filter((g) => g.id !== action.id), examples };
+    }
+
+    case "use-library":
+      return assignLibrary(state, action.category, action.label);
 
     case "add-examples": {
       const current = state.examples[action.category] ?? [];
@@ -224,11 +261,74 @@ export function reducer(state: GameState, action: Action): GameState {
   }
 }
 
+/** Library photos a group added come out when it stops using that category. */
+function dropLibraryPhotos(examples: Record<string, ExamplePhoto[]>, id: string) {
+  return { ...examples, [id]: (examples[id] ?? []).filter((p) => p.kind !== "library") };
+}
+
+/**
+ * Tapping a library category: a group that already uses it lets it go;
+ * otherwise it goes to the first group with no name yet, then a new group,
+ * then the first group without library photos (taking the category's name).
+ */
+function assignLibrary(state: GameState, category: string, label: string): GameState {
+  const owner = state.groups.find((g) => g.library === category);
+  if (owner) {
+    return {
+      ...state,
+      groups: state.groups.map((g) => (g.id === owner.id ? { ...g, library: null } : g)),
+      examples: dropLibraryPhotos(state.examples, owner.id),
+    };
+  }
+  let groups = state.groups;
+  let target = groups.find((g) => !g.library && !g.name.trim());
+  if (!target && groups.length < MAX_GROUPS) {
+    const id = GROUP_IDS.find((gid) => !groups.some((g) => g.id === gid));
+    if (id) {
+      target = emptyGroup(id);
+      groups = [...groups, target];
+    }
+  }
+  target ??= groups.find((g) => !g.library);
+  if (!target) return state;
+  const id = target.id;
+  const keepName = target.name.trim() !== "";
+  return {
+    ...state,
+    groups: groups.map((g) => (g.id === id ? { ...g, library: category, name: keepName ? g.name : label } : g)),
+  };
+}
+
 /* ── Derived data ───────────────────────────────────────────────── */
 
-/** The held-out photos for the picked groups, one of each group in turn. */
-export function testPhotosFor(picked: string[], test: Map<string, DatasetPhoto[]>): DatasetPhoto[] {
-  const lists = picked.map((category) => test.get(category) ?? []);
+/** Why the names can't be used yet, or null when they can. */
+export function namesProblem(groups: Group[]): string | null {
+  const names = groups.map((g) => g.name.trim().toLowerCase());
+  if (names.some((n) => !n)) return groups.length === 2 ? "Name both things first." : "Name all three things first.";
+  if (names.includes(NONE_LABEL.toLowerCase())) return `“${NONE_LABEL}” is already one of its groups. Pick another name.`;
+  if (new Set(names).size !== names.length) return "Give each thing a different name.";
+  return null;
+}
+
+/** The groups the model learns, in order: the visitor's, then "No object". */
+export function trainingGroups(groups: Group[]): { id: string; label: string }[] {
+  return [...groups.map((g) => ({ id: g.id, label: g.name.trim() })), { id: NONE_GROUP, label: NONE_LABEL }];
+}
+
+/** Library photos of the categories no group uses: the "No object" backup. */
+export function otherThingsPool(groups: Group[], pool: Map<string, DatasetPhoto[]>): DatasetPhoto[] {
+  const used = new Set(groups.map((g) => g.library));
+  return [...pool.entries()].filter(([category]) => !used.has(category)).flatMap(([, photos]) => photos);
+}
+
+/** The name of the group a library test photo should get. */
+export function truthFor(groups: Group[], photo: DatasetPhoto): string {
+  return groups.find((g) => g.library === photo.category)?.name.trim() ?? photo.label;
+}
+
+/** The held-out photos for the groups that use the library, one of each group in turn. */
+export function testPhotosFor(groups: Group[], test: Map<string, DatasetPhoto[]>): DatasetPhoto[] {
+  const lists = groups.flatMap((g) => (g.library ? [test.get(g.library) ?? []] : []));
   const longest = Math.max(0, ...lists.map((l) => l.length));
   const out: DatasetPhoto[] = [];
   for (let i = 0; i < longest; i++) for (const list of lists) if (list[i]) out.push(list[i]);
@@ -242,7 +342,7 @@ export function tallyResults(results: Record<string, TestResult>, threshold: num
 }
 
 /** "3 pens, 3 cups" style counts for a run. */
-export function perGroupCounts(examples: ExamplePhoto[]): Record<string, number> {
+export function perGroupCounts(examples: { label: string }[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const e of examples) out[e.label] = (out[e.label] ?? 0) + 1;
   return out;

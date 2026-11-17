@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Score, Stat } from "@/components/ui/score";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { ConfidenceBars } from "@/components/ui/meter";
-import { decide } from "../engine/rules";
+import { decide, NONE_LABEL } from "../engine/rules";
 import { EMBEDDING_SIZE, MODEL_NAME } from "../engine/vision";
 import { joinWords, withArticle } from "./copy";
 import { EmbeddingDots } from "./embedding-dots";
@@ -18,7 +18,11 @@ const NUMBERS = EMBEDDING_SIZE.toLocaleString("en");
 
 /** "10 pens and 10 cups" from per-label counts. */
 function describeCounts(perGroup: Record<string, number>, plurals: Record<string, string>) {
-  return joinWords(Object.entries(perGroup).map(([label, n]) => `${n} ${n === 1 ? label.toLowerCase() : (plurals[label] ?? label)}`));
+  return joinWords(
+    Object.entries(perGroup).map(([label, n]) =>
+      label === NONE_LABEL ? `${n} with no object` : `${n} ${n === 1 ? label.toLowerCase() : (plurals[label] ?? label)}`,
+    ),
+  );
 }
 
 function sameTestSet(a: Record<string, TestResult>, b: Record<string, TestResult>) {
@@ -28,7 +32,7 @@ function sameTestSet(a: Record<string, TestResult>, b: Record<string, TestResult
 }
 
 export function ResultsStep({ game }: { game: LearnGame }) {
-  const { state, dataset, actions } = game;
+  const { state, dataset, actions, testPhotos } = game;
   if (state.train.phase !== "done" || dataset.status !== "ready") return null;
   const run = state.train.run;
   const { threshold, results, previous } = state;
@@ -44,9 +48,13 @@ export function ResultsStep({ game }: { game: LearnGame }) {
       ? `which numbers mean ${words[0]} and which mean ${words[1]}`
       : `which numbers mean ${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
   const groups = run.labels.length;
+  // Every group was taught with the camera: there are no library test photos to score.
+  const cameraOnly = testPhotos.length === 0;
+  const things = picked.filter((l) => l !== NONE_LABEL);
 
-  const title =
-    tally.total === 0
+  const title = cameraOnly
+    ? `It learned to tell ${joinWords(things)} apart`
+    : tally.total === 0
       ? "The test photos didn’t load"
       : tally.right === tally.total
         ? `It got all ${tally.total} new photos right`
@@ -63,11 +71,15 @@ export function ResultsStep({ game }: { game: LearnGame }) {
     <ResultPanel
       label={`${MODEL_NAME} · ${groups} groups · ${run.examples} examples`}
       title={title}
-      score={<Score value={tally.right} label={`of ${tally.total} right`} tone="game" />}
+      score={cameraOnly ? undefined : <Score value={tally.right} label={`of ${tally.total} right`} tone="game" />}
       stats={
         <>
-          <Stat value={tally.wrong} label="Wrong" />
-          <Stat value={tally.unknown} label="Said “I don’t know”" />
+          {cameraOnly ? null : (
+            <>
+              <Stat value={tally.wrong} label="Wrong" />
+              <Stat value={tally.unknown} label="Said “I don’t know”" />
+            </>
+          )}
           <Stat value={run.examples} label="Examples" />
           <Stat value={`${run.seconds.toFixed(1)} s`} label="Training time" />
         </>
@@ -170,10 +182,11 @@ export function ResultsStep({ game }: { game: LearnGame }) {
         {fewest > EXPERIMENT_EXAMPLES ? (
           <>
             <h2 id="experiment" className="type-title-2 text-fg">
-              Train again with only {EXPERIMENT_EXAMPLES} examples each and test the same photos
+              Train again with only {EXPERIMENT_EXAMPLES} examples each and test {cameraOnly ? "it again" : "the same photos"}
             </h2>
             <p className="type-body max-w-[40rem] text-fg-muted">
-              It keeps the first {EXPERIMENT_EXAMPLES} photos of each group and forgets the rest. Then compare the scores.
+              It keeps the first {EXPERIMENT_EXAMPLES} photos of each group and forgets the rest.{" "}
+              {cameraOnly ? "Then see how much worse it gets." : "Then compare the scores."}
             </p>
             <Button variant="secondary" size="lg" icon={<FlaskConical />} onClick={() => void actions.train(EXPERIMENT_EXAMPLES)}>
               Train with {EXPERIMENT_EXAMPLES} each
@@ -182,10 +195,10 @@ export function ResultsStep({ game }: { game: LearnGame }) {
         ) : (
           <>
             <h2 id="experiment" className="type-title-2 text-fg">
-              Now give it more examples and test the same photos
+              Now give it more examples and test {cameraOnly ? "it again" : "the same photos"}
             </h2>
             <p className="type-body max-w-[40rem] text-fg-muted">
-              Add photos from the library or the camera, train again, and compare the scores.
+              Take more photos with the camera, train again, and {cameraOnly ? "see what changes" : "compare the scores"}.
             </p>
             <Button variant="secondary" size="lg" icon={<FlaskConical />} onClick={() => actions.go("examples")}>
               Add more examples

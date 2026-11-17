@@ -3,9 +3,12 @@ import type { DatasetPhoto } from "../engine/dataset";
 import {
   initialState,
   MAX_EXAMPLES,
+  namesProblem,
+  otherThingsPool,
   reducer,
   tallyResults,
   testPhotosFor,
+  trainingGroups,
   type ExamplePhoto,
   type GameState,
   type TrainedRun,
@@ -31,15 +34,48 @@ const run: TrainedRun = {
   sample: null,
 };
 
-describe("picking", () => {
-  test("starts with pen and cup, allows a third, never a fourth", () => {
+describe("naming", () => {
+  test("starts with two unnamed things, allows a third, never a fourth", () => {
     let s = initialState;
-    expect(s.picked).toEqual(["pens", "cups"]);
-    s = reducer(s, { type: "toggle-pick", id: "keys" });
-    s = reducer(s, { type: "toggle-pick", id: "books" });
-    expect(s.picked).toEqual(["pens", "cups", "keys"]);
-    s = reducer(s, { type: "toggle-pick", id: "pens" });
-    expect(s.picked).toEqual(["cups", "keys"]);
+    expect(s.groups.map((g) => g.name)).toEqual(["", ""]);
+    expect(namesProblem(s.groups)).toBe("Name both things first.");
+    s = reducer(s, { type: "rename", id: "g1", name: "Phone" });
+    s = reducer(s, { type: "rename", id: "g2", name: "phone " });
+    expect(namesProblem(s.groups)).toBe("Give each thing a different name.");
+    s = reducer(s, { type: "rename", id: "g2", name: "No object" });
+    expect(namesProblem(s.groups)).toContain("already one of its groups");
+    s = reducer(s, { type: "rename", id: "g2", name: "Bottle" });
+    expect(namesProblem(s.groups)).toBeNull();
+    s = reducer(s, { type: "add-group" });
+    s = reducer(s, { type: "add-group" });
+    expect(s.groups.map((g) => g.id)).toEqual(["g1", "g2", "g3"]);
+    s = reducer(s, { type: "remove-group", id: "g1" });
+    expect(s.groups.map((g) => g.name)).toEqual(["Bottle", ""]);
+    s = reducer(s, { type: "remove-group", id: "g2" });
+    expect(s.groups.length).toBe(2);
+  });
+
+  test("a library category fills an unnamed thing, then a new one, and lets go on a second tap", () => {
+    let s = reducer(initialState, { type: "rename", id: "g1", name: "Phone" });
+    s = reducer(s, { type: "use-library", category: "pens", label: "Pen" });
+    expect(s.groups[1]).toEqual({ id: "g2", name: "Pen", library: "pens" });
+    s = reducer(s, { type: "use-library", category: "cups", label: "Cup" });
+    expect(s.groups[2]).toEqual({ id: "g3", name: "Cup", library: "cups" });
+    s = reducer(s, { type: "add-examples", category: "g3", photos: [photo("cups", 1), photo("cups", 2, "camera")] });
+    s = reducer(s, { type: "use-library", category: "cups", label: "Cup" });
+    expect(s.groups[2].library).toBeNull();
+    expect(s.examples.g3.map((p) => p.kind)).toEqual(["camera"]);
+  });
+
+  test("the model always learns No object too", () => {
+    const s = reducer(initialState, { type: "rename", id: "g1", name: "Phone" });
+    expect(trainingGroups(s.groups).map((g) => g.label)).toEqual(["Phone", "", "No object"]);
+    const pool = new Map([
+      ["pens", [{ id: "p1" } as DatasetPhoto]],
+      ["cups", [{ id: "c1" } as DatasetPhoto]],
+    ]);
+    const withPens = reducer(s, { type: "use-library", category: "pens", label: "Pen" });
+    expect(otherThingsPool(withPens.groups, pool).map((p) => p.id)).toEqual(["c1"]);
   });
 });
 
@@ -91,7 +127,10 @@ describe("training runs", () => {
     const busy: GameState = {
       ...initialState,
       step: "test",
-      picked: ["keys", "books"],
+      groups: [
+        { id: "g1", name: "Keys", library: "keys" },
+        { id: "g2", name: "Book", library: null },
+      ],
       examples: { keys: [photo("keys", 1, "camera")] },
       cameraWelcomed: true,
       threshold: 0.9,
@@ -108,7 +147,13 @@ describe("test photos", () => {
       ["pens", [fake("pens", 1), fake("pens", 2)]],
       ["cups", [fake("cups", 1), fake("cups", 2)]],
     ]);
-    expect(testPhotosFor(["pens", "cups"], test).map((p) => p.id)).toEqual(["pens1", "cups1", "pens2", "cups2"]);
+    const groups = [
+      { id: "g1", name: "Pen", library: "pens" },
+      { id: "g2", name: "Phone", library: null },
+      { id: "g3", name: "Mug", library: "cups" },
+    ];
+    expect(testPhotosFor(groups, test).map((p) => p.id)).toEqual(["pens1", "cups1", "pens2", "cups2"]);
+    expect(testPhotosFor(groups.slice(1, 2), test)).toEqual([]);
   });
 
   test("tally follows the threshold", () => {

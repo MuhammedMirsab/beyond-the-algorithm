@@ -4,7 +4,7 @@ import { Check, CircleHelp, X } from "lucide-react";
 import { Chip } from "@/components/ui/chip";
 import { ConfidenceBars } from "@/components/ui/meter";
 import { cn } from "@/lib/cn";
-import type { Candidate, Decision, Outcome } from "../engine/rules";
+import { NONE_LABEL, type Candidate, type Decision, type Outcome } from "../engine/rules";
 import { explainDecision, OUTCOME_WORD } from "./copy";
 
 const OUTCOME_TONE = { right: "success", wrong: "danger", unknown: "warning" } as const;
@@ -71,7 +71,7 @@ export function Verdict({
       </div>
       <ConfidenceBars
         rows={candidates.map((c) => ({ id: c.label, label: c.label, value: c.probability }))}
-        highlight={decision.answer ?? "none"}
+        highlight={decision.reason === "nothing" ? NONE_LABEL : (decision.answer ?? "none")}
       />
     </div>
   );

@@ -3,7 +3,8 @@
  * original predictWithClassifier, pulled out as pure functions so the booth
  * slider can re-decide without running the model again, and so it is tested.
  *
- * Three ways to stay quiet:
+ * Four ways to stay quiet:
+ * - nothing: its best match is the built-in "No object" group.
  * - unfamiliar: the photo's numbers are far from the average example of the
  *   group it picked (cosine similarity below the cutoff set at training).
  * - unsure: its best guess is below the threshold the visitor chose.
@@ -18,7 +19,14 @@ export interface Candidate {
   similarity: number;
 }
 
-export type UnknownReason = "unfamiliar" | "unsure" | "torn";
+/**
+ * The built-in group every model learns: the empty scene (camera photos of
+ * the background) or photos of other things. When it wins, nothing the
+ * visitor taught is in the picture.
+ */
+export const NONE_LABEL = "No object";
+
+export type UnknownReason = "nothing" | "unfamiliar" | "unsure" | "torn";
 
 export interface Decision {
   /** The label it answers with, or null for "I don't know". */
@@ -51,6 +59,8 @@ export function decide(
   const top = ranked[0];
   const runnerUp = ranked[1] ?? null;
   const margin = runnerUp ? top.probability - runnerUp.probability : top.probability;
+
+  if (top.label === NONE_LABEL) return { answer: null, reason: "nothing", top, runnerUp };
 
   const unfamiliar = top.similarity < similarityCutoff;
   const unsure = top.probability < threshold;

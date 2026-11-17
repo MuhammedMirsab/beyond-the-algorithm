@@ -17,7 +17,7 @@
  */
 
 import type * as TF from "@tensorflow/tfjs";
-import { decide, rankCandidates, similarityCutoffFrom, type Candidate, type Decision } from "./rules";
+import { decide, NONE_LABEL, rankCandidates, similarityCutoffFrom, type Candidate, type Decision } from "./rules";
 import { DEFAULT_HOLD_OUT, dedupe, stratifiedSplit, type HoldOut } from "./split";
 import { centroid, cosineSimilarity, leaveOneOutSimilarities } from "./vectors";
 
@@ -209,7 +209,8 @@ export async function trainClassifier(tf: Tf, examples: Example[], options: Trai
     // new photo of the same thing can expect. (The original compared examples
     // with an average that included themselves, which overstates closeness
     // with few examples and made it refuse most new photos at 3 to 5 each.)
-    const intra = byLabel.flatMap((vectors) => leaveOneOutSimilarities(vectors, dim));
+    // The "No object" group is a mix of anything else, so it is left out.
+    const intra = byLabel.flatMap((vectors, i) => (labels[i] === NONE_LABEL ? [] : leaveOneOutSimilarities(vectors, dim)));
 
     return {
       head,

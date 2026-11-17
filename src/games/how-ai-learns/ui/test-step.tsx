@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { ImageOff, LoaderCircle, MousePointerClick } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { SliderRow, Segmented } from "@/components/ui/controls";
 import { Modal } from "@/components/ui/dialog";
@@ -47,6 +47,14 @@ export function TestStep({ game }: { game: LearnGame }) {
   const isDesktop = useIsDesktop();
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Camera testing: once this visitor has allowed the camera, start it without asking again.
+  const cameraMode = testPhotos.length === 0 || state.testMode === "camera";
+  const cameraOff = camera.status === "off";
+  const welcomed = state.cameraWelcomed;
+  useEffect(() => {
+    if (cameraMode && cameraOff && welcomed) void start();
+  }, [cameraMode, cameraOff, welcomed, start]);
+
   if (state.train.phase !== "done") return null;
   const run = state.train.run;
   const { threshold } = state;
@@ -77,7 +85,6 @@ export function TestStep({ game }: { game: LearnGame }) {
   const setMode = (mode: "photos" | "camera") => {
     dispatch({ type: "test-mode", mode });
     if (mode === "photos") stop();
-    else if (state.cameraWelcomed) void start();
   };
 
   const select = (id: string) => {
@@ -94,16 +101,23 @@ export function TestStep({ game }: { game: LearnGame }) {
   };
 
   const labels = run.labels;
+  // With no library groups there are no test photos: the camera is the test.
+  const cameraOnly = testPhotos.length === 0;
+  const mode = cameraOnly ? "camera" : state.testMode;
 
   return (
     <StepLayout
       step="test"
-      title="Test it on photos it has never seen"
+      title={cameraOnly ? "Test it with the camera" : "Test it on photos it has never seen"}
       lead={
-        <p>
-          None of these {total} photos were in its examples. Tap one to see what it says, or hold something up to the
-          camera.
-        </p>
+        cameraOnly ? (
+          <p>Hold up each thing you taught it. Then take it away and see what it says when nothing is there.</p>
+        ) : (
+          <p>
+            None of these {total} photos were in its examples. Tap one to see what it says, or hold something up to the
+            camera.
+          </p>
+        )
       }
       secondary={
         <Button variant="ghost" size="lg" onClick={() => actions.go("examples")}>
@@ -118,17 +132,19 @@ export function TestStep({ game }: { game: LearnGame }) {
       note={finished ? null : "Checking the test photos…"}
     >
       <div className="flex flex-col gap-6">
-        <Segmented
-          label="How to test"
-          value={state.testMode}
-          onValueChange={setMode}
-          options={[
-            { value: "photos", label: "Test photos" },
-            { value: "camera", label: "Camera" },
-          ]}
-        />
+        {cameraOnly ? null : (
+          <Segmented
+            label="How to test"
+            value={state.testMode}
+            onValueChange={setMode}
+            options={[
+              { value: "photos", label: "Test photos" },
+              { value: "camera", label: "Camera" },
+            ]}
+          />
+        )}
 
-        {state.testMode === "camera" ? (
+        {mode === "camera" ? (
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-surface p-4 shadow-ring sm:p-5">
               <LiveTest

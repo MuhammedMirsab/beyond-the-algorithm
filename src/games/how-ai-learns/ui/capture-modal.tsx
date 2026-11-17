@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { CameraProblem, CameraPrompt, CameraWaiting } from "@/components/game/camera-notice";
 import { cn } from "@/lib/cn";
-import { withArticle } from "./copy";
 import type { ExamplePhoto } from "./state";
 import type { CameraState } from "./use-camera";
 
@@ -19,7 +18,7 @@ export const CAMERA_PHOTO_PRIVACY = "Photos stay in this browser tab. Nothing is
  */
 export function CaptureModal({
   label,
-  plural,
+  none,
   photos,
   full,
   camera,
@@ -30,7 +29,8 @@ export function CaptureModal({
   onClose,
 }: {
   label: string;
-  plural: string;
+  /** The "No object" group: photos of the empty background. */
+  none: boolean;
   /** Camera photos already taken for this group. */
   photos: ExamplePhoto[];
   full: boolean;
@@ -57,8 +57,12 @@ export function CaptureModal({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={`Take photos of ${plural}`}
-      description={`Hold ${withArticle(label)} up to the camera. Try a few angles and backgrounds.`}
+      title={none ? "Take photos with no object" : `Take photos: ${label}`}
+      description={
+        none
+          ? "Take every object out of the picture and photograph what is left, so it learns what nothing looks like."
+          : "Hold it up to the camera. Try a few angles and backgrounds."
+      }
       footer={
         <>
           <Button variant="ghost" size="lg" onClick={onClose}>
@@ -74,7 +78,7 @@ export function CaptureModal({
     >
       {status.status === "off" ? (
         <CameraPrompt
-          text={`Each photo you take becomes one more ${label.toLowerCase()} example.`}
+          text={none ? "Each photo you take becomes one more example of no object." : `Each photo you take becomes one more ${label} example.`}
           privacy={CAMERA_PHOTO_PRIVACY}
           onAllow={onWelcome}
         />

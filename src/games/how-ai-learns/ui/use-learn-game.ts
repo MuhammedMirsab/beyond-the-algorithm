@@ -13,15 +13,20 @@ import {
 } from "../engine/classifier";
 import { drawFromPool, photoUrl, type DatasetPhoto } from "../engine/dataset";
 import { loadFeatureExtractor, loadTf, modelStatusStore } from "../engine/vision";
-import { withArticle } from "./copy";
+import { NONE_LABEL } from "../engine/rules";
 import { getSession } from "./session";
 import {
   initialState,
   LIBRARY_BATCH,
+  NONE_GROUP,
+  otherThingsPool,
   perGroupCounts,
   reducer,
   testPhotosFor,
+  trainingGroups,
+  truthFor,
   type ExamplePhoto,
+  type Group,
   type StepId,
 } from "./state";
 import { useDataset } from "./use-dataset";
@@ -55,8 +60,8 @@ function trainingErrorText(error: unknown): string {
   return "Training stopped before it finished. Try again.";
 }
 
-export function libraryExample(photo: DatasetPhoto): ExamplePhoto {
-  return { id: photo.id, category: photo.category, label: photo.label, url: photoUrl(photo), kind: "library", title: photo.title };
+export function libraryExample(photo: DatasetPhoto, group: string, label: string): ExamplePhoto {
+  return { id: photo.id, category: group, label, url: photoUrl(photo), kind: "library", title: photo.title };
 }
 
 const toEmbeddable = (photo: ExamplePhoto) => ({ id: photo.id, url: photo.url, fromVisitor: photo.kind === "camera" });
@@ -66,7 +71,7 @@ export function useLearnGame() {
   const dataset = useDataset();
   const model = useSyncExternalStore(modelStatusStore.subscribe, modelStatusStore.getSnapshot, modelStatusStore.getServerSnapshot);
 
-  const testPhotos = dataset.status === "ready" ? testPhotosFor(state.picked, dataset.split.test) : [];
+  const testPhotos = dataset.status === "ready" ? testPhotosFor(state.groups, dataset.split.test) : [];
 
   /* ── Actions ──────────────────────────────────────────────────── */
 
@@ -83,11 +88,33 @@ export function useLearnGame() {
     });
   };
 
-  const addFromLibrary = (category: string) => {
-    if (dataset.status !== "ready") return;
-    const taken = new Set((state.examples[category] ?? []).map((p) => p.id));
-    const photos = drawFromPool(dataset.split.pool.get(category) ?? [], taken, LIBRARY_BATCH).map(libraryExample);
-    dispatch({ type: "add-examples", category, photos });
+  /** Library photos for a group: its category, or for "No object" photos of other things. */
+  const libraryPoolFor = (groupId: string): DatasetPhoto[] => {
+    if (dataset.status !== "ready") return [];
+    if (groupId === NONE_GROUP) return otherThingsPool(state.groups, dataset.split.pool);
+    const library = state.groups.find((g) => g.id === groupId)?.library;
+    return library ? (dataset.split.pool.get(library) ?? []) : [];
+  };
+
+  const addFromLibrary = (groupId: string) => {
+    const label = groupId === NONE_GROUP ? NONE_LABEL : (state.groups.find((g) => g.id === groupId)?.name.trim() ?? "");
+    const taken = new Set((state.examples[groupId] ?? []).map((p) => p.id));
+    const photos = drawFromPool(libraryPoolFor(groupId), taken, LIBRARY_BATCH).map((p) => libraryExample(p, groupId, label));
+    dispatch({ type: "add-examples", category: groupId, photos });
+  };
+
+  /** From naming to examples: the camera opens first, for the first thing that has no photos. */
+  const toExamples = () => {
+    go("examples");
+    const first = state.groups.find((g) => !g.library && !(state.examples[g.id] ?? []).length);
+    if (first) dispatch({ type: "capture", category: first.id });
+  };
+
+  const removeGroup = (group: Group) => {
+    for (const photo of state.examples[group.id] ?? []) {
+      if (photo.kind === "camera") getSession().forgetVisitorPhoto(photo.id, photo.url);
+    }
+    dispatch({ type: "remove-group", id: group.id });
   };
 
   const addCameraPhoto = (category: string, label: string, canvas: HTMLCanvasElement) => {
@@ -101,7 +128,16 @@ export function useLearnGame() {
         dispatch({
           type: "add-examples",
           category,
-          photos: [{ id, category, label, url, kind: "camera", title: `Your photo of ${withArticle(label)}` }],
+          photos: [
+            {
+              id,
+              category,
+              label,
+              url,
+              kind: "camera",
+              title: category === NONE_GROUP ? "Your photo with no object" : `Your photo of ${label}`,
+            },
+          ],
         });
         // Read it straight from the canvas while we have it.
         if (modelStatusStore.getSnapshot().state === "ready") {
@@ -118,7 +154,7 @@ export function useLearnGame() {
     if (photo.kind === "camera") getSession().forgetVisitorPhoto(photo.id, photo.url);
   };
 
-  const evaluateTests = async (run: number, classifier: Classifier, photos: DatasetPhoto[]) => {
+  const evaluateTests = async (run: number, classifier: Classifier, photos: DatasetPhoto[], groups: Group[]) => {
     const tf = await loadTf();
     const session = getSession();
     for (const photo of photos) {
@@ -128,7 +164,7 @@ export function useLearnGame() {
         if (run !== activeRun) return;
         const candidates = await scoreEmbedding(tf, classifier, embedding);
         if (run !== activeRun) return;
-        dispatch({ type: "test-result", id: photo.id, result: { truth: photo.label, candidates } });
+        dispatch({ type: "test-result", id: photo.id, result: { truth: truthFor(groups, photo), candidates } });
       } catch {
         if (run === activeRun) dispatch({ type: "test-failed", id: photo.id });
       }
@@ -139,8 +175,12 @@ export function useLearnGame() {
   const train = async (keepFirst?: number) => {
     const run = ++activeRun;
     const session = getSession();
-    const examples = state.picked.flatMap((category) => (state.examples[category] ?? []).slice(0, keepFirst ?? Infinity));
+    // Each photo is labelled with its group's current name (names can change after photos are added).
+    const examples = trainingGroups(state.groups).flatMap(({ id, label }) =>
+      (state.examples[id] ?? []).slice(0, keepFirst ?? Infinity).map((photo) => ({ photo, label })),
+    );
     const photos = testPhotos;
+    const groups = state.groups;
     if (keepFirst) dispatch({ type: "keep-first", count: keepFirst });
     // The old model is not needed while a new one trains: free its tensors now.
     session.setClassifier(null);
@@ -160,13 +200,13 @@ export function useLearnGame() {
       };
       dispatch({ type: "train", train: { phase: "reading", done: 0, total: examples.length, current: null } });
       const items: Example[] = [];
-      for (const [i, photo] of examples.entries()) {
+      for (const [i, { photo, label }] of examples.entries()) {
         const embedding = await session.embed(toEmbeddable(photo));
         if (run !== activeRun) return;
-        items.push({ id: photo.id, label: photo.label, embedding });
+        items.push({ id: photo.id, label, embedding });
         dispatch({
           type: "train",
-          train: { phase: "reading", done: i + 1, total: examples.length, current: { photo, embedding } },
+          train: { phase: "reading", done: i + 1, total: examples.length, current: { photo: { ...photo, label }, embedding } },
         });
         await paint();
       }
@@ -186,7 +226,9 @@ export function useLearnGame() {
         return;
       }
       session.setClassifier(classifier);
-      const first = examples[0];
+      // The "photos become numbers" sample: one of the visitor's things, not the background.
+      const firstIndex = Math.max(0, examples.findIndex((e) => e.label !== NONE_LABEL));
+      const first = examples[firstIndex];
       dispatch({
         type: "train",
         train: {
@@ -199,11 +241,11 @@ export function useLearnGame() {
             perGroup: perGroupCounts(examples),
             examples: items.length,
             seconds: (performance.now() - t0 - paused) / 1000,
-            sample: first ? { photo: first, embedding: items[0].embedding } : null,
+            sample: first ? { photo: { ...first.photo, label: first.label }, embedding: items[firstIndex].embedding } : null,
           },
         },
       });
-      void evaluateTests(run, classifier, photos);
+      void evaluateTests(run, classifier, photos, groups);
     } catch (error) {
       if (run !== activeRun || error instanceof TrainingCancelled) return;
       dispatch({ type: "train", train: { phase: "error", message: trainingErrorText(error) } });
@@ -221,21 +263,21 @@ export function useLearnGame() {
 
   // Read example photos (then the test photos) in the background while the
   // visitor is still choosing, so training itself takes seconds.
-  const { step, picked, examples } = state;
+  const { step, groups, examples } = state;
   const modelReady = model.state === "ready";
   useEffect(() => {
     if (!modelReady || step !== "examples") return;
     let stopped = false;
-    const tests = dataset.status === "ready" ? testPhotosFor(picked, dataset.split.test) : [];
+    const tests = dataset.status === "ready" ? testPhotosFor(groups, dataset.split.test) : [];
     const photos = [
-      ...picked.flatMap((category) => examples[category] ?? []).map(toEmbeddable),
+      ...trainingGroups(groups).flatMap(({ id }) => examples[id] ?? []).map(toEmbeddable),
       ...tests.map((p) => ({ id: p.id, url: photoUrl(p), fromVisitor: false })),
     ];
     void getSession().warm(photos, () => stopped);
     return () => {
       stopped = true;
     };
-  }, [modelReady, step, picked, examples, dataset]);
+  }, [modelReady, step, groups, examples, dataset]);
 
   // Leaving the page: drop the model and the visitor's photos.
   useEffect(
@@ -249,7 +291,7 @@ export function useLearnGame() {
   // Booth: intro and results reset after 90 s; mid-game after 3 minutes,
   // except while someone is testing with the camera (no input events then).
   const midGame = step === "pick" || step === "examples" || step === "train" || step === "test";
-  const cameraOnly = (step === "test" && state.testMode === "camera") || state.capture !== null;
+  const cameraOnly = (step === "test" && (state.testMode === "camera" || testPhotos.length === 0)) || state.capture !== null;
   useIdle(nextPlayer, { enabled: step === "intro" || step === "results" });
   useIdle(nextPlayer, { ms: 180_000, enabled: midGame && !cameraOnly });
 
@@ -259,7 +301,8 @@ export function useLearnGame() {
     dataset,
     model,
     testPhotos,
-    actions: { go, start, addFromLibrary, addCameraPhoto, removeExample, train, nextPlayer },
+    libraryPoolFor,
+    actions: { go, start, toExamples, addFromLibrary, addCameraPhoto, removeExample, removeGroup, train, nextPlayer },
   };
 }
 
