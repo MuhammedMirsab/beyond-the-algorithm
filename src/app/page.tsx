@@ -47,7 +47,7 @@ function Hero() {
             Nine quick games made by IISJ Computer Science students. Play one, then see exactly how the AI did it.
           </p>
         </div>
-        <figure className="relative mx-auto -mb-6 w-[min(100%,22rem)] md:mb-0 md:w-full md:max-w-[24rem]">
+        <figure className="relative mx-auto w-[min(100%,22rem)] md:w-full md:max-w-[24rem]">
           <Globe className="w-full" />
           <figcaption className="type-label mt-1 flex items-center justify-center gap-2 text-fg-subtle">
             <span aria-hidden className="size-1.5 rounded-full bg-fg" />
