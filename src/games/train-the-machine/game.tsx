@@ -7,6 +7,7 @@ import { CameraProblem, CameraPrompt, CameraWaiting, ModelLoading } from "@/comp
 import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
+import { entrance } from "@/lib/entrance";
 import { useIdle } from "@/lib/idle";
 import { ActionClassifier, DEFAULT_REJECTION_THRESHOLD, trainFromExamples, type Prediction } from "./engine/classifier";
 import { analyzeTemporalMotion, extractFeatureVector } from "./engine/features";
@@ -377,7 +378,7 @@ export function TrainTheMachineGame() {
     >
       <motion.div
         key={`${visitor}-${step}`}
-        initial={{ opacity: 0 }}
+        initial={entrance({ opacity: 0 })}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
         className="flex flex-1 flex-col"

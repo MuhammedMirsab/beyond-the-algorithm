@@ -143,7 +143,7 @@ export const GAMES: Game[] = [
     slug: "train-the-machine",
     title: "Train the machine",
     short: "Train the machine",
-    hook: "Teach it two moves with your webcam, like a wave and a fist. Then try to fool it.",
+    hook: "Teach it two moves with your webcam, like a wave and a clap. Then try to fool it.",
     skill: "Pose classification",
     group: "learns",
     minutes: 4,

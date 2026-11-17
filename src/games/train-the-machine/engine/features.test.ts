@@ -126,6 +126,34 @@ describe("analyzeTemporalMotion", () => {
   test("too few samples is no motion", () => {
     expect(analyzeTemporalMotion(waving(0.07).slice(0, 3)).isWaving).toBe(false);
   });
+
+  test("arms held out level are not waving, even when the wrists bob around shoulder height", () => {
+    // Choosing the wrist frame by frame flipped between the two hands here, and every flip counted as a wave.
+    const window = Array.from({ length: WINDOW_SIZE }, (_, i) => {
+      const bob = (i % 2 ? 1 : -1) * 0.01;
+      return frame({
+        left_elbow: [0.8, 0.45],
+        right_elbow: [0.2, 0.45],
+        left_wrist: [0.95, 0.45 - bob],
+        right_wrist: [0.05, 0.45 + bob],
+      });
+    });
+    const motion = analyzeTemporalMotion(window);
+    expect(motion.waveReversals).toBe(0);
+    expect(motion.isWaving).toBe(false);
+    const features = extractFeatureVector(window[window.length - 1], window);
+    expect(features?.[FEATURE_COUNT - 1]).toBe(0);
+  });
+
+  test("hidden wrists drifting around are not clapping", () => {
+    const hidden = clapping().map((f) => ({
+      ...f,
+      poseLandmarks: f.poseLandmarks.map((p) => (p.name.endsWith("wrist") ? { ...p, score: 0.05 } : p)),
+    }));
+    const motion = analyzeTemporalMotion(hidden);
+    expect(motion.isClapping).toBe(false);
+    expect(motion.clapOscillations).toBe(0);
+  });
 });
 
 describe("shapes", () => {

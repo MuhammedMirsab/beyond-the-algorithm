@@ -6,6 +6,7 @@ import { GameArt } from "@/components/art/game-art";
 import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
+import { entrance } from "@/lib/entrance";
 import { ExamplesStep } from "./ui/examples-step";
 import { PhotoCredits } from "./ui/photo-credits";
 import { PickStep } from "./ui/pick-step";
@@ -42,7 +43,7 @@ export function HowAiLearnsGame() {
         key={state.step}
         ref={stepRef}
         tabIndex={-1}
-        initial={{ opacity: 0, y: 8 }}
+        initial={entrance({ opacity: 0, y: 8 })}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className="flex flex-1 flex-col outline-none"

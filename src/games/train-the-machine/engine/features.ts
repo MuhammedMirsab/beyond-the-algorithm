@@ -9,6 +9,11 @@
  * - When the legs are out of view, MediaPipe still guesses where they are.
  *   Those guesses jump around and were treated as data; they now count as 0.
  * - Min and max of the wrist distance skipped the first sample.
+ * - Waving followed one wrist per frame, so level wrists (arms out, arms
+ *   folded) flipped between hands and "waved" a dozen times a second. That
+ *   number then outweighed the whole body shape, and a visitor standing still
+ *   in a trained pose scored near 0%. One wrist per window now, and points
+ *   the model can't see never count as movement.
  */
 import { KP, MIN_POINT_SCORE, type HandShape, type Keypoint, type PerceptionResult } from "./types";
 
@@ -127,34 +132,16 @@ export function extractFeatureVector(
   // 5. Movement over the last 1.5 seconds: clapping, walking, waving (6).
   if (window.length >= MIN_WINDOW) {
     const seqLen = window.length;
-    const posed = window.filter(hasPose);
-
+    const m = motionNumbers(window.filter(hasPose), midShY, torsoLen);
     // A. Clapping: the wrists come together and pull apart.
-    const wristDists = posed.map(
-      (f) =>
-        Math.hypot(
-          f.poseLandmarks[KP.leftWrist].x - f.poseLandmarks[KP.rightWrist].x,
-          f.poseLandmarks[KP.leftWrist].y - f.poseLandmarks[KP.rightWrist].y,
-        ) / torsoLen,
-    );
-    const { range: clapRange, dips: clapOscillations } = clapStats(wristDists);
-    features.push(clapRange);
-    features.push(clapOscillations / (seqLen / 15));
-
+    features.push(m.clapRange);
+    features.push(m.clapDips / (seqLen / 15));
     // B. Walking: ankles bob up and down, the hips sway.
-    const lAnkVar = computeVariance(posed.map((f) => f.poseLandmarks[KP.leftAnkle].y));
-    const rAnkVar = computeVariance(posed.map((f) => f.poseLandmarks[KP.rightAnkle].y));
-    const hipXVar = computeVariance(posed.map((f) => f.poseLandmarks[KP.leftHip].x));
-    features.push(legs ? Math.sqrt(lAnkVar) * 20 : 0);
-    features.push(legs ? Math.sqrt(rAnkVar) * 20 : 0);
-    features.push(Math.sqrt(hipXVar) * 25);
-
+    features.push(legs ? m.leftAnkleSd * 20 : 0);
+    features.push(legs ? m.rightAnkleSd * 20 : 0);
+    features.push(m.hipSd * 25);
     // C. Waving: the raised wrist changes direction left and right.
-    const wristXs = posed.map((f) => {
-      const right = f.poseLandmarks[KP.rightWrist];
-      return (right.y < midShY ? right : f.poseLandmarks[KP.leftWrist]).x;
-    });
-    features.push(countReversals(wristXs, WAVE_TURN * torsoLen) / (seqLen / 15));
+    features.push(m.waveReversals / (seqLen / 15));
   } else {
     features.push(0, 0, 0, 0, 0, 0);
   }
@@ -173,6 +160,75 @@ export function calculateAngle(
   let angle = Math.abs((radians * 180) / Math.PI);
   if (angle > 180) angle = 360 - angle;
   return angle;
+}
+
+const seen = (point: Keypoint | undefined) => !!point && point.score >= MIN_POINT_SCORE;
+
+interface MotionNumbers {
+  clapRange: number;
+  clapDips: number;
+  leftAnkleSd: number;
+  rightAnkleSd: number;
+  hipSd: number;
+  waveReversals: number;
+  /** Samples of the raised wrist the wave count was made from. */
+  waveSamples: number;
+}
+
+/**
+ * The movement numbers for one window, shared by the 44 numbers and by the
+ * "did it really move" check, so both always agree.
+ *
+ * A point the pose model can't see still gets a guessed position, and those
+ * guesses drift from frame to frame. Only frames where a point is seen count
+ * for it; otherwise a still visitor with a hidden wrist or hips out of frame
+ * looked like they were clapping, walking or waving.
+ */
+function motionNumbers(posed: readonly PerceptionResult[], midShY: number, torsoLen: number): MotionNumbers {
+  const wrists = posed.filter((f) => seen(f.poseLandmarks[KP.leftWrist]) && seen(f.poseLandmarks[KP.rightWrist]));
+  const wristDists = wrists.map(
+    (f) =>
+      Math.hypot(
+        f.poseLandmarks[KP.leftWrist].x - f.poseLandmarks[KP.rightWrist].x,
+        f.poseLandmarks[KP.leftWrist].y - f.poseLandmarks[KP.rightWrist].y,
+      ) / torsoLen,
+  );
+  const { range: clapRange, dips: clapDips } = clapStats(wristDists);
+
+  const legFrames = posed.filter((f) => f.legsVisible);
+  const hipFrames = posed.filter((f) => seen(f.poseLandmarks[KP.leftHip]));
+  const sd = (values: number[]) => Math.sqrt(computeVariance(values));
+
+  const waveXs = raisedWristXs(posed, midShY);
+  return {
+    clapRange,
+    clapDips,
+    leftAnkleSd: sd(legFrames.map((f) => f.poseLandmarks[KP.leftAnkle].y)),
+    rightAnkleSd: sd(legFrames.map((f) => f.poseLandmarks[KP.rightAnkle].y)),
+    hipSd: sd(hipFrames.map((f) => f.poseLandmarks[KP.leftHip].x)),
+    waveReversals: countReversals(waveXs, WAVE_TURN * torsoLen),
+    waveSamples: waveXs.length,
+  };
+}
+
+/**
+ * Where one raised wrist was across the window. The same wrist for the whole
+ * window (the one held higher on average): choosing per frame jumped between
+ * the two wrists whenever they were level, as with arms out to the sides or
+ * folded, and every jump counted as a wave.
+ */
+function raisedWristXs(posed: readonly PerceptionResult[], midShY: number): number[] {
+  const meanY = (index: number) => {
+    const ys = posed.map((f) => f.poseLandmarks[index]).filter(seen).map((p) => p.y);
+    return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : Number.POSITIVE_INFINITY;
+  };
+  const wrist = meanY(KP.rightWrist) <= meanY(KP.leftWrist) ? KP.rightWrist : KP.leftWrist;
+  const xs: number[] = [];
+  for (const f of posed) {
+    const p = f.poseLandmarks[wrist];
+    if (seen(p) && p.y < midShY + 0.1) xs.push(p.x);
+  }
+  return xs;
 }
 
 export function computeVariance(values: readonly number[]): number {
@@ -251,38 +307,20 @@ export function analyzeTemporalMotion(window: readonly PerceptionResult[] = []):
   if (window.length < MIN_WINDOW || posed.length === 0) return NO_MOTION;
 
   const { midShY, torsoLen } = torsoFrame(posed[0].poseLandmarks);
+  const m = motionNumbers(posed, midShY, torsoLen);
 
   // 1. Clapping: wrists oscillating toward and away from each other.
-  const wristDists = posed.map(
-    (f) =>
-      Math.hypot(
-        f.poseLandmarks[KP.leftWrist].x - f.poseLandmarks[KP.rightWrist].x,
-        f.poseLandmarks[KP.leftWrist].y - f.poseLandmarks[KP.rightWrist].y,
-      ) / torsoLen,
-  );
-  const { range: clapRange, dips: clapOscillations } = clapStats(wristDists);
-  const isClapping = clapOscillations >= 1 && clapRange > 0.16;
+  const isClapping = m.clapDips >= 1 && m.clapRange > 0.16;
 
   // 2. Walking: ankles alternating and the hips moving sideways. Needs the legs in view.
   const legs = posed.some((f) => f.legsVisible);
-  const walkVariance = legs
-    ? Math.sqrt(computeVariance(posed.map((f) => f.poseLandmarks[KP.leftAnkle].y))) +
-      Math.sqrt(computeVariance(posed.map((f) => f.poseLandmarks[KP.rightAnkle].y))) +
-      Math.sqrt(computeVariance(posed.map((f) => f.poseLandmarks[KP.leftHip].x)))
-    : 0;
+  const walkVariance = legs ? m.leftAnkleSd + m.rightAnkleSd + m.hipSd : 0;
   const isWalking = walkVariance > 0.038;
 
   // 3. Waving: a raised wrist moving left and right.
-  const wristXs: number[] = [];
-  for (const f of posed) {
-    const right = f.poseLandmarks[KP.rightWrist];
-    const active = right.y < midShY ? right : f.poseLandmarks[KP.leftWrist];
-    if (active.y < midShY + 0.1) wristXs.push(active.x);
-  }
-  const waveReversals = countReversals(wristXs, WAVE_TURN * torsoLen);
-  const isWaving = waveReversals >= 1 && wristXs.length >= 4;
+  const isWaving = m.waveReversals >= 1 && m.waveSamples >= 4;
 
-  return { isWalking, isClapping, isWaving, clapOscillations, walkVariance, waveReversals };
+  return { isWalking, isClapping, isWaving, clapOscillations: m.clapDips, walkVariance, waveReversals: m.waveReversals };
 }
 
 /* ── Shapes for pictures: the same 13 points, before they become numbers ── */
