@@ -27,6 +27,8 @@ const nextConfig: NextConfig = {
       // ~40 MB of runtime + models, always requested with ?v=<version>: cache forever.
       { source: "/mediapipe/:path*", headers: immutable },
       { source: "/models/:path*", headers: immutable },
+      // Game photos, datasets and models: not content-hashed, so a week rather than forever.
+      { source: "/games/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=86400" }] },
       {
         source: "/:path*",
         headers: [
