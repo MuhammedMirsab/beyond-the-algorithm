@@ -137,6 +137,7 @@ Every animation needs a job: feedback, where something came from, a state change
 - Stagger 40ms, first five items only, never on things people see every minute.
 - The delight budget is spent on rare moments: the reveal of a guess, a round result, the final score. Navigation, hover and lists stay quiet.
 - `MotionConfig reducedMotion="user"` is global. Under reduced motion, movement goes and opacity stays. Canvas and WebGL loops must check `prefers-reduced-motion` themselves.
+- Server-rendered HTML never starts invisible. Anything that can be on a page's first paint takes `initial={entrance({ opacity: 0 })}` (`@/lib/entrance`): no fade on the first paint, the usual fade on every later step. On slow venue Wi-Fi a plain `initial={{ opacity: 0 }}` is a blank screen until the JavaScript arrives.
 
 ## 8. Components
 
@@ -155,8 +156,9 @@ Every animation needs a job: feedback, where something came from, a state change
 `src/components/game`:
 
 - `GameShell`: header with the way back, the game mark and title, an actions slot and the sound switch. `immersive` floats the header over full-bleed camera views.
-- `GameIntro`: the first screen of every game: skill, title, lead, 2 to 3 steps, one big button, requirement chips, small print, art on the game colour.
-- `HowItWorks`: the reveal, numbered steps. Every game ends with one.
+- `GameIntro`: the first screen of every game: skill, title, lead, 2 to 3 steps, one big button, requirement chips, small print, art on the game colour. Below desktop the art is a banner capped at 42% of the screen height, so the title and button stay in view.
+- `HowItWorks`: the reveal, numbered steps. Every game ends with one. Cards share rows (subgrid), so pictures, titles and text line up.
+- `NextPlayerButton` (header) and `NextPlayerIcon` (result screens): the one look for Next player across the arcade.
 - `ResultPanel`, `Notice`.
 - `CameraPrompt`, `CameraWaiting`, `ModelLoading`, `CameraProblem`, `cameraIssueFrom()`, `CAMERA_ISSUE_COPY`, `PRIVACY_LINE`.
 - `Scoreboard`, `NameEntry` (skip always works) with `useLocalBoard()`.
