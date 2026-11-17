@@ -3,12 +3,12 @@
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SensorArt, type SensorId } from "@/components/art/sensor-art";
-import { PhoneHandoff } from "@/components/game/phone-handoff";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Progress } from "@/components/ui/progress";
 import { Kbd } from "@/components/ui/surface";
 import { EXPERIMENT_COUNT, EXPERIMENTS } from "../data/experiments";
+import { LinkHandoff } from "../link/link-panel";
 
 function isTyping(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -109,7 +109,7 @@ export function SensorLab({
       </ul>
 
       <div className="hidden pointer-fine:md:flex">
-        <PhoneHandoff path="/phone" title="Try the real sensors on your phone" text="Scan the code with your phone's camera." size={88} />
+        <LinkHandoff size={88} />
       </div>
     </section>
   );

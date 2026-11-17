@@ -17,6 +17,7 @@ import {
   SLIDER_MIN,
   sliderFromCamera,
 } from "../../engine/light";
+import { useShared } from "../../link/link";
 import { issueCopy } from "../../sensors/status";
 import { useCameraFrames } from "../../sensors/use-camera-frames";
 import { useCapabilities } from "../../sensors/use-device";
@@ -45,8 +46,12 @@ export function LightExperiment({ ctx }: ExperimentProps) {
   const [room, setRoom] = useState<number>(LIGHT_PRESETS[1].value);
   const { markTested } = ctx;
 
-  const sim = mode === "sim";
-  const live = !sim && cam.status === "live" && cam.stats != null;
+  // Only the camera's brightness number reaches a linked booth screen.
+  const shared = useShared("light", { mode, room, status: cam.status, brightness: cam.stats?.brightness ?? null });
+  const status = shared.status;
+  const brightness = shared.brightness;
+  const sim = shared.mode === "sim";
+  const live = !sim && status === "live" && brightness != null;
 
   useEffect(() => {
     if (live) markTested();
@@ -58,12 +63,12 @@ export function LightExperiment({ ctx }: ExperimentProps) {
     setMode(next);
   };
 
-  const lux = luxFromSlider(room);
-  const cameraLevel = cam.stats ? sliderFromCamera(cam.stats.brightness) : null;
-  const level = sim ? room : cameraLevel;
+  const lux = luxFromSlider(shared.room);
+  const cameraLevel = brightness != null ? sliderFromCamera(brightness) : null;
+  const level = sim ? shared.room : cameraLevel;
   const screen = level != null ? screenBrightness(level) : null;
-  const guess = sim ? lightGuessFromLux(lux) : cam.stats ? lightGuessFromCamera(cam.stats.brightness) : null;
-  const island = useIslandNotice(cam.status === "live" && !sim, <IslandLabel tone="camera">Camera on</IslandLabel>);
+  const guess = sim ? lightGuessFromLux(lux) : brightness != null ? lightGuessFromCamera(brightness) : null;
+  const island = useIslandNotice(status === "live" && !sim, <IslandLabel tone="camera">Camera on</IslandLabel>);
 
   const readout = sim
     ? [
@@ -110,7 +115,7 @@ export function LightExperiment({ ctx }: ExperimentProps) {
         </div>
       ) : (
         <LiveControl
-          status={cam.status}
+          status={status}
           startLabel="Measure with the camera"
           startIcon={<Camera />}
           stopLabel="Turn off camera"
@@ -180,7 +185,7 @@ export function LightExperiment({ ctx }: ExperimentProps) {
       readout={readout}
       guess={guess}
       guessWaiting="Measure the light to see what it guesses."
-      primaryTaken={!sim && liveControlHasPrimary(cam.status)}
+      primaryTaken={!sim && liveControlHasPrimary(status)}
       summary={
         sim
           ? `${lux} lux. Screen at ${screen} percent. Guess: ${guess?.label ?? ""}.`

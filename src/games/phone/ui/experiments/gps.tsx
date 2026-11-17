@@ -10,6 +10,7 @@ import { formatDistance, gpsGuess, guessesUntil, positionAt, SCALES, scaleFromAc
 import { clockLabel, type Guess } from "../../engine/math";
 import { issueCopy } from "../../sensors/status";
 import { useCapabilities } from "../../sensors/use-device";
+import { useShared } from "../../link/link";
 import { useGeolocation, type LocationFix } from "../../sensors/use-geolocation";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
 import {
@@ -52,15 +53,25 @@ const WHERE: Record<PlaceId, string> = { home: "A house", school: "School", spor
 
 export function GpsExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
-  const geo = useGeolocation();
+  const geoLocal = useGeolocation();
   const [mode, setMode] = useState<Source>(caps.location ? "live" : "sim");
-  const [day, dispatch] = useReducer(dayReducer, { minute: DAY_START, seen: DAY_START });
+  const [dayLocal, dispatch] = useReducer(dayReducer, { minute: DAY_START, seen: DAY_START });
   const [playing, setPlaying] = useState(false);
   const { markTested } = ctx;
 
-  const sim = mode === "sim";
+  // Only how sure the phone is and its speed are shared, never coordinates (the phone never keeps them either).
+  const shared = useShared("gps", {
+    mode,
+    status: geoLocal.status,
+    fix: geoLocal.fix,
+    fixes: geoLocal.fixes,
+    day: dayLocal,
+  });
+  const geo = { ...geoLocal, status: shared.status, fix: shared.fix, fixes: shared.fixes };
+  const day = shared.day;
+  const sim = shared.mode === "sim";
   const live = !sim && geo.status === "live" && geo.fix != null;
-  const running = sim && playing && day.minute < DAY_END;
+  const running = mode === "sim" && playing && dayLocal.minute < DAY_END;
 
   useEffect(() => {
     if (live) markTested();
@@ -74,7 +85,7 @@ export function GpsExperiment({ ctx }: ExperimentProps) {
 
   const switchMode = (next: Source) => {
     if (next === mode) return;
-    if (next === "sim") geo.stop();
+    if (next === "sim") geoLocal.stop();
     setPlaying(false);
     setMode(next);
   };
@@ -143,7 +154,7 @@ export function GpsExperiment({ ctx }: ExperimentProps) {
                   setPlaying(false);
                   return;
                 }
-                if (day.minute >= DAY_END) dispatch({ type: "restart" });
+                if (dayLocal.minute >= DAY_END) dispatch({ type: "restart" });
                 setPlaying(true);
                 markTested();
               }}

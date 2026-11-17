@@ -29,11 +29,12 @@ Other scripts: `bun run build`, `bun run start`, `bun run typecheck`, `bun run l
 
 ## Environment
 
-Nothing is required. Every game runs in the browser with self-hosted models, so the arcade works offline once it has loaded.
+Nothing is required. Every game runs in the browser with self-hosted models, so the arcade works offline once it has loaded. The one exception is the phone game's link (a visitor's phone driving the booth screen): it finds the other device through the public PeerJS server and STUN, then sends readings over an encrypted WebRTC data channel. Without internet, the QR falls back to a plain link and the phone plays on its own.
 
 | Variable | Notes |
 | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | Optional. Absolute base for share images; Vercel sets its own URL automatically. |
+| `NEXT_PUBLIC_TURN_URL`, `NEXT_PUBLIC_TURN_USERNAME`, `NEXT_PUBLIC_TURN_CREDENTIAL` | Optional. A TURN relay for the phone link on networks that block direct connections. Comma-separate several URLs. |
 
 ## How it's built
 
@@ -54,5 +55,5 @@ src/content/games.ts     the registry of games
 ## At the booth
 
 - Open the arcade full screen (F11). Each game has a **Next player** button that clears everything; intro and result screens also reset after about 90 seconds of no input.
-- On the laptop, the phone game shows a QR code so visitors can play it with their own phone's sensors.
+- On the laptop, the phone game shows a QR code. Scanning it links the visitor's phone to the booth screen, so their phone's sensors drive what everyone sees. **Next player** on either device ends the link.
 - Test the camera games with the real webcam and lighting before doors open.

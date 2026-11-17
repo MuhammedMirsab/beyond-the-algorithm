@@ -4,12 +4,13 @@ import { Check, LayoutGrid } from "lucide-react";
 import { useEffect, useRef, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { SensorArt } from "@/components/art/sensor-art";
 import { PhoneFrame } from "@/components/game/phone-frame";
-import { PhoneHandoff } from "@/components/game/phone-handoff";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/cn";
 import type { Experiment } from "../data/experiments";
 import { clamp, type Guess } from "../engine/math";
+import { useLink } from "../link/link";
+import { LinkHandoff } from "../link/link-panel";
 import { FRAMED_QUERY, useCapabilities, useMediaQuery, useViewportHeight, useViewportWidth } from "../sensors/use-device";
 import { GuessCard, LiveSummary, Readout, SourceBadge, type ReadoutRow, type Source } from "./parts";
 
@@ -95,6 +96,9 @@ export function ExperimentLayout({
   const vh = useViewportHeight();
   const heading = useRef<HTMLHeadingElement>(null);
   const { experiment } = ctx;
+  const link = useLink();
+  // The visitor's phone is driving this screen: the laptop's own controls only mirror it.
+  const mirrored = link.role === "host" && link.linked;
 
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
@@ -134,7 +138,13 @@ export function ExperimentLayout({
           </h2>
           <SourceBadge source={source} />
         </div>
-        {tryIt}
+        {mirrored ? (
+          <p className="type-body text-fg-muted">
+            Controlled from the visitor&apos;s phone. Everything on this screen follows what they do on it.
+          </p>
+        ) : (
+          tryIt
+        )}
       </section>
 
       <section aria-labelledby="readings" className="flex flex-col gap-4">
@@ -217,8 +227,9 @@ export function ExperimentLayout({
         <div
           role="region"
           aria-label={stageLabel}
-          {...surface}
-          className={cn("rounded-[3rem]", surface?.className)}
+          {...(mirrored ? {} : surface)}
+          inert={mirrored}
+          className={cn("rounded-[3rem]", !mirrored && surface?.className)}
           style={frameStyle}
         >
           <PhoneFrame width={width} island={island}>
@@ -229,15 +240,7 @@ export function ExperimentLayout({
       <div className="flex min-w-0 flex-col gap-10 py-2">
         {header}
         {panel}
-        {caps.touch ? null : (
-          <PhoneHandoff
-            path="/phone"
-            title="Try the real sensors on your phone"
-            text="Scan the code with your phone's camera."
-            size={88}
-            className="self-start"
-          />
-        )}
+        {caps.touch ? null : <LinkHandoff size={88} className="self-start" />}
       </div>
     </div>
   );

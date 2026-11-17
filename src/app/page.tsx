@@ -134,8 +134,9 @@ function About() {
               and never recorded or sent anywhere.
             </li>
             <li className="type-body max-w-[34rem] text-fg-muted">
-              <strong className="font-semibold text-fg">Nothing needs the internet once a game has loaded.</strong> Even the
-              handwriting in AirWrite is read on this device.
+              <strong className="font-semibold text-fg">Games keep working offline once they have loaded.</strong> Even the
+              handwriting in AirWrite is read on this device. Linking your phone to the booth screen is the one thing that goes
+              online, and it sends readings, never pictures or sound.
             </li>
             <li className="type-body max-w-[34rem] text-fg-muted">
               <strong className="font-semibold text-fg">Scoreboards stay on this screen.</strong> A name only appears if you type one

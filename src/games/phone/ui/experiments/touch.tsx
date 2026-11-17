@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { localPoint, pushTap, tapRhythm, touchGuess, type TapPoint } from "../../engine/touch";
 import { sound } from "../../engine/sound";
+import { useLink, useShared } from "../../link/link";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
 import { STAGE_BOTTOM, StageShell } from "../parts";
@@ -53,6 +54,8 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
   const down = useRef(new Set<number>());
   const nextId = useRef(0);
   const { markTested } = ctx;
+  const link = useLink();
+  const remoteTouch = link.role === "host" && link.linked;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const g = readGlass(event);
@@ -96,18 +99,33 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
     setContact(null);
   };
 
-  const last = taps[taps.length - 1];
-  const rhythm = tapRhythm(taps);
-  const guess = count > 0 ? touchGuess(taps, glassWidth, fingers.length) : null;
+  // The phone's glass, mirrored on the booth screen (positions are fractions of the glass, so they fit any size).
+  const shared = useShared("touch", { taps, fingers, count, mostFingers, glassWidth, contact, input });
+  const prevCount = useRef(shared.count);
+  useEffect(() => {
+    if (!remoteTouch || shared.count === prevCount.current) return;
+    prevCount.current = shared.count;
+    if (shared.count > 0) {
+      sound.tap();
+      markTested();
+    }
+  }, [remoteTouch, shared.count, markTested]);
+  const { taps: tapsShown, fingers: fingersShown } = shared;
+  const last = tapsShown[tapsShown.length - 1];
+  const rhythm = tapRhythm(tapsShown);
+  const guess = shared.count > 0 ? touchGuess(tapsShown, shared.glassWidth, fingersShown.length) : null;
 
   const readout = [
     { label: "Last tap", value: last ? `x ${last.x}, y ${last.y}` : "Waiting" },
-    { label: "Fingers on the glass", value: String(fingers.length) },
-    { label: "Most at once", value: String(mostFingers) },
-    { label: "Taps", value: String(count) },
+    { label: "Fingers on the glass", value: String(fingersShown.length) },
+    { label: "Most at once", value: String(shared.mostFingers) },
+    { label: "Taps", value: String(shared.count) },
     { label: "Time between taps", value: rhythm != null ? `${rhythm} ms` : "Tap a few times" },
-    { label: "Contact size", value: contact ? `${contact.w} × ${contact.h} px` : input === "mouse" ? "A mouse has none" : "Not reported" },
-    { label: "Touched with", value: input ? (INPUT_LABEL[input] ?? input) : "Waiting" },
+    {
+      label: "Contact size",
+      value: shared.contact ? `${shared.contact.w} × ${shared.contact.h} px` : shared.input === "mouse" ? "A mouse has none" : "Not reported",
+    },
+    { label: "Touched with", value: shared.input ? (INPUT_LABEL[shared.input] ?? shared.input) : "Waiting" },
   ];
 
   const tryIt = (
@@ -128,7 +146,7 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
   return (
     <ExperimentLayout
       ctx={ctx}
-      live={fingers.length > 0}
+      live={fingersShown.length > 0}
       source="live"
       stageLabel="The touchscreen. Tap or click anywhere on it."
       stage={
@@ -146,10 +164,10 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
               backgroundSize: "22px 22px",
             }}
           >
-            {count === 0 ? (
+            {shared.count === 0 ? (
               <div className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center">
                 <div className="flex flex-col gap-2">
-                  <span className="type-title-3 text-fg">{caps.touch ? "Tap the glass" : "Click the glass"}</span>
+                  <span className="type-title-3 text-fg">{caps.touch || remoteTouch ? "Tap the glass" : "Click the glass"}</span>
                   <span className="type-small text-fg-subtle">Every line is a wire carrying a tiny charge.</span>
                 </div>
               </div>
@@ -162,16 +180,16 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
               </>
             ) : null}
 
-            {taps.map((tap, i) => (
+            {tapsShown.map((tap, i) => (
               <span
                 key={tap.id}
                 aria-hidden
                 className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-game"
-                style={{ left: `${tap.fx * 100}%`, top: `${tap.fy * 100}%`, opacity: 0.25 + (0.75 * (i + 1)) / taps.length }}
+                style={{ left: `${tap.fx * 100}%`, top: `${tap.fy * 100}%`, opacity: 0.25 + (0.75 * (i + 1)) / tapsShown.length }}
               />
             ))}
 
-            {fingers.map((f, i) => (
+            {fingersShown.map((f, i) => (
               <span
                 key={f.id}
                 aria-hidden
@@ -192,10 +210,10 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
           </div>
           <div className={cn("flex items-center justify-between gap-3 px-5 pt-4", STAGE_BOTTOM)}>
             <span className="type-label tabular-nums text-fg-subtle">
-              Fingers <span className="text-fg">{fingers.length}</span>
+              Fingers <span className="text-fg">{fingersShown.length}</span>
             </span>
             <span className="type-label tabular-nums text-fg-subtle">
-              Taps <span className="text-fg">{count}</span>
+              Taps <span className="text-fg">{shared.count}</span>
             </span>
           </div>
         </StageShell>
@@ -205,7 +223,7 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
       guess={guess}
       guessWaiting="Tap the glass to see what it guesses."
       primaryTaken={false}
-      summary={last ? `${count} taps. Last at x ${last.x}, y ${last.y}. Guess: ${guess?.label ?? ""}.` : "No taps yet."}
+      summary={last ? `${shared.count} taps. Last at x ${last.x}, y ${last.y}. Guess: ${guess?.label ?? ""}.` : "No taps yet."}
     />
   );
 }

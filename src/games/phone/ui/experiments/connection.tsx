@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { TECH_DETAILS, WIFI_PLACES, type WifiNetwork, type WifiPlaceId } from "../../data/connection";
 import { connectionGuess, connectionLabel, speedClass } from "../../engine/connection";
 import type { Guess } from "../../engine/math";
+import { useLink, useShared } from "../../link/link";
 import { useConnection } from "../../sensors/use-connection";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
@@ -15,11 +16,16 @@ import { ModeSwitch, STAGE_BOTTOM, StageScore, StageShell, type ReadoutRow, type
 export function ConnectionExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
   const [mode, setMode] = useState<Source>(caps.connection ? "live" : "sim");
-  const sim = mode === "sim";
-  const conn = useConnection(!sim);
+  const local = useConnection(mode !== "sim");
   const [placeId, setPlaceId] = useState<WifiPlaceId>("home");
   const { markTested } = ctx;
 
+  const link = useLink();
+  const mirrored = link.role === "host" && link.linked;
+  // A linked phone's connection, not the laptop's.
+  const shared = useShared("connection", { mode, info: local.info, online: local.online, placeId });
+  const conn = { info: shared.info, online: shared.online };
+  const sim = shared.mode === "sim";
   const info = conn.info;
   const live = !sim && info != null;
 
@@ -27,7 +33,7 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
     if (live) markTested();
   }, [live, markTested]);
 
-  const place = WIFI_PLACES.find((p) => p.id === placeId) ?? WIFI_PLACES[0];
+  const place = WIFI_PLACES.find((p) => p.id === shared.placeId) ?? WIFI_PLACES[0];
 
   let guess: Guess | null;
   let readout: ReadoutRow[];
@@ -69,7 +75,7 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
         </div>
       ) : (
         <p className="type-body text-fg-muted">
-          These are this {caps.touch ? "phone's" : "laptop's"} real connection readings. Any website can read them, without asking. The
+          These are this {caps.touch || mirrored ? "phone's" : "laptop's"} real connection readings. Any website can read them, without asking. The
           browser rounds them on purpose.
         </p>
       )}

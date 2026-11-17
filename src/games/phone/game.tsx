@@ -2,7 +2,7 @@
 
 import { RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { SensorId } from "@/components/art/sensor-art";
 import { GameShell } from "@/components/game/game-shell";
 import { Button, IconButton } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { useIdle } from "@/lib/idle";
 import { isSoundOn, subscribeSound } from "@/lib/sound";
 import { EXPERIMENT_COUNT, EXPERIMENTS, experimentIndex } from "./data/experiments";
 import { sound } from "./engine/sound";
+import { LinkProvider, LinkScope, NAV_KEY, useLink, useRemoteValue } from "./link/link";
+import { PhoneLinkBar } from "./link/link-panel";
 import { useCapabilities } from "./sensors/use-device";
 import type { ExperimentContext } from "./ui/experiment-layout";
 import { BatteryExperiment } from "./ui/experiments/battery";
@@ -41,22 +43,56 @@ const EMPTY: ReadonlySet<SensorId> = new Set();
  * leaving an experiment unmounts it, which stops its sensors.
  */
 export function PhoneGame() {
-  const [screen, setScreen] = useState<Screen>({ name: "intro" });
-  const [tested, setTested] = useState<ReadonlySet<SensorId>>(EMPTY);
   const [round, setRound] = useState(0);
+  // A session ended from the other device (or the phone went quiet): start over, forgetting everything.
+  const onEnded = useCallback(() => setRound((r) => r + 1), []);
+  return (
+    <LinkProvider onEnded={onEnded}>
+      <PhoneGameRound key={round} onReset={onEnded} />
+    </LinkProvider>
+  );
+}
+
+/** What the linked phone tells the laptop about where it is. */
+interface Nav {
+  screen: Screen;
+  tested: SensorId[];
+  visit: number;
+}
+
+function PhoneGameRound({ onReset }: { onReset: () => void }) {
+  const [screen, setScreen] = useState<Screen>({ name: "intro" });
+  const [localTested, setTested] = useState<ReadonlySet<SensorId>>(EMPTY);
+  const [visit, setVisit] = useState(0);
   const [moved, setMoved] = useState(false);
   const caps = useCapabilities();
+  const link = useLink();
+  const { role, publish } = link;
 
   const go = useCallback((next: Screen) => {
     setMoved(true);
     setScreen(next);
+    setVisit((v) => v + 1);
   }, []);
 
+  // Next player: ends any phone link (both sides forget it) and remounts the whole game.
   const reset = useCallback(() => {
-    setScreen({ name: "intro" });
-    setTested(EMPTY);
-    setRound((r) => r + 1);
-  }, []);
+    link.end({ notify: false });
+    onReset();
+  }, [link, onReset]);
+
+  // The phone tells the laptop which screen it is on; the laptop follows it.
+  useEffect(() => {
+    if (role === "phone") publish(NAV_KEY, { screen, tested: [...localTested], visit } satisfies Nav);
+  });
+  const remote = useRemoteValue<Nav>(NAV_KEY);
+  const following = remote != null;
+  const shown: Screen = following ? remote.screen : screen;
+  const tested = useMemo<ReadonlySet<SensorId>>(
+    () => (following ? new Set(remote.tested) : localTested),
+    [following, remote, localTested],
+  );
+  const scope = String(following ? remote.visit : visit);
 
   const markTested = useCallback((id: SensorId) => {
     setTested((prev) => {
@@ -85,16 +121,17 @@ export function PhoneGame() {
     };
   }, []);
 
-  const screenKey = `${round}:${screen.name}:${screen.name === "experiment" ? screen.id : ""}`;
+  const screenKey = `${scope}:${shown.name}:${shown.name === "experiment" ? shown.id : ""}`;
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [screenKey]);
 
   // The booth laptop resets itself for the next visitor. Phones belong to their owners.
-  useIdle(reset, { enabled: !caps.touch && screen.name !== "intro" });
+  // While a phone is linked, the visitor is busy on the phone, not the laptop.
+  useIdle(reset, { enabled: !caps.touch && !link.linked && shown.name !== "intro" });
 
   let content;
-  switch (screen.name) {
+  switch (shown.name) {
     case "intro":
       content = <PhoneIntro onStart={() => go({ name: "lab" })} />;
       break;
@@ -102,13 +139,13 @@ export function PhoneGame() {
       content = <SensorLab tested={tested} onOpen={(id) => go({ name: "experiment", id })} onQuiz={() => go({ name: "quiz" })} />;
       break;
     case "experiment": {
-      const index = experimentIndex(screen.id);
+      const index = experimentIndex(shown.id);
       const nextId = EXPERIMENTS[index + 1]?.id;
       content = (
         <ExperimentScreen
           key={screenKey}
-          id={screen.id}
-          tested={tested.has(screen.id)}
+          id={shown.id}
+          tested={tested.has(shown.id)}
           markTested={markTested}
           onNext={() => go(nextId ? { name: "experiment", id: nextId } : { name: "quiz" })}
           nextLabel={nextId ? "Next sensor" : "Take the quiz"}
@@ -121,7 +158,7 @@ export function PhoneGame() {
       content = <Quiz key={screenKey} onDone={(score) => go({ name: "takeaway", score })} />;
       break;
     case "takeaway":
-      content = <Takeaway score={screen.score} tested={tested.size} onNextPlayer={reset} onLab={() => go({ name: "lab" })} />;
+      content = <Takeaway score={shown.score} tested={tested.size} onNextPlayer={reset} onLab={() => go({ name: "lab" })} />;
       break;
   }
 
@@ -130,7 +167,7 @@ export function PhoneGame() {
       slug="phone"
       sound
       actions={
-        screen.name === "intro" ? null : (
+        shown.name === "intro" && !link.linked ? null : (
           <>
             <Button variant="ghost" icon={<RotateCcw />} onClick={reset} className="max-sm:hidden">
               Next player
@@ -140,6 +177,7 @@ export function PhoneGame() {
         )
       }
     >
+      {role === "phone" || link.phase === "ended" || link.phase === "failed" ? <PhoneLinkBar /> : null}
       <motion.div
         key={screenKey}
         initial={moved ? { opacity: 0, y: 8 } : false}
@@ -147,7 +185,7 @@ export function PhoneGame() {
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         className="flex flex-1 flex-col"
       >
-        {content}
+        <LinkScope value={scope}>{content}</LinkScope>
       </motion.div>
     </GameShell>
   );

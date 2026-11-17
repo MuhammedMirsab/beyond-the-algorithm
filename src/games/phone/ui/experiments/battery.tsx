@@ -7,6 +7,7 @@ import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/cn";
 import { ACTIVITIES, CHARGING_WEEK, type BatteryActivity } from "../../data/battery";
 import { batteryGuess, daySegments, drain, formatDuration, FULL, LOW_AT, roughClock, sleepWindow } from "../../engine/battery";
+import { useLink, useShared } from "../../link/link";
 import { useBattery } from "../../sensors/use-battery";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
@@ -17,22 +18,45 @@ const SLEEP = sleepWindow(CHARGING_WEEK);
 export function BatteryExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
   const [mode, setMode] = useState<Source>(caps.battery ? "live" : "sim");
-  const sim = mode === "sim";
-  const battery = useBattery(!sim);
+  const battery = useBattery(mode !== "sim");
   const [simLevel, setSimLevel] = useState(FULL);
   const [simCharging, setSimCharging] = useState(false);
   const [lastActivity, setLastActivity] = useState<BatteryActivity | null>(null);
   const { markTested } = ctx;
 
-  const reading = battery.reading;
+  const link = useLink();
+  const mirrored = link.role === "host" && link.linked;
+  // A linked phone's battery, not the laptop's. JSON has no Infinity, so "not known" travels as -1.
+  const local = battery.reading;
+  const shared = useShared("battery", {
+    mode,
+    reading: local
+      ? {
+          ...local,
+          chargingTime: Number.isFinite(local.chargingTime) ? local.chargingTime : -1,
+          dischargingTime: Number.isFinite(local.dischargingTime) ? local.dischargingTime : -1,
+        }
+      : null,
+    simLevel,
+    simCharging,
+    lastActivity,
+  });
+  const sim = shared.mode === "sim";
+  const reading = shared.reading
+    ? {
+        ...shared.reading,
+        chargingTime: shared.reading.chargingTime < 0 ? Infinity : shared.reading.chargingTime,
+        dischargingTime: shared.reading.dischargingTime < 0 ? Infinity : shared.reading.dischargingTime,
+      }
+    : null;
   const live = !sim && reading != null;
 
   useEffect(() => {
     if (live) markTested();
   }, [live, markTested]);
 
-  const level = sim ? simLevel : (reading?.level ?? null);
-  const charging = sim ? simCharging : (reading?.charging ?? false);
+  const level = sim ? shared.simLevel : (reading?.level ?? null);
+  const charging = sim ? shared.simCharging : (reading?.charging ?? false);
   const guess = level != null ? batteryGuess(level, charging) : null;
 
   const run = (activity: BatteryActivity) => {
@@ -44,9 +68,9 @@ export function BatteryExperiment({ ctx }: ExperimentProps) {
 
   const readout = sim
     ? [
-        { label: "Battery", value: `${simLevel}%` },
-        { label: "Charging", value: simCharging ? "Yes" : "No" },
-        { label: "Last hour", value: lastActivity ? lastActivity.name : "Nothing yet" },
+        { label: "Battery", value: `${shared.simLevel}%` },
+        { label: "Charging", value: shared.simCharging ? "Yes" : "No" },
+        { label: "Last hour", value: shared.lastActivity ? shared.lastActivity.name : "Nothing yet" },
       ]
     : [
         { label: "Battery", value: reading ? `${reading.level}%` : "Waiting" },
@@ -86,9 +110,9 @@ export function BatteryExperiment({ ctx }: ExperimentProps) {
               Charge it
             </Button>
           </div>
-          {lastActivity ? (
+          {shared.lastActivity ? (
             <p className="type-body text-fg-muted" aria-live="polite">
-              <span className="font-semibold text-fg">{lastActivity.name}:</span> {lastActivity.reason}
+              <span className="font-semibold text-fg">{shared.lastActivity.name}:</span> {shared.lastActivity.reason}
             </p>
           ) : null}
         </div>
@@ -96,7 +120,7 @@ export function BatteryExperiment({ ctx }: ExperimentProps) {
         <p className="type-body text-fg-muted">This browser didn&apos;t share the battery. Try the simulation.</p>
       ) : (
         <p className="type-body text-fg-muted">
-          These are this {caps.touch ? "phone's" : "laptop's"} real battery readings. Any website can read them, without asking.
+          These are this {caps.touch || mirrored ? "phone's" : "laptop's"} real battery readings. Any website can read them, without asking.
         </p>
       )}
     </div>

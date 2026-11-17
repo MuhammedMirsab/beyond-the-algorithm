@@ -11,6 +11,7 @@ import { createStepState, movementGuess, movementKind, stepReducer, syntheticFor
 import { ballOffset, dragTilt, keyTilt, LEVEL, tiltGuess, type Tilt } from "../../engine/tilt";
 import { issueCopy } from "../../sensors/status";
 import { useCapabilities } from "../../sensors/use-device";
+import { useShared } from "../../link/link";
 import { useDeviceTilt, type MovementReading } from "../../sensors/use-device-tilt";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
 import {
@@ -49,10 +50,20 @@ export function MotionExperiment({ ctx }: ExperimentProps) {
   const drag = useRef<{ id: number; x: number; y: number } | null>(null);
   const { markTested } = ctx;
 
-  const live = mode === "live" && sensor.status === "live";
-  const sim = mode === "sim";
-  const tilt = sim ? simTilt : sensor.tilt;
-  const movement = sim ? simMovement : sensor.movement;
+  // On a linked phone these go to the booth screen; on the booth laptop they come from the phone.
+  const shared = useShared("motion", {
+    mode,
+    status: sensor.status,
+    tilt: sensor.tilt,
+    movement: sensor.movement,
+    rate: sensor.rate,
+    simTilt,
+    simMovement,
+  });
+  const live = shared.mode === "live" && shared.status === "live";
+  const sim = shared.mode === "sim";
+  const tilt = sim ? shared.simTilt : shared.tilt;
+  const movement = sim ? shared.simMovement : shared.movement;
 
   useEffect(() => {
     if (live) markTested();
@@ -126,7 +137,7 @@ export function MotionExperiment({ ctx }: ExperimentProps) {
     { label: "Left or right", value: `${signed(tilt.roll)}°` },
     { label: "Steps counted", value: movement ? String(movement.steps) : "0" },
     { label: "Movement", value: movement ? KIND_LABEL[movement.kind] : "Still" },
-    ...(live && sensor.rate ? [{ label: "Readings a second", value: String(sensor.rate) }] : []),
+    ...(live && shared.rate ? [{ label: "Readings a second", value: String(shared.rate) }] : []),
     { label: "Sensors", value: ctx.experiment.tech },
   ];
 
@@ -187,7 +198,7 @@ export function MotionExperiment({ ctx }: ExperimentProps) {
         </div>
       ) : (
         <LiveControl
-          status={sensor.status}
+          status={shared.status}
           startLabel="Turn on motion sensors"
           startIcon={<Rotate3d />}
           stopLabel="Turn off motion sensors"
@@ -234,7 +245,7 @@ export function MotionExperiment({ ctx }: ExperimentProps) {
       readout={readout}
       guess={sim || live ? guess : null}
       guessWaiting="Turn on the motion sensors to see what it guesses."
-      primaryTaken={!sim && liveControlHasPrimary(sensor.status)}
+      primaryTaken={!sim && liveControlHasPrimary(shared.status)}
       summary={`Tilted ${signed(tilt.pitch)} degrees forward and ${signed(tilt.roll)} sideways. Guess: ${guess.label}.`}
     />
   );

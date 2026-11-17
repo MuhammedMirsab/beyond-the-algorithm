@@ -7,6 +7,7 @@ import { ToggleChip } from "@/components/ui/chip";
 import { cn } from "@/lib/cn";
 import { levelPercent, QUIET_LEVEL, rmsFromBytes, soundGuess, synthBytes, wavePath, type SimSound } from "../../engine/audio-level";
 import { pushLimited } from "../../engine/math";
+import { useLink, useShared } from "../../link/link";
 import { issueCopy } from "../../sensors/status";
 import { useCapabilities } from "../../sensors/use-device";
 import { LEVEL_HISTORY, useMicLevel } from "../../sensors/use-mic-level";
@@ -23,6 +24,8 @@ import {
   type Source,
 } from "../parts";
 
+const WAVE_POINTS = 96;
+
 const SIM_SOUNDS: { id: SimSound; label: string }[] = [
   { id: "quiet", label: "A quiet room" },
   { id: "talking", label: "Someone talking" },
@@ -38,27 +41,57 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
   const [simHistory, setSimHistory] = useState<number[]>([]);
   const { markTested } = ctx;
 
-  const sim = mode === "sim";
-  const live = !sim && mic.status === "live";
+  const link = useLink();
+  const sending = link.role === "phone" && link.linked;
+  const mirrored = link.role === "host" && link.linked;
+  const [wave, setWave] = useState<number[] | null>(null);
+
+  // A linked phone sends a rough outline of the wave, 12 times a second: enough to draw, far too little to hear.
+  const { analyser } = mic;
+  useEffect(() => {
+    if (!sending || mode !== "live" || mic.status !== "live") return;
+    const buffer = new Uint8Array(2048);
+    const id = window.setInterval(() => {
+      const node = analyser.current;
+      if (!node) return;
+      node.getByteTimeDomainData(buffer);
+      const step = Math.floor(buffer.length / WAVE_POINTS);
+      setWave(Array.from({ length: WAVE_POINTS }, (_, i) => buffer[i * step]));
+    }, 83);
+    return () => window.clearInterval(id);
+  }, [sending, mode, mic.status, analyser]);
+
+  const shared = useShared("microphone", {
+    mode,
+    simSound,
+    status: mic.status,
+    level: mic.level,
+    history: mic.history,
+    sampleRate: mic.sampleRate,
+    wave: sending && mic.status === "live" ? wave : null,
+  });
+  const sim = shared.mode === "sim";
+  const live = !sim && shared.status === "live";
 
   useEffect(() => {
     if (live) markTested();
   }, [live, markTested]);
 
   // The simulated sound runs through the same level maths as the real microphone.
+  const playing = shared.simSound;
   useEffect(() => {
-    if (!sim || !simSound) return;
+    if (!sim || !playing) return;
     let recent: number[] = [];
     const startedAt = performance.now();
     const id = window.setInterval(() => {
       const seconds = (performance.now() - startedAt) / 1000;
-      const value = levelPercent(rmsFromBytes(synthBytes(simSound, seconds)));
+      const value = levelPercent(rmsFromBytes(synthBytes(playing, seconds)));
       recent = pushLimited(recent, value, LEVEL_HISTORY);
       setSimLevel(value);
       setSimHistory(recent);
     }, 83);
     return () => window.clearInterval(id);
-  }, [sim, simSound]);
+  }, [sim, playing]);
 
   const switchMode = (next: Source) => {
     if (next === mode) return;
@@ -66,9 +99,9 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
     setMode(next);
   };
 
-  const level = sim ? simLevel : mic.level;
-  const history = sim ? simHistory : mic.history;
-  const active = sim ? simSound != null : live;
+  const level = sim ? simLevel : shared.level;
+  const history = sim ? simHistory : shared.history;
+  const active = sim ? shared.simSound != null : live;
   const guess = active ? soundGuess(history) : null;
   const island = useIslandNotice(live, <IslandLabel tone="microphone">Microphone on</IslandLabel>);
 
@@ -76,7 +109,7 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
     { label: "Loudness", value: active ? `${level} of 100` : "Waiting" },
     {
       label: "Samples a second",
-      value: sim ? "Simulated" : mic.sampleRate ? mic.sampleRate.toLocaleString("en") : "Waiting",
+      value: sim ? "Simulated" : shared.sampleRate ? shared.sampleRate.toLocaleString("en") : "Waiting",
     },
     { label: "Seconds it listens to", value: "The last 3" },
     { label: "Recorded or saved", value: "Nothing" },
@@ -92,7 +125,7 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
             {SIM_SOUNDS.map((s) => (
               <ToggleChip
                 key={s.id}
-                pressed={simSound === s.id}
+                pressed={shared.simSound === s.id}
                 onClick={() => {
                   setSimSound(s.id);
                   markTested();
@@ -105,7 +138,7 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
         </div>
       ) : (
         <LiveControl
-          status={mic.status}
+          status={shared.status}
           startLabel="Turn on microphone"
           startIcon={<Mic />}
           stopLabel="Turn off microphone"
@@ -131,7 +164,12 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
         <StageShell title="Microphone" source={sim ? "sim" : "live"} className="dot-field">
           <div className="flex flex-1 flex-col justify-center gap-6 px-5">
             <StageScore value={active ? level : 0} label="Loudness" />
-            <Waveform analyser={sim ? null : mic.analyser} synth={sim ? simSound : null} active={active} />
+            <Waveform
+              analyser={sim || mirrored ? null : mic.analyser}
+              synth={sim ? shared.simSound : null}
+              samples={mirrored && !sim ? shared.wave : null}
+              active={active}
+            />
             <LevelBars history={history} />
           </div>
           <p className={cn("type-label px-5 text-game", STAGE_BOTTOM)}>{guess ? guess.label : "Not listening"}</p>
@@ -141,7 +179,7 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
       readout={readout}
       guess={guess}
       guessWaiting="Turn on the microphone, or pick a sound, to see what it guesses."
-      primaryTaken={!sim && liveControlHasPrimary(mic.status)}
+      primaryTaken={!sim && liveControlHasPrimary(shared.status)}
       summary={active ? `Loudness ${level} of 100. Guess: ${guess?.label ?? ""}.` : "Microphone is off."}
     />
   );
@@ -151,10 +189,13 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
 function Waveform({
   analyser,
   synth,
+  samples = null,
   active,
 }: {
   analyser: RefObject<AnalyserNode | null> | null;
   synth: SimSound | null;
+  /** The outline a linked phone sends, drawn as it arrives. */
+  samples?: number[] | null;
   active: boolean;
 }) {
   const path = useRef<SVGPathElement>(null);
@@ -164,6 +205,10 @@ function Waveform({
     if (!el) return;
     if (!active) {
       el.setAttribute("d", wavePath(null, 100, 40));
+      return;
+    }
+    if (samples) {
+      el.setAttribute("d", wavePath(samples, 100, 40));
       return;
     }
     const buffer = new Uint8Array(2048);
@@ -183,7 +228,7 @@ function Waveform({
     };
     frame = window.requestAnimationFrame(draw);
     return () => window.cancelAnimationFrame(frame);
-  }, [analyser, synth, active, reduce]);
+  }, [analyser, synth, samples, active, reduce]);
   return (
     <svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden className="h-28 w-full text-game">
       <line x1={0} y1={20} x2={100} y2={20} strokeWidth={1} vectorEffect="non-scaling-stroke" className="stroke-fg/15" />

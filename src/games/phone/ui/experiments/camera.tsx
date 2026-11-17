@@ -15,6 +15,7 @@ import {
   SCENE_HEIGHT,
   SCENE_WIDTH,
 } from "../../engine/frame-stats";
+import { useLink, useShared } from "../../link/link";
 import { issueCopy } from "../../sensors/status";
 import { useCameraFrames, type CellView } from "../../sensors/use-camera-frames";
 import { useCapabilities } from "../../sensors/use-device";
@@ -42,8 +43,27 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
   const [focus, setFocus] = useState(30);
   const { markTested } = ctx;
 
-  const sim = mode === "sim";
-  const live = !sim && cam.status === "live";
+  // The picture never leaves the phone. A linked booth screen gets only the numbers and the coarse dot grid.
+  const link = useLink();
+  const mirrored = link.role === "host" && link.linked;
+  const shared = useShared("camera", {
+    mode,
+    view,
+    light,
+    focus,
+    status: cam.status,
+    stats: cam.stats,
+    grid: cam.view ? { cols: cam.view.cols, rows: cam.view.rows, cells: Array.from(cam.view.cells, (v) => Math.round(v * 100)) } : null,
+  });
+  const remoteView = useMemo<CellView | null>(
+    () =>
+      shared.grid ? { cols: shared.grid.cols, rows: shared.grid.rows, cells: Float32Array.from(shared.grid.cells, (v) => v / 100) } : null,
+    [shared.grid],
+  );
+  const status = shared.status;
+  const sim = shared.mode === "sim";
+  const live = !sim && status === "live";
+  const shownView: View = mirrored && !sim ? "numbers" : shared.view;
 
   useEffect(() => {
     if (live && cam.stats) markTested();
@@ -52,8 +72,8 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
   // The simulated picture goes through exactly the same measurements as the camera.
   const scene = useMemo(() => renderScene(), []);
   const simFrame = useMemo(
-    () => applyLightAndFocus(scene, SCENE_WIDTH, SCENE_HEIGHT, light / 100, blurFromFocus(focus)),
-    [scene, light, focus],
+    () => applyLightAndFocus(scene, SCENE_WIDTH, SCENE_HEIGHT, shared.light / 100, blurFromFocus(shared.focus)),
+    [scene, shared.light, shared.focus],
   );
   const simLuma = useMemo(() => lumaFromRGBA(simFrame, SCENE_WIDTH, SCENE_HEIGHT), [simFrame]);
   const simStats = useMemo(() => frameStatsFromLuma(simLuma, SCENE_WIDTH, SCENE_HEIGHT), [simLuma]);
@@ -63,8 +83,8 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
     return { cells: cellGrid(simLuma, SCENE_WIDTH, SCENE_HEIGHT, cols, rows), cols, rows };
   }, [simLuma]);
 
-  const stats = sim ? simStats : cam.stats;
-  const cells = sim ? simView : cam.view;
+  const stats = sim ? simStats : shared.stats;
+  const cells = sim ? simView : mirrored ? remoteView : cam.view;
   const guess = stats ? cameraGuess(stats) : null;
 
   const switchMode = (next: Source) => {
@@ -112,7 +132,7 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
         </div>
       ) : (
         <LiveControl
-          status={cam.status}
+          status={status}
           startLabel="Turn on camera"
           startIcon={<Camera />}
           stopLabel="Turn off camera"
@@ -162,10 +182,10 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
                 aria-hidden
                 className="absolute inset-0 size-full -scale-x-100 object-cover"
               />
-              {cam.status !== "live" ? <CameraOffNotice starting={cam.status === "starting"} /> : null}
+              {status !== "live" ? <CameraOffNotice starting={status === "starting"} /> : null}
             </>
           )}
-          {view === "numbers" && cells ? <DotsCanvas view={cells} /> : null}
+          {shownView === "numbers" && cells ? <DotsCanvas view={cells} /> : null}
           <div className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-5 pt-10", STAGE_BOTTOM)}>
             <div className="flex items-end justify-between gap-4">
               <Meter label="Bright" value={stats?.brightness ?? 0} />
@@ -178,7 +198,7 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
       readout={readout}
       guess={guess}
       guessWaiting="Turn on the camera to see what it can make out."
-      primaryTaken={!sim && liveControlHasPrimary(cam.status)}
+      primaryTaken={!sim && liveControlHasPrimary(status)}
       summary={
         stats
           ? `Brightness ${Math.round(stats.brightness * 100)} percent, sharpness ${Math.round(stats.sharpness * 100)}. Guess: ${guess?.label ?? ""}.`

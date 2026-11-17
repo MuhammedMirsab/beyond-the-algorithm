@@ -10,6 +10,7 @@ import { Score } from "@/components/ui/score";
 import { StatusDot } from "@/components/ui/surface";
 import { cn } from "@/lib/cn";
 import type { Guess } from "../engine/math";
+import { useLink } from "../link/link";
 import { useThrottled } from "../sensors/use-device";
 import { isProblem, type IssueCopy, type SensorStatus } from "../sensors/status";
 
@@ -17,8 +18,9 @@ export type Source = "live" | "sim";
 
 /** Says where the numbers come from. Simulations are always labelled. */
 export function SourceBadge({ source, className }: { source: Source; className?: string }) {
+  const link = useLink();
   return source === "live" ? (
-    <StatusDot tone="success" label="Live sensor" className={className} />
+    <StatusDot tone="success" label={link.role === "host" && link.linked ? "Live from the phone" : "Live sensor"} className={className} />
   ) : (
     <Chip icon={<FlaskConical />} className={className}>
       Simulated on this device

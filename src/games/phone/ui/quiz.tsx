@@ -7,14 +7,17 @@ import { StepDots } from "@/components/ui/progress";
 import { cn } from "@/lib/cn";
 import { correctIndex, QUIZ_LENGTH, QUIZ_QUESTIONS, quizScore } from "../data/quiz";
 import { sound } from "../engine/sound";
+import { useShared } from "../link/link";
 
 const LETTERS = ["A", "B", "C", "D"];
 const KEYS: Record<string, number> = { "1": 0, "2": 1, "3": 2, a: 0, b: 1, c: 2 };
 
 /** Five everyday moments, one at a time. An answer locks, then the explanation shows. */
 export function Quiz({ onDone }: { onDone: (score: number) => void }) {
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<(number | null)[]>(() => QUIZ_QUESTIONS.map(() => null));
+  const [localIndex, setIndex] = useState(0);
+  const [localAnswers, setAnswers] = useState<(number | null)[]>(() => QUIZ_QUESTIONS.map(() => null));
+  // A booth screen linked to a phone shows the phone's question and answers.
+  const { index, answers } = useShared("quiz", { index: localIndex, answers: localAnswers });
   const heading = useRef<HTMLHeadingElement>(null);
 
   const question = QUIZ_QUESTIONS[index];
