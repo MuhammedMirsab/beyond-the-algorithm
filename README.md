@@ -1,6 +1,6 @@
 # Beyond the Algorithm
 
-Nine short games that show what AI can work out about you. Built by IISJ Computer Science students for **EDEX 2026** at International Indian School Jeddah (19 and 20 November 2026).
+Ten short games that show what AI can work out about you. Built by IISJ Computer Science students for **EDEX 2026** at International Indian School Jeddah (19 and 20 November 2026).
 
 | Group | Game | Route | What the AI does |
 | --- | --- | --- | --- |
@@ -9,6 +9,7 @@ Nine short games that show what AI can work out about you. Built by IISJ Compute
 | It sees you | Face Control | `/face-control` | 478 face landmarks become a controller |
 | | AirWrite | `/airwrite` | 21 hand landmarks write; an on-device matcher reads the letters |
 | | Viewfinder | `/viewfinder` | Two-hand tracking frames a live lens |
+| | Air Studio | `/air-studio` | Hand gestures (strikes, strums, height) play five instruments |
 | It learns from you | Train the machine | `/train-the-machine` | Pose classification from your examples |
 | | See how AI learns | `/how-ai-learns` | Transfer learning on MobileNet |
 | It's already around you | Real or AI? | `/real-or-ai` | Spot the AI-edited photo |
@@ -57,3 +58,13 @@ src/content/games.ts     the registry of games
 - Open the arcade full screen (F11). Each game has a **Next player** button that clears everything; intro and result screens also reset after about 90 seconds of no input.
 - On the laptop, the phone game shows a QR code. Scanning it links the visitor's phone to the booth screen, so their phone's sensors drive what everyone sees. **Next player** on either device ends the link.
 - Test the camera games with the real webcam and lighting before doors open.
+
+## Credits
+
+Air Studio's instrument sounds, served from `public/games/air-studio/samples`:
+
+- Salamander Grand Piano V3 by Alexander Holm (CC BY 3.0)
+- tonejs-instruments guitar and bass samples (MIT)
+- TR-808 samples via @fluid-music/tr-808 (ISC)
+
+Hand, face and pose tracking: Google MediaPipe (Apache 2.0). Photo credits for See how AI learns and Real or AI? are shown inside each game.

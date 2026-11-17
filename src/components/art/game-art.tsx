@@ -1,4 +1,5 @@
 import type { GameSlug } from "@/content/games";
+import { AirStudioArt } from "./games/air-studio-art";
 import { AirWriteArt } from "./games/airwrite-art";
 import { FaceControlArt } from "./games/face-control-art";
 import { LearnsArt } from "./games/learns-art";
@@ -35,6 +36,8 @@ function Illustration({ slug }: { slug: GameSlug }) {
       return <AirWriteArt />;
     case "viewfinder":
       return <ViewfinderArt />;
+    case "air-studio":
+      return <AirStudioArt />;
     case "train-the-machine":
       return <TrainArt />;
     case "how-ai-learns":

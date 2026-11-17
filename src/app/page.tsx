@@ -44,7 +44,7 @@ function Hero() {
         <div className="relative z-10 flex flex-col gap-5">
           <h1 className="type-display-1 max-w-[15ch] text-fg">How much can a machine work out about you?</h1>
           <p className="type-body-lg max-w-[32rem] text-fg-muted">
-            Nine quick games made by IISJ Computer Science students. Play one, then see exactly how the AI did it.
+            Ten quick games made by IISJ Computer Science students. Play one, then see exactly how the AI did it.
           </p>
         </div>
         <figure className="relative mx-auto w-[min(100%,22rem)] md:w-full md:max-w-[24rem]">

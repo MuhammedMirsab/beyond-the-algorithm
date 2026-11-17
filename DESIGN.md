@@ -1,6 +1,6 @@
 # Beyond the Algorithm: design system
 
-The arcade for EDEX 2026 (IISJ Computer Science). Nine short games, each showing one thing AI can work out about a person. This file is the source of truth for how every screen looks, moves and reads. The live reference is `/design`.
+The arcade for EDEX 2026 (IISJ Computer Science). Ten short games, each showing one thing AI can work out about a person. This file is the source of truth for how every screen looks, moves and reads. The live reference is `/design`.
 
 ## 1. Who it's for and what they should leave with
 
@@ -53,6 +53,7 @@ Dark "console" base so the cartridge colours carry the colour. One neutral ramp 
 | Train the machine | mint 165 | growth |
 | See how AI learns | cyan 205 | study |
 | AirWrite | sky 238 | air |
+| Air Studio | gold 80 | a gold record |
 | Your phone | blue 262 | device |
 
 No purple anywhere (it is the most recognisable AI-generated look).

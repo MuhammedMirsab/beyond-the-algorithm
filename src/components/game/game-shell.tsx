@@ -41,7 +41,8 @@ export function GameShell({
         className={cn(
           "z-30 flex h-16 shrink-0 items-center gap-3 px-4 pt-[env(safe-area-inset-top)] sm:px-6 lg:px-8",
           immersive
-            ? "absolute inset-x-0 top-0 bg-linear-to-b from-canvas/85 via-canvas/40 to-transparent"
+            ? // Strong enough at text height to keep the header readable over a bright camera picture.
+              "absolute inset-x-0 top-0 bg-linear-to-b from-canvas/95 via-canvas/75 to-transparent"
             : "relative",
         )}
       >

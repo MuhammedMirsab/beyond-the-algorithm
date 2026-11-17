@@ -185,6 +185,11 @@
   --game-deep: oklch(0.74 0.17 50);
   --game-ink: oklch(0.18 0.05 55);
 }
+[data-game="air-studio"] {
+  --game: oklch(0.86 0.16 80);
+  --game-deep: oklch(0.78 0.17 66);
+  --game-ink: oklch(0.18 0.05 75);
+}
 [data-game="rock-paper-scissors"] {
   --game: oklch(0.89 0.17 98);
   --game-deep: oklch(0.81 0.17 80);
