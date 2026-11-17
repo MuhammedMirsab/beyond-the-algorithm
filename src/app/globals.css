@@ -33,15 +33,15 @@
   --color-warning: oklch(0.86 0.15 85);
 
   /* The spectrum: one hue per game. Use the scoped --game tokens inside a game. */
-  --color-mind-reader: oklch(0.75 0.19 355);
-  --color-viewfinder: oklch(0.73 0.18 30);
-  --color-real-or-ai: oklch(0.81 0.16 62);
+  --color-mind-reader: oklch(0.76 0.18 355);
+  --color-viewfinder: oklch(0.75 0.17 30);
+  --color-real-or-ai: oklch(0.82 0.155 62);
   --color-rock-paper-scissors: oklch(0.89 0.17 98);
   --color-face-control: oklch(0.88 0.2 130);
-  --color-train-the-machine: oklch(0.84 0.15 165);
-  --color-how-ai-learns: oklch(0.83 0.13 205);
-  --color-airwrite: oklch(0.79 0.13 238);
-  --color-phone: oklch(0.72 0.16 262);
+  --color-train-the-machine: oklch(0.85 0.15 165);
+  --color-how-ai-learns: oklch(0.84 0.13 205);
+  --color-airwrite: oklch(0.8 0.13 238);
+  --color-phone: oklch(0.76 0.145 262);
 
   /* Type families (variables come from next/font in app/layout.tsx). */
   --font-sans: var(--font-mona), ui-sans-serif, system-ui, sans-serif;
@@ -171,49 +171,49 @@
   --game-soft: color-mix(in oklab, var(--game) 16%, transparent);
 }
 [data-game="mind-reader"] {
-  --game: oklch(0.75 0.19 355);
-  --game-deep: oklch(0.64 0.21 8);
-  --game-ink: oklch(0.2 0.05 355);
+  --game: oklch(0.76 0.18 355);
+  --game-deep: oklch(0.68 0.2 8);
+  --game-ink: oklch(0.17 0.05 355);
 }
 [data-game="viewfinder"] {
-  --game: oklch(0.73 0.18 30);
-  --game-deep: oklch(0.63 0.2 34);
-  --game-ink: oklch(0.2 0.05 30);
+  --game: oklch(0.75 0.17 30);
+  --game-deep: oklch(0.68 0.19 34);
+  --game-ink: oklch(0.17 0.05 30);
 }
 [data-game="real-or-ai"] {
-  --game: oklch(0.81 0.16 62);
-  --game-deep: oklch(0.71 0.18 48);
-  --game-ink: oklch(0.21 0.05 55);
+  --game: oklch(0.82 0.155 62);
+  --game-deep: oklch(0.74 0.17 50);
+  --game-ink: oklch(0.18 0.05 55);
 }
 [data-game="rock-paper-scissors"] {
   --game: oklch(0.89 0.17 98);
-  --game-deep: oklch(0.8 0.17 78);
-  --game-ink: oklch(0.22 0.05 90);
+  --game-deep: oklch(0.81 0.17 80);
+  --game-ink: oklch(0.18 0.05 90);
 }
 [data-game="face-control"] {
   --game: oklch(0.88 0.2 130);
-  --game-deep: oklch(0.78 0.2 145);
-  --game-ink: oklch(0.21 0.05 140);
+  --game-deep: oklch(0.79 0.2 145);
+  --game-ink: oklch(0.18 0.05 140);
 }
 [data-game="train-the-machine"] {
-  --game: oklch(0.84 0.15 165);
-  --game-deep: oklch(0.73 0.15 175);
-  --game-ink: oklch(0.2 0.04 170);
+  --game: oklch(0.85 0.15 165);
+  --game-deep: oklch(0.76 0.15 175);
+  --game-ink: oklch(0.17 0.04 170);
 }
 [data-game="how-ai-learns"] {
-  --game: oklch(0.83 0.13 205);
-  --game-deep: oklch(0.71 0.14 220);
-  --game-ink: oklch(0.2 0.04 220);
+  --game: oklch(0.84 0.13 205);
+  --game-deep: oklch(0.74 0.14 220);
+  --game-ink: oklch(0.17 0.04 220);
 }
 [data-game="airwrite"] {
-  --game: oklch(0.79 0.13 238);
-  --game-deep: oklch(0.67 0.17 252);
-  --game-ink: oklch(0.2 0.05 250);
+  --game: oklch(0.8 0.13 238);
+  --game-deep: oklch(0.71 0.16 252);
+  --game-ink: oklch(0.17 0.05 250);
 }
 [data-game="phone"] {
-  --game: oklch(0.74 0.15 262);
-  --game-deep: oklch(0.63 0.19 266);
-  --game-ink: oklch(0.19 0.05 266);
+  --game: oklch(0.76 0.145 262);
+  --game-deep: oklch(0.68 0.18 266);
+  --game-ink: oklch(0.16 0.05 266);
 }
 
 /* ── Type roles. Use these instead of ad-hoc sizes. ─────────────── */

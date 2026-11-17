@@ -68,7 +68,7 @@ Rules:
 
 - One filled `game` (or `fg`) action per view. Peers are `secondary` or `ghost`.
 - Colour never carries meaning alone: correct and wrong also get a word and an icon.
-- Text never sits on a gradient without checking the darkest spot. On tiles, text uses `game-ink`, which passes on both ends.
+- Text never sits on a gradient without checking the darkest spot. On game colour, text is `game-ink` (6:1 or better on every palette, both gradient ends) or `game-ink/80` at the lightest (4.6:1). Never lower: 70% ink fails on pink, coral and blue.
 
 ## 4. Type
 

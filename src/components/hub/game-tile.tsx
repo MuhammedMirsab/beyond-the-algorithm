@@ -24,6 +24,8 @@ export function GameTile({ game, extra, className }: { game: Game; extra?: React
     <Link
       href={gamePath(game.slug)}
       data-game={game.slug}
+      aria-labelledby={`tile-${game.slug}-title`}
+      aria-describedby={`tile-${game.slug}-hook`}
       className={cn(
         "group/tile tile-surface grain relative flex min-h-[27rem] flex-col lg:min-h-[30rem] overflow-hidden rounded-xl",
         "transition-transform duration-150 ease-out active:scale-[0.985]",
@@ -36,9 +38,13 @@ export function GameTile({ game, extra, className }: { game: Game; extra?: React
       </div>
 
       <div className="relative z-[2] flex flex-col gap-2 px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
-        <span className="type-label text-game-ink/70">{game.skill}</span>
-        <h3 className="type-title-2 text-game-ink">{game.title}</h3>
-        <p className="type-small max-w-[34ch] text-game-ink/80">{game.hook}</p>
+        <span className="type-label text-game-ink/80">{game.skill}</span>
+        <h3 id={`tile-${game.slug}-title`} className="type-title-2 text-game-ink">
+          {game.title}
+        </h3>
+        <p id={`tile-${game.slug}-hook`} className="type-small max-w-[34ch] text-game-ink">
+          {game.hook}
+        </p>
 
         <div className="mt-3 flex items-end justify-between gap-3">
           <ul className="flex flex-wrap items-center gap-1.5" aria-label="What you need">
@@ -66,7 +72,7 @@ export function GameTile({ game, extra, className }: { game: Game; extra?: React
             aria-hidden
             className={cn(
               "grid size-12 shrink-0 place-items-center rounded-full bg-game-ink text-game",
-              "transition-transform duration-200 ease-out [@media(hover:hover)_and_(pointer:fine)]:group-hover/tile:translate-x-0.5",
+              "transition-transform duration-200 ease-out group-hover/tile:translate-x-0.5",
             )}
           >
             <ArrowRight className="size-5" strokeWidth={2.5} />
