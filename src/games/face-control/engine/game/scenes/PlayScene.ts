@@ -4,6 +4,7 @@ import { BALL_R, HIT_R, KILL_Y, PHYS, PICK_R, TEX, WORLD_H } from "../config";
 import { CONTEXT_KEY, type GameContext } from "../context";
 import { canvasFont } from "../fonts";
 import type { LevelResult } from "../bridge";
+import { keyboardSign } from "../levels";
 import type { BarDef, CrusherDef, LevelDef, MoverDef, PointDef, SawDef } from "../levels/types";
 import {
   barTexture,
@@ -260,8 +261,10 @@ export class PlayScene extends Phaser.Scene {
       this.boosts.push({ x: b.x, y: b.y, img, cooldown: 0 });
     }
 
-    // Signs.
-    for (const s of def.signs ?? []) {
+    // Signs. They teach whichever controls are in use when the level is built.
+    const keys = !this.ctx.input.faceActive;
+    for (const sign of def.signs ?? []) {
+      const s = keys ? keyboardSign(sign) : sign;
       const { key } = signTexture(this, theme, s.icon, s.text);
       this.add.image(s.x, s.y, key).setOrigin(0.5, 1).setScale(1 / TEX).setDepth(0.5);
     }

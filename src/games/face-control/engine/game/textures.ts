@@ -484,6 +484,29 @@ function drawIcon(ctx: CanvasRenderingContext2D, icon: SignIcon) {
       ctx.stroke();
       arrowHead(ctx, 0, -22, -Math.PI / 2, 4);
       break;
+    case "arrows":
+      // Two key caps: ← and →.
+      for (const dir of [-1, 1]) {
+        const cx = dir * 9;
+        rr(ctx, cx - 7.5, -7.5, 15, 15, 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - dir * 3.5, 0);
+        ctx.lineTo(cx + dir * 1.5, 0);
+        ctx.stroke();
+        arrowHead(ctx, cx + dir * 3, 0, dir === 1 ? 0 : Math.PI, 3.5);
+      }
+      break;
+    case "space":
+      // The space bar, and the jump it makes.
+      rr(ctx, -16, 4, 32, 10, 3);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, -1);
+      ctx.lineTo(0, -12);
+      ctx.stroke();
+      arrowHead(ctx, 0, -13, -Math.PI / 2, 4);
+      break;
     case "gap":
       ctx.fillRect(-17, 6, 11, 10);
       ctx.fillRect(6, 6, 11, 10);

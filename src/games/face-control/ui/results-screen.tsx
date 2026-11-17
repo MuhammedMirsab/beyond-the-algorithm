@@ -1,6 +1,7 @@
 "use client";
 
-import { RotateCcw, Trophy, Users } from "lucide-react";
+import { RotateCcw, Trophy } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { ResultPanel } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -51,7 +52,7 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
             <Button variant="game" size="lg" arrow autoFocus icon={<RotateCcw />} onClick={() => session.act({ type: "play-again" })}>
               Play again
             </Button>
-            <Button variant="secondary" size="lg" icon={<Users />} onClick={() => session.act({ type: "next-player" })}>
+            <Button variant="secondary" size="lg" icon={<NextPlayerIcon />} onClick={() => session.act({ type: "next-player" })}>
               Next player
             </Button>
           </>
@@ -63,7 +64,7 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
             <Button variant="secondary" size="lg" onClick={() => session.act({ type: "start-over" })}>
               Start over
             </Button>
-            <Button variant="secondary" size="lg" icon={<Users />} onClick={() => session.act({ type: "next-player" })}>
+            <Button variant="secondary" size="lg" icon={<NextPlayerIcon />} onClick={() => session.act({ type: "next-player" })}>
               Next player
             </Button>
           </>

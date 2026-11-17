@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, RotateCcw, X } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { useId, useState, type FormEvent } from "react";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
@@ -57,7 +58,7 @@ export function MachineRight({ machine, onPlayAgain, onSwitchMode, onNextPlayer 
             <Button variant="secondary" size="lg" onClick={onSwitchMode}>
               Find its number
             </Button>
-            <Button variant="ghost" size="lg" onClick={onNextPlayer}>
+            <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
               Next player
             </Button>
           </>
@@ -101,7 +102,7 @@ export function MachineWrong({ machine, dispatch, onPlayAgain, onNextPlayer }: R
             <Button variant="game" size="lg" arrow onClick={onPlayAgain}>
               Play again
             </Button>
-            <Button variant="ghost" size="lg" onClick={onNextPlayer}>
+            <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
               Next player
             </Button>
           </>

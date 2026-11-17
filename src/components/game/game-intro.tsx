@@ -142,7 +142,8 @@ export function GameIntro({
       </div>
 
       <div className="order-1 lg:order-2">
-        <div className="tile-surface grain relative aspect-[16/10] w-full overflow-hidden rounded-xl sm:aspect-[4/3] lg:aspect-square lg:max-h-[min(640px,calc(100dvh-160px))]">
+        {/* Below desktop the art is a banner, capped so the title and Start button stay in view. */}
+        <div className="tile-surface grain relative aspect-[16/10] max-h-[42dvh] w-full overflow-hidden rounded-xl lg:aspect-square lg:max-h-[min(640px,calc(100dvh-160px))]">
           <div className="absolute inset-0 z-[2]">{art}</div>
         </div>
       </div>

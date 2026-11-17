@@ -1,6 +1,7 @@
 "use client";
 
-import { Camera, Check, Circle, Keyboard, Play, RotateCcw, ScanFace, SlidersHorizontal, Trophy, Users } from "lucide-react";
+import { Camera, Check, Circle, Keyboard, Play, RotateCcw, ScanFace, SlidersHorizontal, Trophy } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -173,7 +174,7 @@ export function PausedPanel({ session, machine, run }: { session: FaceControlSes
         <Button variant="ghost" size="lg" icon={<SlidersHorizontal />} onClick={session.openSettings}>
           Change settings
         </Button>
-        <Button variant="ghost" size="lg" icon={<Users />} onClick={() => session.act({ type: "next-player" })}>
+        <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={() => session.act({ type: "next-player" })}>
           Next player
         </Button>
       </div>

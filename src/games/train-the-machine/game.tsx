@@ -1,13 +1,12 @@
 "use client";
 
 import { motion } from "motion/react";
-import { UserPlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { GameArt } from "@/components/art/game-art";
 import { CameraProblem, CameraPrompt, CameraWaiting, ModelLoading } from "@/components/game/camera-notice";
 import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
-import { Button, IconButton } from "@/components/ui/button";
+import { NextPlayerButton } from "@/components/game/next-player";
 import { useIdle } from "@/lib/idle";
 import { ActionClassifier, DEFAULT_REJECTION_THRESHOLD, trainFromExamples, type Prediction } from "./engine/classifier";
 import { analyzeTemporalMotion, extractFeatureVector } from "./engine/features";
@@ -373,14 +372,7 @@ export function TrainTheMachineGame() {
       slug="train-the-machine"
       sound
       actions={
-        step !== "intro" && !ownNextPlayer ? (
-          <>
-            <Button variant="ghost" icon={<UserPlus />} onClick={nextPlayer} className="hidden sm:inline-flex">
-              Next player
-            </Button>
-            <IconButton variant="ghost" label="Next player" icon={<UserPlus />} onClick={nextPlayer} className="sm:hidden" />
-          </>
-        ) : null
+        step !== "intro" && !ownNextPlayer ? <NextPlayerButton onClick={nextPlayer} /> : null
       }
     >
       <motion.div

@@ -1,11 +1,10 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { SensorId } from "@/components/art/sensor-art";
 import { GameShell } from "@/components/game/game-shell";
-import { Button, IconButton } from "@/components/ui/button";
+import { NextPlayerButton } from "@/components/game/next-player";
 import { useIdle } from "@/lib/idle";
 import { isSoundOn, subscribeSound } from "@/lib/sound";
 import { EXPERIMENT_COUNT, EXPERIMENTS, experimentIndex } from "./data/experiments";
@@ -167,14 +166,7 @@ function PhoneGameRound({ onReset }: { onReset: () => void }) {
       slug="phone"
       sound
       actions={
-        shown.name === "intro" && !link.linked ? null : (
-          <>
-            <Button variant="ghost" icon={<RotateCcw />} onClick={reset} className="max-sm:hidden">
-              Next player
-            </Button>
-            <IconButton label="Next player" icon={<RotateCcw />} variant="ghost" onClick={reset} className="sm:hidden" />
-          </>
-        )
+        shown.name === "intro" && !link.linked ? null : <NextPlayerButton onClick={reset} />
       }
     >
       {role === "phone" || link.phase === "ended" || link.phase === "failed" ? <PhoneLinkBar /> : null}

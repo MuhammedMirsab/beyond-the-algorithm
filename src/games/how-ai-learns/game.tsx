@@ -1,12 +1,11 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { GameArt } from "@/components/art/game-art";
 import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
-import { Button, IconButton } from "@/components/ui/button";
+import { NextPlayerButton } from "@/components/game/next-player";
 import { ExamplesStep } from "./ui/examples-step";
 import { PhotoCredits } from "./ui/photo-credits";
 import { PickStep } from "./ui/pick-step";
@@ -36,14 +35,7 @@ export function HowAiLearnsGame() {
     <GameShell
       slug="how-ai-learns"
       actions={
-        state.step !== "intro" ? (
-          <>
-            <IconButton className="sm:hidden" variant="ghost" label="Next player" icon={<RotateCcw />} onClick={actions.nextPlayer} />
-            <Button className="hidden sm:inline-flex" variant="ghost" icon={<RotateCcw />} onClick={actions.nextPlayer}>
-              Next player
-            </Button>
-          </>
-        ) : null
+        state.step !== "intro" ? <NextPlayerButton onClick={actions.nextPlayer} /> : null
       }
     >
       <motion.div

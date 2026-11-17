@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { FlaskConical, RotateCcw } from "lucide-react";
+import { FlaskConical } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
 import { Score, Stat } from "@/components/ui/score";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
@@ -73,7 +74,7 @@ export function ResultsStep({ game }: { game: LearnGame }) {
       }
       actions={
         <>
-          <Button variant="game" size="lg" icon={<RotateCcw />} onClick={actions.nextPlayer}>
+          <Button variant="game" size="lg" icon={<NextPlayerIcon />} onClick={actions.nextPlayer}>
             Next player
           </Button>
           <Button variant="secondary" size="lg" onClick={() => actions.go("test")}>

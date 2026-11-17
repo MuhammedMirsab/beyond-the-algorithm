@@ -251,10 +251,12 @@ export function ResultPanel({
       animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: EASE_OUT } }}
       exit={{ opacity: 0, y: 12, transition: { duration: 0.35, ease: EASE_OUT } }}
       className={cn(
-        "overflow-y-auto overscroll-contain bg-canvas pt-[calc(4rem+env(safe-area-inset-top))] focus-visible:outline-none",
+        "overflow-y-auto overscroll-contain bg-canvas focus-visible:outline-none",
         className,
       )}
     >
+      {/* Pinned under the floating header, so scrolled content fades out behind it instead of running into its text. */}
+      <div aria-hidden className="sticky top-0 z-10 h-[calc(4rem+env(safe-area-inset-top))] bg-canvas shadow-[0_12px_12px_-4px_var(--color-canvas)]" />
       <div className="mx-auto flex w-full max-w-[69rem] flex-col gap-12 px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pt-8">
         <div className="grid items-center gap-6 rounded-xl bg-surface p-5 shadow-ring sm:p-8 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:gap-10">
           {/* Phones: the answer first, the picture under it. Wider: picture left, answer right. */}

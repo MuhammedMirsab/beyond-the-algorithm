@@ -5,6 +5,7 @@ import { useState } from "react";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { Score, Stat } from "@/components/ui/score";
 import { useLocalBoard } from "@/lib/leaderboard";
 import { middleStrategyPath, numberRange, type ScoreBreakdown } from "../engine/game-engine";
@@ -64,7 +65,7 @@ export function HumanResult({
             <Button variant="secondary" size="lg" onClick={onSwitchMode}>
               Let it read my mind
             </Button>
-            <Button variant="ghost" size="lg" onClick={onNextPlayer}>
+            <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
               Next player
             </Button>
           </>

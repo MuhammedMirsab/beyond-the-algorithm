@@ -1,10 +1,11 @@
 "use client";
 
-import { Keyboard, Pointer, UserRoundPlus } from "lucide-react";
+import { Keyboard, Pointer } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { CameraProblem, CameraPrompt, CameraWaiting } from "@/components/game/camera-notice";
 import { GameShell } from "@/components/game/game-shell";
-import { Button, IconButton } from "@/components/ui/button";
+import { NextPlayerButton } from "@/components/game/next-player";
+import { Button } from "@/components/ui/button";
 import { useIdle } from "@/lib/idle";
 import type { Difficulty, Gesture } from "./engine/types";
 import { isRoundLive, MatchController, type MatchView } from "./match-controller";
@@ -161,14 +162,7 @@ export function RockPaperScissorsGame() {
       slug="rock-paper-scissors"
       sound
       actions={
-        screen === "play" ? (
-          <>
-            <IconButton label="Next player" icon={<UserRoundPlus />} variant="ghost" className="sm:hidden" onClick={nextPlayer} />
-            <Button variant="secondary" size="sm" icon={<UserRoundPlus />} className="hidden sm:inline-flex" onClick={nextPlayer}>
-              Next player
-            </Button>
-          </>
-        ) : null
+        screen === "play" ? <NextPlayerButton onClick={nextPlayer} /> : null
       }
     >
       {screen === "intro" ? (

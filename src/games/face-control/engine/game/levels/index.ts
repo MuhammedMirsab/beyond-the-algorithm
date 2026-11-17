@@ -1,4 +1,4 @@
-import type { LevelDef } from "./types";
+import type { LevelDef, SignDef } from "./types";
 
 /*
  * Level geometry, in world units (the screen is always 720 units tall).
@@ -235,3 +235,10 @@ const LEVEL_3: LevelDef = {
 };
 
 export const LEVELS: LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3];
+
+/** Level signs describe face controls; someone on the keyboard reads the keys instead. */
+export function keyboardSign(sign: SignDef): SignDef {
+  if (sign.icon === "tilt") return { ...sign, icon: "arrows", text: "ARROWS TO ROLL" };
+  if (sign.icon === "mouth") return { ...sign, icon: "space", text: "SPACE · JUMP" };
+  return sign;
+}

@@ -1,10 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Camera, CircleHelp, MousePointer2, UserRoundPlus } from "lucide-react";
+import { Camera, CircleHelp, MousePointer2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CameraProblem, CameraWaiting, ModelLoading } from "@/components/game/camera-notice";
 import { GameShell } from "@/components/game/game-shell";
+import { NextPlayerButton } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_SETTINGS, type PenSettings } from "../engine/airPen";
 import { cssColor } from "../engine/canvasColor";
@@ -328,7 +329,7 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
             label="How it works"
             onClick={() => setHow({ open: true, fps: cameraOn && statsRef.current.fps ? statsRef.current.fps : null })}
           />
-          <AdaptiveButton icon={<UserRoundPlus />} label="Next player" variant="secondary" onClick={onNextPlayer} />
+          <NextPlayerButton onClick={onNextPlayer} />
         </>
       }
     >

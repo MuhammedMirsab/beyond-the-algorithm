@@ -1,10 +1,9 @@
 "use client";
 
 import { motion } from "motion/react";
-import { UserRoundPlus } from "lucide-react";
 import { useCallback, useReducer, type ReactNode } from "react";
 import { GameShell } from "@/components/game/game-shell";
-import { Button, IconButton } from "@/components/ui/button";
+import { NextPlayerButton } from "@/components/game/next-player";
 import { useIdle } from "@/lib/idle";
 import { randomSecret, type HumanAction } from "./engine/human";
 import type { MachineAction } from "./engine/machine";
@@ -122,13 +121,3 @@ function ScreenFade({ animate, children }: { animate: boolean; children: ReactNo
   );
 }
 
-function NextPlayerButton({ onClick }: { onClick: () => void }) {
-  return (
-    <>
-      <Button variant="secondary" icon={<UserRoundPlus />} onClick={onClick} className="hidden sm:inline-flex">
-        Next player
-      </Button>
-      <IconButton label="Next player" icon={<UserRoundPlus />} onClick={onClick} className="sm:hidden" />
-    </>
-  );
-}

@@ -67,7 +67,21 @@ export interface PointDef {
   y: number;
 }
 
-export type SignIcon = "tilt" | "mouth" | "gap" | "spike" | "spark" | "mover" | "pad" | "boost" | "saw" | "crusher" | "flag" | "finish";
+export type SignIcon =
+  | "tilt"
+  | "mouth"
+  | "arrows"
+  | "space"
+  | "gap"
+  | "spike"
+  | "spark"
+  | "mover"
+  | "pad"
+  | "boost"
+  | "saw"
+  | "crusher"
+  | "flag"
+  | "finish";
 
 export interface SignDef {
   x: number;

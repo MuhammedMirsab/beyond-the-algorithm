@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Check, CircleHelp, Hand, Lightbulb, PersonStanding, ScanFace, UserPlus } from "lucide-react";
+import { Check, CircleHelp, Hand, Lightbulb, PersonStanding, ScanFace } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import type { ReactNode, RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfidenceBars } from "@/components/ui/meter";
@@ -168,7 +169,7 @@ export function TestStep({
         <Button variant="ghost" size="lg" onClick={onStartOver}>
           Start over with new moves
         </Button>
-        <Button variant="ghost" size="lg" icon={<UserPlus />} onClick={onNextPlayer}>
+        <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
           Next player
         </Button>
       </div>

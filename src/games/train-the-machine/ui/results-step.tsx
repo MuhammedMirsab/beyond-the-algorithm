@@ -1,6 +1,7 @@
 "use client";
 
-import { RotateCcw, UserPlus } from "lucide-react";
+import { RotateCcw } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
 import { Score, Stat } from "@/components/ui/score";
@@ -61,7 +62,7 @@ export function ResultsStep({
       }
       actions={
         <>
-          <Button variant="game" size="lg" icon={<UserPlus />} onClick={onNextPlayer}>
+          <Button variant="game" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
             Next player
           </Button>
           <Button variant="secondary" size="lg" icon={<RotateCcw />} onClick={onTestAgain}>

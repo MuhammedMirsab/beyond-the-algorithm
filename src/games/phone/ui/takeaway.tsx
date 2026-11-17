@@ -1,6 +1,7 @@
 "use client";
 
-import { Eye, LayoutGrid, LocateFixed, RotateCcw, ShieldCheck } from "lucide-react";
+import { Eye, LayoutGrid, LocateFixed, ShieldCheck } from "lucide-react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { useEffect, useRef, type ReactNode } from "react";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,7 @@ export function Takeaway({
         stats={<Stat value={`${tested} of ${EXPERIMENT_COUNT}`} label="Sensors tested" />}
         actions={
           <>
-            <Button variant="game" size="lg" icon={<RotateCcw />} onClick={onNextPlayer}>
+            <Button variant="game" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
               Next player
             </Button>
             <Button variant="secondary" size="lg" icon={<LayoutGrid />} onClick={onLab}>
