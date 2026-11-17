@@ -44,7 +44,7 @@ export function DesignSystem() {
   const [game, setGame] = useState<GameSlug>("face-control");
 
   return (
-    <div data-game={game} className="mx-auto flex max-w-[1200px] flex-col gap-16 px-4 py-12 sm:px-6 lg:px-8">
+    <div data-game={game} className="mx-auto flex max-w-[75rem] flex-col gap-16 px-4 py-12 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4">
         <MachineLabel>Design system · v1</MachineLabel>
         <h1 className="type-display-1">Beyond the Algorithm</h1>

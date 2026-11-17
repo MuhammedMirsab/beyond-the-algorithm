@@ -1,6 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import { CURATORS, GAMES, GROUPS, gamesInGroup, type Group } from "@/content/games";
 import { GameTile } from "@/components/hub/game-tile";
+import { PhoneHandoff } from "@/components/game/phone-handoff";
 import { Globe } from "@/components/hub/globe";
 import { GLOBE_SAMPLES } from "@/components/hub/globe-config";
 import { SpectrumMark } from "@/components/hub/spectrum-mark";
@@ -12,7 +13,7 @@ export default function Home() {
       <SiteHeader />
       <main className="flex flex-1 flex-col">
         <Hero />
-        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-16 px-4 pb-20 sm:px-6 lg:gap-20 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[75rem] flex-col gap-16 px-4 pb-20 sm:px-6 lg:gap-20 lg:px-8">
           {GROUPS.map((group, i) => (
             <GameGroup key={group.id} group={group} index={i} />
           ))}
@@ -26,7 +27,7 @@ export default function Home() {
 
 function SiteHeader() {
   return (
-    <header className="mx-auto flex h-16 w-full max-w-[1200px] items-center justify-between gap-4 px-4 pt-[env(safe-area-inset-top)] sm:px-6 lg:px-8">
+    <header className="mx-auto flex h-16 w-full max-w-[75rem] items-center justify-between gap-4 px-4 pt-[env(safe-area-inset-top)] sm:px-6 lg:px-8">
       <a href="#top" className="flex items-center gap-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-fg">
         <SpectrumMark />
         <span className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-fg">Beyond the Algorithm</span>
@@ -38,7 +39,7 @@ function SiteHeader() {
 
 function Hero() {
   return (
-    <section id="top" className="relative mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8">
+    <section id="top" className="relative mx-auto w-full max-w-[75rem] px-4 sm:px-6 lg:px-8">
       <div className="grid items-center gap-2 pb-8 pt-6 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] md:gap-8 lg:pb-12 lg:pt-8">
         <div className="relative z-10 flex flex-col gap-5">
           <h1 className="type-display-1 max-w-[15ch] text-fg">How much can a machine work out about you?</h1>
@@ -67,7 +68,18 @@ function GameGroup({ group, index }: { group: Group; index: number }) {
         <h2 id={`group-${group.id}`} className="type-title-1 text-fg">
           {group.title}
         </h2>
-        <p className="type-body max-w-[32rem] text-fg-muted">{group.line}</p>
+        <div className="flex flex-col gap-4">
+          <p className="type-body max-w-[32rem] text-fg-muted">{group.line}</p>
+          {group.id === "around" ? (
+            <PhoneHandoff
+              path="/phone"
+              size={88}
+              title="Play the phone game on your own phone"
+              text="Scan with your phone's camera. It tests your phone's real sensors."
+              className="hidden w-fit lg:flex"
+            />
+          ) : null}
+        </div>
       </div>
       <ul
         className={cn(
@@ -91,7 +103,7 @@ function About() {
   const byCurator = (id: "mirsab" | "dilshaan") => GAMES.filter((g) => g.curator === id).map((g) => g.short);
   return (
     <section aria-labelledby="about-title" className="border-t border-line">
-      <div className="mx-auto grid w-full max-w-[1200px] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16 lg:px-8 lg:py-20">
+      <div className="mx-auto grid w-full max-w-[75rem] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16 lg:px-8 lg:py-20">
         <div className="flex flex-col gap-4">
           <h2 id="about-title" className="type-title-1 text-fg">
             Made by two students
@@ -139,7 +151,7 @@ function About() {
 function SiteFooter() {
   return (
     <footer className="border-t border-line">
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-2 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[75rem] flex-col gap-2 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <span className="type-small text-fg-subtle">Beyond the Algorithm · EDEX 2026</span>
         <span className="type-small text-fg-subtle">International Indian School Jeddah · Computer Science</span>
       </div>

@@ -94,6 +94,19 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* Projectors and big screens: the whole rem-based interface steps up so it
+     reads from across the room. Steps, not a fluid curve, so layouts stay predictable. */
+  @media (min-width: 1600px) {
+    html {
+      font-size: 106.25%;
+    }
+  }
+  @media (min-width: 1900px) {
+    html {
+      font-size: 112.5%;
+    }
+  }
+
   body {
     min-height: 100dvh;
     background: var(--color-canvas);

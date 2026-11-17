@@ -17,7 +17,9 @@ const NEED_ICON: Record<Need, { icon: ReactNode; label: string }> = {
  * what the game does); the card itself stays put.
  */
 export function GameTile({ game, extra, className }: { game: Game; extra?: ReactNode; className?: string }) {
-  const needs = game.needs.filter((n) => n !== "microphone");
+  // The tile shows only what decides where you can play: camera and internet.
+  // Motion and microphone needs are explained on the game's intro screen.
+  const needs = game.needs.filter((n) => n === "camera" || n === "internet");
   return (
     <Link
       href={gamePath(game.slug)}

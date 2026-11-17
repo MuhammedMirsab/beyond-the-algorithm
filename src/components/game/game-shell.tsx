@@ -46,13 +46,13 @@ export function GameShell({
         <Link
           href="/"
           className={cn(
-            "group/back -ml-2 inline-flex h-11 items-center gap-2 rounded-full pl-2.5 pr-4 text-[0.9375rem] font-semibold text-fg-muted",
+            "group/back -ml-2 inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-full px-2.5 text-[0.9375rem] font-semibold text-fg-muted sm:pr-4",
             "transition-[background-color,color,transform] duration-150 ease-out hover:bg-fg/[0.07] hover:text-fg active:scale-[0.97]",
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
           )}
         >
           <ArrowLeft className="size-[18px] transition-transform duration-200 ease-out group-hover/back:-translate-x-0.5" />
-          <span>Arcade</span>
+          <span className="sr-only sm:not-sr-only">Arcade</span>
         </Link>
 
         <div className="flex min-w-0 flex-1 items-center gap-2.5">

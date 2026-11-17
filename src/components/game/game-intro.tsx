@@ -71,7 +71,7 @@ export function GameIntro({
   return (
     <section
       className={cn(
-        "mx-auto grid w-full max-w-[1200px] flex-1 items-center gap-8 px-4 pb-10 pt-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:px-8 lg:pb-16",
+        "mx-auto grid w-full max-w-[75rem] flex-1 items-center gap-8 px-4 pb-10 pt-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:px-8 lg:pb-16",
         className,
       )}
     >
@@ -133,7 +133,7 @@ export function GameIntro({
       </div>
 
       <div className="order-1 lg:order-2">
-        <div className="tile-surface grain relative aspect-[4/3] w-full overflow-hidden rounded-xl lg:aspect-square lg:max-h-[min(640px,calc(100dvh-160px))]">
+        <div className="tile-surface grain relative aspect-[16/10] w-full overflow-hidden rounded-xl sm:aspect-[4/3] lg:aspect-square lg:max-h-[min(640px,calc(100dvh-160px))]">
           <div className="absolute inset-0 z-[2]">{art}</div>
         </div>
       </div>

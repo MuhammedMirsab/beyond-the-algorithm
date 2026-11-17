@@ -61,7 +61,7 @@ export function ResultPanel({
   className?: string;
 }) {
   return (
-    <section className={cn("mx-auto flex w-full max-w-[1100px] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12", className)}>
+    <section className={cn("mx-auto flex w-full max-w-[69rem] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12", className)}>
       <div className="grid items-end gap-8 rounded-xl bg-surface p-6 shadow-ring sm:p-8 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex min-w-0 flex-col gap-4">
           {label ? <span className="type-label text-game">{label}</span> : null}
