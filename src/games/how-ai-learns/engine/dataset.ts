@@ -18,6 +18,8 @@ export interface DatasetCategory {
   /** Plural in words, e.g. "pens". */
   plural: string;
   count: number;
+  /** Id of the hand-picked photo shown on the category's card. */
+  cover?: string;
 }
 
 export interface DatasetPhoto {

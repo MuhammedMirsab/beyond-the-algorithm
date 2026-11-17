@@ -9,8 +9,11 @@
  * - Only photos listed in the original dataset-manifest.json are considered,
  *   and only if the file on disk matches the manifest's SHA-256. Anything else
  *   has an unknown licence and is never shipped.
- * - Only categories with at least MIN_PER_CATEGORY such photos are kept.
- * - Up to PER_CATEGORY photos per category, best quality score first.
+ * - Hand-checked curation (engine/curation.ts) comes next: dropped
+ *   categories and photos that don't clearly show the thing are left out.
+ * - Only categories with at least MIN_PER_CATEGORY remaining photos are kept.
+ * - Up to PER_CATEGORY photos per category, best quality score first. The
+ *   category's cover photo is always among them.
  * - --authors asks the Wikimedia Commons API for each photo's author (the
  *   original manifest has none). Without it, credits link to the source page.
  *
@@ -24,10 +27,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILT_IN_CATEGORIES, pluralFromSlug } from "../engine/categories";
+import { COVER_PHOTOS, DROPPED_CATEGORIES, EXCLUDED_PHOTOS } from "../engine/curation";
 import type { DatasetCategory, DatasetManifest, DatasetPhoto } from "../engine/dataset";
 
 const PER_CATEGORY = 30;
-const MIN_PER_CATEGORY = 30;
+/** 5 held out for testing still leaves 19+ to add as examples. */
+const MIN_PER_CATEGORY = 24;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(here, "../../../..");
@@ -133,7 +138,7 @@ async function fetchAuthors(photos: DatasetPhoto[]): Promise<{ authors: Map<stri
       "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&prop=imageinfo" +
       "&iiprop=extmetadata&iiextmetadatafilter=Artist%7CLicenseShortName&titles=" +
       encodeURIComponent(batch.join("|"));
-    const res = await fetch(url, { headers: { "User-Agent": "beyond-the-algorithm-dataset-builder/1.0" } });
+    const res = await fetch(url, { headers: { "User-Agent": "photo-credits-builder/1.0 (educational, run by hand)" } });
     if (!res.ok) throw new Error(`Commons API answered ${res.status}`);
     const json = (await res.json()) as {
       query?: {
@@ -205,15 +210,26 @@ async function main() {
   const report: string[] = [];
 
   for (const def of BUILT_IN_CATEGORIES) {
-    const list = verified.get(def.slug) ?? [];
     const listed = entries.filter((e) => e.categorySlug === def.slug).length;
-    if (list.length < MIN_PER_CATEGORY) {
-      report.push(`- ${def.slug}: dropped (${list.length} of ${listed} on disk)`);
+    const dropReason = DROPPED_CATEGORIES[def.slug];
+    if (dropReason) {
+      report.push(`- ${def.slug}: dropped by hand (${dropReason})`);
       continue;
     }
-    const chosen = [...list]
-      .sort((a, b) => b.entry.qualityScore - a.entry.qualityScore || a.entry.imageId.localeCompare(b.entry.imageId))
-      .slice(0, PER_CATEGORY);
+    const onDisk = verified.get(def.slug) ?? [];
+    const list = onDisk.filter(({ entry }) => !EXCLUDED_PHOTOS.has(entry.imageId));
+    if (list.length < MIN_PER_CATEGORY) {
+      report.push(`- ${def.slug}: dropped (${list.length} usable, ${onDisk.length} of ${listed} on disk)`);
+      continue;
+    }
+    const cover = COVER_PHOTOS[def.slug];
+    const ranked = [...list].sort(
+      (a, b) => b.entry.qualityScore - a.entry.qualityScore || a.entry.imageId.localeCompare(b.entry.imageId),
+    );
+    // The cover always ships, even when its quality score ranks it lower.
+    const coverItem = ranked.find(({ entry }) => entry.imageId === cover);
+    if (!coverItem) throw new Error(`${def.slug}: cover photo ${String(cover)} is missing or excluded`);
+    const chosen = [coverItem, ...ranked.filter((item) => item !== coverItem)].slice(0, PER_CATEGORY);
     for (const { entry, bytes, size } of chosen) {
       const file = `${def.slug}/${entry.imageId}.jpg`;
       copies.push({ path: join(outDir, file), bytes });
@@ -231,8 +247,8 @@ async function main() {
         sourceUrl: entry.sourceUrl,
       });
     }
-    categories.push({ id: def.slug, label: def.name, plural: pluralFromSlug(def.slug), count: chosen.length });
-    report.push(`- ${def.slug}: ${chosen.length} kept (${list.length} of ${listed} on disk)`);
+    categories.push({ id: def.slug, label: def.name, plural: pluralFromSlug(def.slug), count: chosen.length, cover: coverItem.entry.imageId });
+    report.push(`- ${def.slug}: ${chosen.length} kept (${list.length} usable, ${onDisk.length} of ${listed} on disk)`);
   }
 
   if (wantAuthors) {

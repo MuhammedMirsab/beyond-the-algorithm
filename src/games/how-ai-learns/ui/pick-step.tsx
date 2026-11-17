@@ -57,9 +57,11 @@ export function PickStep({ game }: { game: LearnGame }) {
               ? "Nothing picked yet."
               : `Teaching it: ${joinWords(labels)}.${full ? " That’s the most it can learn here." : ""}`}
           </p>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {/* Eight curated categories: two even rows of four from 640px up. */}
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {dataset.manifest.categories.map((category, i) => {
-              const sample = dataset.split.pool.get(category.id)?.[0];
+              const sample =
+                dataset.manifest.photos.find((p) => p.id === category.cover) ?? dataset.split.pool.get(category.id)?.[0];
               const on = picked.includes(category.id);
               const disabled = !on && full;
               return (
@@ -85,7 +87,7 @@ export function PickStep({ game }: { game: LearnGame }) {
                           fill
                           unoptimized
                           loading={i < 5 ? "eager" : "lazy"}
-                          sizes="(min-width: 1024px) 200px, (min-width: 640px) 33vw, 50vw"
+                          sizes="(min-width: 1024px) 260px, (min-width: 640px) 25vw, 50vw"
                           className="object-cover"
                         />
                       ) : null}

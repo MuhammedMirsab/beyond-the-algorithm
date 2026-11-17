@@ -23,6 +23,9 @@ export function HowItWorks({
   columns?: "auto" | 1 | 3;
   className?: string;
 }) {
+  // Each card spans the same rows of a shared grid (subgrid), so pictures,
+  // titles and text line up across cards even when one title wraps.
+  const hasVisuals = steps.some((step) => step.visual);
   return (
     <section className={cn("flex flex-col gap-6", className)} aria-label={title}>
       {heading ? (
@@ -39,9 +42,21 @@ export function HowItWorks({
         )}
       >
         {steps.map((step, i) => (
-          <li key={step.title} className="flex flex-col gap-3 rounded-lg bg-surface p-5 shadow-ring">
+          <li
+            key={step.title}
+            className={cn(
+              "grid grid-rows-subgrid content-start gap-3 rounded-lg bg-surface p-5 shadow-ring",
+              hasVisuals ? "row-span-4" : "row-span-3",
+            )}
+          >
             <span className="type-label text-game">Step {i + 1}</span>
-            {step.visual ? <div className="overflow-hidden rounded-md bg-sunken">{step.visual}</div> : null}
+            {hasVisuals ? (
+              step.visual ? (
+                <div className="flex flex-col justify-center overflow-hidden rounded-md bg-sunken">{step.visual}</div>
+              ) : (
+                <div aria-hidden />
+              )
+            ) : null}
             <h3 className="type-title-3 text-fg">{step.title}</h3>
             <div className="type-body text-fg-muted">{step.text}</div>
           </li>

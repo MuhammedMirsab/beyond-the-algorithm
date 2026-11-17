@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { DROPPED_CATEGORIES, EXCLUDED_PHOTOS } from "./curation";
 import { drawFromPool, parseManifest, splitLibrary, TEST_PER_CATEGORY, type DatasetPhoto } from "./dataset";
 
 const manifestPath = fileURLToPath(new URL("../../../../public/games/how-ai-learns/dataset/manifest.json", import.meta.url));
@@ -40,8 +41,11 @@ describe("the shipped library", () => {
     for (const c of manifest.categories) {
       const photos = manifest.photos.filter((p) => p.category === c.id);
       expect(photos.length).toBe(c.count);
-      expect(photos.length).toBeGreaterThanOrEqual(30);
+      expect(photos.length).toBeGreaterThanOrEqual(24);
+      expect(photos.some((p) => p.id === c.cover)).toBe(true);
+      expect(DROPPED_CATEGORIES[c.id]).toBeUndefined();
     }
+    for (const p of manifest.photos) expect(EXCLUDED_PHOTOS.has(p.id)).toBe(false);
     for (const p of manifest.photos) {
       expect(p.license.length).toBeGreaterThan(0);
       expect(p.sourceUrl).toStartWith("https://commons.wikimedia.org/");
