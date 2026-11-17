@@ -144,9 +144,12 @@ async function createTracker(onProgress: (p: LoadProgress) => void, forced: Dele
   const options = (delegate: Delegate): FaceLandmarkerOptions => ({
     baseOptions: { modelAssetBuffer: modelBytes.slice(), delegate },
     runningMode: "VIDEO",
-    // Two faces so a visitor standing behind the player can't steal control:
-    // the controller picks the closest (largest) face and sticks with it.
-    numFaces: 2,
+    // One face. With room for two, MediaPipe re-runs its face detector on every
+    // frame looking for the missing second face, which made each frame about a
+    // third slower. With one, it follows the player's face from frame to frame
+    // and only searches again when that face is lost, so a visitor behind the
+    // player still can't take over mid-game.
+    numFaces: 1,
     minFaceDetectionConfidence: 0.5,
     minFacePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,

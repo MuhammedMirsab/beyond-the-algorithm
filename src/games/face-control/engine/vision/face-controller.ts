@@ -58,7 +58,7 @@ type Listener = (s: ControlSnapshot) => void;
 const LOST_AFTER_MS = 400;
 /** Minimum time between two jumps. */
 const JUMP_COOLDOWN_MS = 260;
-/** Detection is capped at ~32 Hz — more than any webcam delivers, cheaper on weak laptops. */
+/** Pace of the fallback schedulers (animation frames, timer): ~32 Hz, more than any webcam delivers. */
 const MIN_INTERVAL_MS = 30;
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -236,8 +236,14 @@ export class FaceController {
     this.schedule();
 
     if (video.readyState < 2 || video.videoWidth === 0) return;
-    if (from !== "rvfc" && video.currentTime === this.lastVideoTime) return;
-    if (now - this.lastDetect < MIN_INTERVAL_MS) return;
+    // Video frame callbacks fire once per new camera frame, so every one is read.
+    // They arrive on screen refreshes, so two 30 fps frames can land 17 ms apart;
+    // the old 30 ms gap check threw the second one away and roughly halved the
+    // tracking rate. The duplicate and gap checks now only pace the fallbacks.
+    if (from !== "rvfc") {
+      if (video.currentTime === this.lastVideoTime) return;
+      if (now - this.lastDetect < MIN_INTERVAL_MS) return;
+    }
     this.lastVideoTime = video.currentTime;
     this.lastDetect = now;
 
