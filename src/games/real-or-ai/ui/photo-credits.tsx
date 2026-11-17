@@ -43,7 +43,7 @@ export function PhotoCredits({ questions }: { questions: readonly ActiveQuestion
               <span className="type-small text-fg-muted">
                 AI version: {AI_VERSION_LINE}{" "}
                 {q.pair.aiItem.contentCredentials
-                  ? "Its Content Credentials say it was created by Google generative AI."
+                  ? "It came out of Google generative AI with Content Credentials saying so."
                   : "The tool used wasn't recorded."}
               </span>
             </li>

@@ -21,12 +21,12 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
 const BANNED = /\b(delve|leverage|unlock|empower|elevate|seamless\w*|cutting-edge|revolutionary|magic\w*|journey|harness|robust|crucial|pivotal|showcase|vibrant)\b/i;
 
 describe("COMPARISON_PAIRS", () => {
-  test("ten pairs: 3 easy, 3 medium, 4 hard, each with 3 clues", () => {
-    expect(COMPARISON_PAIRS).toHaveLength(10);
+  test("nineteen pairs: 5 easy, 6 medium, 8 hard, each with 3 clues", () => {
+    expect(COMPARISON_PAIRS).toHaveLength(19);
     const count = (d: string) => COMPARISON_PAIRS.filter((p) => p.difficulty === d).length;
-    expect([count("easy"), count("medium"), count("hard")]).toEqual([3, 3, 4]);
+    expect([count("easy"), count("medium"), count("hard")]).toEqual([5, 6, 8]);
     for (const pair of COMPARISON_PAIRS) expect(pair.aiItem.clues).toHaveLength(3);
-    expect(new Set(COMPARISON_PAIRS.map((p) => p.id)).size).toBe(10);
+    expect(new Set(COMPARISON_PAIRS.map((p) => p.id)).size).toBe(19);
   });
 
   test("file names never say which photo is AI", () => {
@@ -108,8 +108,9 @@ describe("getGameQuestions", () => {
     const first = getGameQuestions(6).filter((q) => q.pair.difficulty === "easy").map((q) => q.pair.id);
     const second = getGameQuestions(6).filter((q) => q.pair.difficulty === "easy").map((q) => q.pair.id);
     const unseen = COMPARISON_PAIRS.filter((p) => p.difficulty === "easy" && !first.includes(p.id)).map((p) => p.id);
-    expect(unseen).toHaveLength(1);
-    expect(second).toContain(unseen[0]);
+    // With 5 easy pairs, 3 are unseen after a game, so both easy picks next game are fresh.
+    expect(unseen).toHaveLength(3);
+    for (const id of second) expect(unseen).toContain(id);
   });
 
   test("the AI photo is never on one side for more than 4 of 6 rounds", () => {

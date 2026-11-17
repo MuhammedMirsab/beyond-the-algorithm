@@ -234,8 +234,8 @@ function SpotChecklist({ aiLabelled, total }: { aiLabelled: number; total: numbe
                 <p className="type-body text-fg-muted">{check.text}</p>
                 {i === CHECKS.length - 1 && aiLabelled > 0 ? (
                   <p className="type-small mt-2 text-fg-subtle">
-                    {labelled} AI photos you saw carry a signed label inside the file that says Google&apos;s AI made them. Labels
-                    like this can be lost when a photo is re-saved, so no label doesn&apos;t prove a photo is real.
+                    {labelled} AI photos you saw came out of Google&apos;s AI with a signed label inside the file saying so. Labels
+                    like this are lost when a photo is cropped or re-saved, so no label doesn&apos;t prove a photo is real.
                   </p>
                 ) : null}
               </div>

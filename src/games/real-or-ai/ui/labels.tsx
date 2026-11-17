@@ -27,9 +27,9 @@ export const LEVEL_NAME: Record<Difficulty, string> = { easy: "Easy", medium: "M
 
 /** What AI changed at each level, from the pairs themselves. */
 export const LEVEL_CHANGE: Record<Difficulty, string> = {
-  easy: "AI added whole objects.",
-  medium: "AI changed colours, light and small parts.",
-  hard: "AI only smoothed tiny textures.",
+  easy: "AI made its own, more polished version.",
+  medium: "AI redrew the scene and changed a few things.",
+  hard: "AI copied the photo almost exactly.",
 };
 
 export const LEVELS: Difficulty[] = ["easy", "medium", "hard"];

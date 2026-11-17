@@ -46,8 +46,10 @@ export interface AiPhoto extends PhotoBase {
   /** What gives it away, checked against the image files. Plain words, no jargon. */
   clues: readonly [string, string, string];
   /**
-   * The file carries signed Content Credentials (C2PA) that say
-   * "Created by Google Generative AI". Read from the files themselves.
+   * The image as Gemini delivered it carries signed Content Credentials (C2PA)
+   * that say "Created by Google Generative AI". The original ten files still
+   * hold them; the nine added on 2026-11-17 were cropped (to remove Gemini's
+   * visible sparkle mark), which drops the metadata, but the downloads had it.
    */
   contentCredentials: boolean;
 }

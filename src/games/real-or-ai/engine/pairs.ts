@@ -2,7 +2,11 @@ import { ROUNDS } from "./scoring";
 import type { ActiveQuestion, AiPhoto, ComparisonPair, Difficulty, PairPhoto, RealPhoto, Side } from "./types";
 
 /**
- * The ten photo pairs, copied from the original src/data/pairs.ts.
+ * The photo pairs: ten copied from the original src/data/pairs.ts, nine added
+ * on 2026-11-17 (real photos from Wikimedia Commons, AI versions made with
+ * Google Gemini from each real photo). Tiers were re-sorted so difficulty
+ * climbs: easy = AI's own new version, medium = same scene with things
+ * changed, hard = near-exact copy. Faces in the market pair are blurred.
  *
  * Changes from the original, all deliberate:
  * - Clues were checked against the image files and rewritten in plain words.
@@ -40,11 +44,128 @@ const ai = (
 ): AiPhoto => ({ id, src: `${DIR}/${file}`, width, height, isReal: false, clues, contentCredentials });
 
 export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
-  // Easy: AI added whole objects.
+  // Easy: AI made its own new version of the subject, with the polished look AI photos often have.
+  {
+    id: "pair-hibiscus",
+    subject: "A red hibiscus flower on its bush",
+    difficulty: "easy",
+    realItem: real("real-hibiscus", "hibiscus-1.jpg", 1200, 800, {
+      author: "Vengolis",
+      source: "Wikimedia Commons",
+      file: "Hibiscus 00526.JPG",
+      license: "CC BY-SA 4.0",
+    }),
+    aiItem: ai(
+      "ai-hibiscus",
+      "hibiscus-2.jpg",
+      1200,
+      800,
+      [
+        "The petals are smooth like plastic, with no fine veins or creases.",
+        "Every leaf is equally sharp and glossy. None are bitten, torn or dusty.",
+        "The bush is filled with near copies of the same leaf shape.",
+      ],
+      true,
+    ),
+  },
+  {
+    id: "pair-desert-camel",
+    subject: "A camel resting in a rocky desert",
+    difficulty: "easy",
+    realItem: real("real-camel", "camel-2.jpg", 1200, 800, {
+      author: "AntanO",
+      source: "Wikimedia Commons",
+      file: "Camel in desert.JPG",
+      license: "CC BY-SA 4.0",
+    }),
+    aiItem: ai(
+      "ai-camel",
+      "camel-1.jpg",
+      1200,
+      800,
+      [
+        "Golden light makes the whole scene glow, like an advert. The real photo has flat evening light.",
+        "The camel's fur is combed into neat, matching curls.",
+        "The saddle blanket's pattern is perfect and its tassels hang in a tidy row.",
+      ],
+      true,
+    ),
+  },
+  {
+    id: "pair-lemon-tea",
+    subject: "A cup of black tea with a lemon slice",
+    difficulty: "easy",
+    realItem: real("real-lemon-tea", "tea-1.jpg", 1200, 800, {
+      author: "Nayan j Nath",
+      source: "Wikimedia Commons",
+      file: "A cup of Assam Tea with lemon.jpg",
+      license: "CC0 (public domain)",
+    }),
+    aiItem: ai(
+      "ai-lemon-tea",
+      "tea-2.jpg",
+      1200,
+      800,
+      [
+        "The tea bag tag is blank. The real one has a printed brand name.",
+        "The steam curls look painted on, and tea this hot rarely shows steam that neatly.",
+        "The wooden table is smooth and even, like a printed pattern.",
+      ],
+      true,
+    ),
+  },
+  {
+    id: "pair-green-mangoes",
+    subject: "Green mangoes hanging on the tree",
+    difficulty: "easy",
+    realItem: real("real-mangoes", "mango-2.jpg", 1200, 800, {
+      author: "iMahesh",
+      source: "Wikimedia Commons",
+      file: "Mangoes during the end of Autumn season in Hyderabad (2).jpg",
+      license: "CC BY-SA 4.0",
+    }),
+    aiItem: ai(
+      "ai-mangoes",
+      "mango-1.jpg",
+      1200,
+      800,
+      [
+        "The mangoes are smooth and spotless, with no marks or scratches.",
+        "The dry flower stalks look like crumbs sprinkled over the fruit.",
+        "Every leaf is sharp and shiny, with no holes, dust or dry edges.",
+      ],
+      true,
+    ),
+  },
+  {
+    id: "pair-parakeets",
+    subject: "Two green parakeets at a nest hole in a tree",
+    difficulty: "easy",
+    realItem: real("real-parakeets", "parakeet-1.jpg", 1200, 800, {
+      author: "A. H. M Ibnul Arabi",
+      source: "Wikimedia Commons",
+      file: "Rose-ringed parakeet (Psittacula krameri), University of Rajshahi, Bangladesh (1).jpg",
+      license: "CC BY-SA 4.0",
+    }),
+    aiItem: ai(
+      "ai-parakeets",
+      "parakeet-2.jpg",
+      1200,
+      800,
+      [
+        "Both birds pose neatly at the perfect moment, like a staged shot.",
+        "The feathers are spotless and perfectly arranged, almost like a painting.",
+        "The forest behind melts into an even, creamy blur.",
+      ],
+      true,
+    ),
+  },
+
+  // Medium: the same scene redrawn by AI, with whole objects added or changed.
   {
     id: "pair-thatched-cottage",
     subject: "A blue cottage with a straw roof",
-    difficulty: "easy",
+    difficulty: "medium",
     realItem: real("real-cottage-house", "cottage-2.jpg", 1000, 667, {
       author: "Krzysztof Popławski",
       source: "Wikimedia Commons",
@@ -67,7 +188,7 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
   {
     id: "pair-indian-thali",
     subject: "A thali plate with rice, curries and papad",
-    difficulty: "easy",
+    difficulty: "medium",
     // The original credited an invented "Culinary Documentary Archive". Source not known.
     realItem: real("real-indian-thali", "thali-1.jpg", 1000, 750, {
       author: null,
@@ -91,7 +212,7 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
   {
     id: "pair-vegetable-stall",
     subject: "A vegetable stall with tomatoes, okra and pumpkins",
-    difficulty: "easy",
+    difficulty: "medium",
     // The original credited an invented "Field Documentary Archive". Source not known.
     realItem: real("real-fruit-stand", "stall-2.jpg", 1000, 710, {
       author: null,
@@ -113,11 +234,10 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
     ),
   },
 
-  // Medium: AI changed colours, light and small parts.
   {
     id: "pair-fuji-sakura",
     subject: "Mount Fuji across a lake, framed by cherry blossoms",
-    difficulty: "medium",
+    difficulty: "hard",
     realItem: real("real-fuji-sakura", "fuji-1.jpg", 1000, 669, {
       author: "Midori",
       source: "Wikimedia Commons",
@@ -140,7 +260,7 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
   {
     id: "pair-golden-gate",
     subject: "The Golden Gate Bridge seen from an old brick fort",
-    difficulty: "medium",
+    difficulty: "hard",
     realItem: real("real-golden-gate", "bridge-2.jpg", 1000, 563, {
       author: "Frank Schulenburg",
       source: "Wikimedia Commons",
@@ -184,7 +304,54 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
     ),
   },
 
-  // Hard: AI only smoothed tiny textures.
+  {
+    id: "pair-graffiti-bicycle",
+    subject: "A bicycle parked by graffiti-covered doors in Amsterdam",
+    difficulty: "medium",
+    realItem: real("real-graffiti-bicycle", "bicycle-1.jpg", 1200, 800, {
+      author: "Basile Morin",
+      source: "Wikimedia Commons",
+      file: "Parked bicycle with graffitied building facade and doors in Amsterdam.jpg",
+      license: "CC BY-SA 4.0",
+    }),
+    aiItem: ai(
+      "ai-graffiti-bicycle",
+      "bicycle-2.jpg",
+      1200,
+      800,
+      [
+        "A red and yellow burst sits inside the big white letters. The real wall has none.",
+        "Read the scribbled tags on the right-hand door: they turn into shapes that aren't letters.",
+        "The bike is spotless and stands perfectly side on, too neat for a street bike.",
+      ],
+      true,
+    ),
+  },
+  {
+    id: "pair-spice-market",
+    subject: "Sacks of spices and garlic at a market",
+    difficulty: "medium",
+    realItem: real("real-spice-market", "spices-2.jpg", 1200, 900, {
+      author: "Bernard Gagnon",
+      source: "Wikimedia Commons",
+      file: "Spices market Medenine.jpg",
+      license: "CC BY-SA 3.0",
+    }),
+    aiItem: ai(
+      "ai-spice-market",
+      "spices-1.jpg",
+      1200,
+      900,
+      [
+        "The front sack is deep red chilli. In the real photo it's orange.",
+        "A brass scoop now sits in the yellow sack. The real sack has none.",
+        "The garlic bulbs look smooth and alike, like copies of each other.",
+      ],
+      true,
+    ),
+  },
+
+  // Hard: near-exact AI copies of the real photo. Only tiny textures and details differ.
   {
     id: "pair-snow-fox",
     subject: "A red fox curled up asleep in the snow",
@@ -275,6 +442,52 @@ export const COMPARISON_PAIRS: readonly ComparisonPair[] = [
         "The road and the cauliflowers lose their rough, grainy texture.",
       ],
       false,
+    ),
+  },
+  {
+    id: "pair-tuxedo-cat",
+    subject: "A black and white cat sitting on a lawn at dusk",
+    difficulty: "hard",
+    realItem: real("real-tuxedo-cat", "cat-2.jpg", 1200, 800, {
+      author: "Grendelkhan",
+      source: "Wikimedia Commons",
+      file: "Black and white cat sitting on lawn.jpg",
+      license: "CC BY-SA 4.0",
+    }),
+    aiItem: ai(
+      "ai-tuxedo-cat",
+      "cat-1.jpg",
+      1200,
+      800,
+      [
+        "Zoom in on the house number sign by the door: the letters are jumbled nonsense.",
+        "The dry grass in the middle turns into soft, smudged streaks.",
+        "The black fur is smoother and glossier, with fewer single hairs.",
+      ],
+      true,
+    ),
+  },
+  {
+    id: "pair-sand-dune",
+    subject: "A sand dune with wind ripples",
+    difficulty: "hard",
+    realItem: real("real-sand-dune", "dunes-1.jpg", 1200, 800, {
+      author: "Meshari Alawfi",
+      source: "Wikimedia Commons",
+      file: "Sand Dunes sa.jpg",
+      license: "CC BY 4.0",
+    }),
+    aiItem: ai(
+      "ai-sand-dune",
+      "dunes-2.jpg",
+      1200,
+      800,
+      [
+        "The ripples are too evenly spaced, like lines drawn with a ruler.",
+        "The thin clouds at the top left turn into simpler, soft smears.",
+        "Up close the sand has no fine grain. It looks smooth, like paint.",
+      ],
+      true,
     ),
   },
 ];
