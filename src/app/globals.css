@@ -7,7 +7,7 @@
  * in the product comes from a semantic token below, so nothing drifts.
  */
 
-@theme {
+@theme static {
   --color-*: initial;
   --color-transparent: transparent;
   --color-current: currentColor;
@@ -205,8 +205,8 @@
 
 /* ── Type roles. Use these instead of ad-hoc sizes. ─────────────── */
 @utility type-display-1 {
-  font-size: clamp(2.75rem, 1.15rem + 5.2vw, 6rem);
-  line-height: 0.94;
+  font-size: clamp(2.6rem, 1.4rem + 3.4vw, 4.75rem);
+  line-height: 0.95;
   letter-spacing: -0.035em;
   font-weight: 800;
   font-stretch: 112%;
@@ -328,6 +328,34 @@
   background-size: 14px 14px;
 }
 
+/* ── Illustration motion (hover only, never under reduced motion) ── */
+@keyframes art-draw {
+  from {
+    stroke-dashoffset: var(--art-length, 600);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes art-pop {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.art-move {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 520ms var(--ease-in-out), opacity 320ms var(--ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -335,5 +363,9 @@
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
+  }
+  .art-move {
+    transition: none !important;
+    transform: none !important;
   }
 }

@@ -4,6 +4,10 @@ import { Camera, Play, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { GAMES, type GameSlug } from "@/content/games";
 import { GameGlyph } from "@/components/art/game-glyph";
+import { GameArt } from "@/components/art/game-art";
+import { SensorArt, type SensorId } from "@/components/art/sensor-art";
+
+const SENSORS: SensorId[] = ["motion", "gps", "camera", "microphone", "light", "touch", "battery", "connection"];
 import { Button, IconButton } from "@/components/ui/button";
 import { Chip, ToggleChip } from "@/components/ui/chip";
 import { ConfidenceBars } from "@/components/ui/meter";
@@ -232,6 +236,31 @@ export function DesignSystem() {
               </div>
             </PhoneFrame>
           </div>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-6">
+        <h2 className="type-title-1">Illustrations</h2>
+        <p className="type-body max-w-[40rem] text-fg-muted">
+          One per game, shared by the hub tile and the game&apos;s intro. Hover a panel to see its motion.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {GAMES.map((g) => (
+            <div key={g.slug} data-game={g.slug} className="group/tile tile-surface grain relative aspect-[4/3] overflow-hidden rounded-xl">
+              <div className="absolute inset-0 z-[2]">
+                <GameArt slug={g.slug} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <h3 className="type-title-2 pt-6">Sensors</h3>
+        <div data-game="phone" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {SENSORS.map((s) => (
+            <div key={s} className="group/card flex flex-col gap-2 rounded-lg bg-surface p-4 shadow-ring">
+              <SensorArt sensor={s} className="aspect-square" />
+              <span className="type-label text-fg-subtle">{s}</span>
+            </div>
+          ))}
         </div>
       </section>
 
