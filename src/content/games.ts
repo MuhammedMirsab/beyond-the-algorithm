@@ -9,7 +9,6 @@ export type GameSlug =
   | "face-control"
   | "airwrite"
   | "viewfinder"
-  | "air-studio"
   | "train-the-machine"
   | "how-ai-learns"
   | "real-or-ai"
@@ -136,18 +135,6 @@ export const GAMES: Game[] = [
     skill: "Two-hand tracking, 42 points",
     group: "sees",
     minutes: 2,
-    needs: ["camera"],
-    bestOn: "laptop",
-    curator: "mirsab",
-  },
-  {
-    slug: "air-studio",
-    title: "Air Studio",
-    short: "Air Studio",
-    hook: "Play drums, piano and guitar in the air. The camera turns the way your hands move into music.",
-    skill: "Gesture recognition",
-    group: "sees",
-    minutes: 4,
     needs: ["camera"],
     bestOn: "laptop",
     curator: "mirsab",

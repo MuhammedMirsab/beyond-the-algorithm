@@ -1,6 +1,6 @@
 # Working in this repo
 
-Beyond the Algorithm: one Next.js 16 app (App Router, Turbopack, React 19, TypeScript strict, Tailwind 4, Bun) holding ten AI games for the EDEX 2026 exhibition. Read `DESIGN.md` first; it decides how everything looks, moves and reads.
+Beyond the Algorithm: one Next.js 16 app (App Router, Turbopack, React 19, TypeScript strict, Tailwind 4, Bun) holding nine AI games for the EDEX 2026 exhibition. Read `DESIGN.md` first; it decides how everything looks, moves and reads.
 
 ## Next.js version
 

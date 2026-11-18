@@ -1,6 +1,6 @@
 # Beyond the Algorithm
 
-Ten short games that show what AI can work out about you. Built by IISJ Computer Science students for **EDEX 2026** at International Indian School Jeddah (19 and 20 November 2026).
+Nine short games that show what AI can work out about you. Built by IISJ Computer Science students for **EDEX 2026** at International Indian School Jeddah (19 and 20 November 2026).
 
 | Group | Game | Route | What the AI does |
 | --- | --- | --- | --- |
@@ -9,7 +9,6 @@ Ten short games that show what AI can work out about you. Built by IISJ Computer
 | It sees you | Face Control | `/face-control` | 478 face landmarks become a controller |
 | | AirWrite | `/airwrite` | 21 hand landmarks write; an on-device matcher reads the letters |
 | | Finger frame | `/viewfinder` | Two-hand tracking: 4 fingertips frame a live filter |
-| | Air Studio | `/air-studio` | Hand gestures (strikes, strums, height) play drums, piano and more |
 | It learns from you | Train the machine | `/train-the-machine` | Pose classification from your examples |
 | | See how AI learns | `/how-ai-learns` | Transfer learning on MobileNet |
 | It's already around you | Real or AI? | `/real-or-ai` | Spot the AI-edited photo |
@@ -60,11 +59,5 @@ src/content/games.ts     the registry of games
 - Test the camera games with the real webcam and lighting before doors open.
 
 ## Credits
-
-Air Studio's instrument sounds, served from `public/games/air-studio/samples`:
-
-- Salamander Grand Piano V3 by Alexander Holm (CC BY 3.0)
-- tonejs-instruments guitar and bass samples (MIT)
-- TR-808 samples via @fluid-music/tr-808 (ISC)
 
 Hand, face and pose tracking: Google MediaPipe (Apache 2.0). Photo credits for See how AI learns and Real or AI? are shown inside each game.

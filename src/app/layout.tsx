@@ -26,7 +26,7 @@ const dots = Doto({
 
 const title = "Beyond the Algorithm";
 const description =
-  "Ten short games that show what AI can work out about you. Made by IISJ Computer Science students for EDEX 2026.";
+  "Nine short games that show what AI can work out about you. Made by IISJ Computer Science students for EDEX 2026.";
 
 /** Absolute base for OG image URLs: explicit env, then the Vercel production domain, then localhost. */
 const siteUrl =

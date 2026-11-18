@@ -55,15 +55,6 @@ const GLYPHS: Record<GameSlug, React.ReactNode> = {
       <circle cx="19.5" cy="14.5" r="2" fill="currentColor" stroke="none" />
     </>
   ),
-  // A beamed pair of notes: hands turned into music.
-  "air-studio": (
-    <>
-      <path d="M9 17V6l11-2v11" />
-      <path d="M9 9.5l11-2" />
-      <circle cx="6.5" cy="17.5" r="2.5" fill="currentColor" stroke="none" />
-      <circle cx="17.5" cy="15.5" r="2.5" fill="currentColor" stroke="none" />
-    </>
-  ),
   // Four corners of a hand-made frame.
   viewfinder: (
     <>
