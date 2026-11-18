@@ -17,21 +17,22 @@ import {
   SLIDER_MIN,
   sliderFromCamera,
 } from "../../engine/light";
-import { useShared } from "../../link/link";
+import { useLink, useShared } from "../../link/link";
 import { issueCopy } from "../../sensors/status";
 import { useCameraFrames } from "../../sensors/use-camera-frames";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
 import {
   IslandLabel,
-  LiveControl,
-  liveControlHasPrimary,
   ModeSwitch,
   STAGE_BOTTOM,
   StageScore,
   StageShell,
   useIslandNotice,
+  useLatch,
+  type SensorGate,
   type Source,
+  type Task,
 } from "../parts";
 
 /** The room behind the drawn phone: from a dark room to a sunny day. */
@@ -44,12 +45,13 @@ export function LightExperiment({ ctx }: ExperimentProps) {
   const { attachVideoElement, ...cam } = useCameraFrames();
   const [mode, setMode] = useState<Source>(caps.media ? "live" : "sim");
   const [room, setRoom] = useState<number>(LIGHT_PRESETS[1].value);
-  const { markTested } = ctx;
+  const { markTested, mirrored } = ctx;
+  const link = useLink();
 
   // Only the camera's brightness number reaches a linked booth screen.
-  const shared = useShared("light", { mode, room, status: cam.status, brightness: cam.stats?.brightness ?? null });
+  const shared = useShared("light", { mode, room, status: cam.status, brightness: cam.stats ? Math.round(cam.stats.brightness * 100) / 100 : null });
   const status = shared.status;
-  const brightness = shared.brightness;
+  const brightness = typeof shared.brightness === "number" ? shared.brightness : null;
   const sim = shared.mode === "sim";
   const live = !sim && status === "live" && brightness != null;
 
@@ -64,11 +66,23 @@ export function LightExperiment({ ctx }: ExperimentProps) {
   };
 
   const lux = luxFromSlider(shared.room);
-  const cameraLevel = brightness != null ? sliderFromCamera(brightness) : null;
+  const cameraLevel = live ? sliderFromCamera(brightness) : null;
   const level = sim ? shared.room : cameraLevel;
   const screen = level != null ? screenBrightness(level) : null;
-  const guess = sim ? lightGuessFromLux(lux) : brightness != null ? lightGuessFromCamera(brightness) : null;
-  const island = useIslandNotice(status === "live" && !sim, <IslandLabel tone="camera">Camera on</IslandLabel>);
+  const guess = sim ? lightGuessFromLux(lux) : live ? lightGuessFromCamera(brightness) : null;
+  const island = useIslandNotice(live, <IslandLabel tone="camera">Camera on</IslandLabel>);
+
+  const dark = useLatch(sim ? lightMode(lux) === "night" : live && brightness < 0.12);
+  const bright = useLatch(sim ? lightMode(lux) === "outdoor" : live && brightness >= 0.7);
+  const tasks: Task[] = sim
+    ? [
+        { id: "dark", label: "Make the room dark", done: dark },
+        { id: "bright", label: "Go out into the sun", done: bright },
+      ]
+    : [
+        { id: "dark", label: "Cover the camera with your hand", done: dark },
+        { id: "bright", label: "Point it at a lamp or a window", done: bright },
+      ];
 
   const readout = sim
     ? [
@@ -82,53 +96,52 @@ export function LightExperiment({ ctx }: ExperimentProps) {
         { label: "Light sensor", value: "Hidden from websites" },
       ];
 
-  const tryIt = (
-    <div className="flex flex-col gap-5">
-      {caps.media ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
-      {sim ? (
-        <div className="flex flex-col gap-3">
-          <SliderRow
-            label="Light in the room"
-            value={room}
-            min={SLIDER_MIN}
-            max={SLIDER_MAX}
-            valueText={`${lux.toLocaleString("en")} lux`}
-            onValueChange={(v) => {
-              setRoom(v);
-              markTested();
-            }}
-          />
-          <div className="flex flex-wrap gap-2">
-            {LIGHT_PRESETS.map((preset) => (
-              <Button
-                key={preset.id}
-                variant="secondary"
-                onClick={() => {
-                  setRoom(preset.value);
-                  markTested();
-                }}
-              >
-                {preset.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <LiveControl
-          status={status}
-          startLabel="Measure with the camera"
-          startIcon={<Camera />}
-          stopLabel="Turn off camera"
-          onStart={cam.start}
-          onStop={cam.stop}
-          issue={issueCopy("camera", cam.status)}
-          onSimulate={() => switchMode("sim")}
-          privacy="Browsers don't let websites read the light sensor, so this estimates the light from the camera. Nothing is recorded."
-          liveHint="Cover the camera with your hand, then point it at a lamp or a window. Watch the screen follow."
+  const gate: SensorGate | null = sim
+    ? null
+    : {
+        status,
+        startLabel: "Measure with the camera",
+        startIcon: <Camera />,
+        onStart: cam.start,
+        stopLabel: "Turn off camera",
+        onStop: cam.stop,
+        issue: issueCopy("camera", cam.status),
+        onSimulate: () => switchMode("sim"),
+        privacy: link.controller
+          ? "Browsers keep the light sensor from websites, so this uses how bright the camera picture is. Only that number reaches the booth screen."
+          : "Browsers keep the light sensor from websites, so this uses how bright the camera picture is. Nothing is recorded.",
+      };
+
+  const controls =
+    sim && !mirrored ? (
+      <div className="flex flex-col gap-3">
+        <SliderRow
+          label="Light in the room"
+          value={room}
+          min={SLIDER_MIN}
+          max={SLIDER_MAX}
+          valueText={`${lux.toLocaleString("en")} lux`}
+          onValueChange={(v) => {
+            setRoom(v);
+            markTested();
+          }}
         />
-      )}
-    </div>
-  );
+        <div className="flex flex-wrap gap-2">
+          {LIGHT_PRESETS.map((preset) => (
+            <Button
+              key={preset.id}
+              variant="secondary"
+              onClick={() => {
+                setRoom(preset.value);
+                markTested();
+              }}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   return (
     <ExperimentLayout
@@ -140,7 +153,7 @@ export function LightExperiment({ ctx }: ExperimentProps) {
       backdrop={level != null ? roomColor(level) : undefined}
       stage={
         <StageShell title="Light" source={sim ? "sim" : "live"}>
-          {!sim ? (
+          {!sim && !mirrored ? (
             <video
               ref={attachVideoElement}
               muted
@@ -169,11 +182,7 @@ export function LightExperiment({ ctx }: ExperimentProps) {
             />
           </div>
           <div className={cn("flex items-end justify-between gap-4 px-5 pt-5", STAGE_BOTTOM)}>
-            {sim ? (
-              <StageScore value={lux} label="Lux" size="md" />
-            ) : (
-              <StageScore value={cameraLevel ?? 0} suffix="%" label="Camera light" size="md" />
-            )}
+            {sim ? <StageScore value={lux} label="Lux" size="md" /> : <StageScore value={cameraLevel ?? 0} suffix="%" label="Camera light" size="md" />}
             <div className="flex flex-col items-end gap-1 pb-1 text-right">
               <span className="type-label text-fg-subtle">Screen</span>
               <span className="type-label tabular-nums text-fg">{screen != null ? `${screen}%` : "Off"}</span>
@@ -181,11 +190,14 @@ export function LightExperiment({ ctx }: ExperimentProps) {
           </div>
         </StageShell>
       }
-      tryIt={tryIt}
+      gate={gate}
+      modeSwitch={caps.media && !mirrored ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
+      controls={controls}
+      tasks={tasks}
       readout={readout}
       guess={guess}
       guessWaiting="Measure the light to see what it guesses."
-      primaryTaken={!sim && liveControlHasPrimary(status)}
+      numbers={sim ? `${lux.toLocaleString("en")} lux   screen ${screen}%` : cameraLevel != null ? `camera brightness ${cameraLevel}%   screen ${screen}%` : null}
       summary={
         sim
           ? `${lux} lux. Screen at ${screen} percent. Guess: ${guess?.label ?? ""}.`

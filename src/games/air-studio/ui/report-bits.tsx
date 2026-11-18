@@ -1,3 +1,6 @@
+"use client";
+
+import { motion } from "motion/react";
 import { cn } from "@/lib/cn";
 
 /** "12 ms late", "8 ms early" or "on the beat", for an average offset. */
@@ -12,7 +15,7 @@ export function offsetWords(ms: number | null): string | null {
  * middle line were late, below were early. The band is the on-time window.
  * Ported from the original app's offset chart.
  */
-export function OffsetChart({ offsets, window: win, className }: { offsets: number[]; window: number; className?: string }) {
+export function OffsetChart({ offsets, window: win, reveal = false, className }: { offsets: number[]; window: number; reveal?: boolean; className?: string }) {
   if (offsets.length < 2) return null;
   const W = 640;
   const H = 150;
@@ -56,9 +59,26 @@ export function OffsetChart({ offsets, window: win, className }: { offsets: numb
         <text x={W - padR} y={H - 6} textAnchor="end" className="fill-fg-subtle text-[11px]">
           Last
         </text>
-        <polyline points={offsets.map((o, i) => `${x(i)},${y(o)}`).join(" ")} fill="none" className="stroke-game/40" strokeWidth={1.5} />
+        <motion.polyline
+          points={offsets.map((o, i) => `${x(i)},${y(o)}`).join(" ")}
+          fill="none"
+          className="stroke-game/40"
+          strokeWidth={1.5}
+          initial={reveal ? { pathLength: 0 } : false}
+          animate={{ pathLength: 1, transition: { duration: 1.1, ease: "linear", delay: 0.5 } }}
+        />
         {offsets.map((o, i) => (
-          <circle key={i} cx={x(i)} cy={y(o)} r={4.5} className={Math.abs(o) <= win ? "fill-game" : "fill-fg"} />
+          // When revealed, each note lands in playing order, left to right.
+          <motion.circle
+            key={i}
+            cx={x(i)}
+            cy={y(o)}
+            r={4.5}
+            className={Math.abs(o) <= win ? "fill-game" : "fill-fg"}
+            initial={reveal ? { opacity: 0, scale: 0.3 } : false}
+            animate={{ opacity: 1, scale: 1, transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1], delay: 0.5 + (i / Math.max(1, offsets.length - 1)) * 1.1 } }}
+            style={{ transformBox: "fill-box", transformOrigin: "center" }}
+          />
         ))}
       </svg>
     </figure>

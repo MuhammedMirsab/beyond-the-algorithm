@@ -145,6 +145,36 @@ export function middleStrategyPath(secret: number, min: number, max: number): nu
   return path;
 }
 
+export interface MiddleStep {
+  guess: number;
+  /** The window before this guess. */
+  low: number;
+  high: number;
+  result: "higher" | "lower" | "correct";
+  /** Numbers possible before and after. */
+  before: number;
+  after: number;
+}
+
+/** "Always guess the middle", step by step, with the window each guess cut. */
+export function middleStrategySteps(secret: number, min: number, max: number): MiddleStep[] {
+  const steps: MiddleStep[] = [];
+  let lo = min;
+  let hi = max;
+  while (lo <= hi) {
+    const guess = Math.floor((lo + hi) / 2);
+    const result = guess === secret ? "correct" : secret > guess ? "higher" : "lower";
+    const before = hi - lo + 1;
+    const nextLo = result === "higher" ? guess + 1 : lo;
+    const nextHi = result === "lower" ? guess - 1 : hi;
+    steps.push({ guess, low: lo, high: hi, result, before, after: result === "correct" ? 1 : nextHi - nextLo + 1 });
+    if (result === "correct") break;
+    lo = nextLo;
+    hi = nextHi;
+  }
+  return steps;
+}
+
 /** Worst case of the middle strategy over a whole range. */
 export function middleStrategyWorstCase(range: RangeId): number {
   const max = RANGE_MAX[range];

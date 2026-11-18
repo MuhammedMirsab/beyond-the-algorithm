@@ -4,8 +4,10 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { SliderRow, SwitchRow } from "@/components/ui/controls";
 import { Modal } from "@/components/ui/dialog";
+import { KeyHints } from "@/components/ui/key-hints";
 import { resetSettings, settings } from "../engine/state/settings";
 import type { FaceControlSession } from "../play/session";
+import { PLAY_KEYS } from "./dock";
 import { useSettings } from "./hooks";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -79,7 +81,10 @@ export function SettingsModal({ session, open }: { session: FaceControlSession; 
         />
         <Help>More smoothing is calmer. Less reacts faster.</Help>
 
-        <h3 className="type-label mb-1 mt-4 text-fg-subtle">Display and sound</h3>
+        <h3 className="type-label mb-3 mt-4 text-fg-subtle">Keyboard</h3>
+        <KeyHints items={[...PLAY_KEYS, { keys: ["M"], label: "Sound on or off" }]} layout="list" className="mb-2" />
+
+        <h3 className="type-label mb-1 mt-5 text-fg-subtle">Display and sound</h3>
         <SwitchRow
           label="Show tracking points"
           description="Draws the points the model finds on your face."

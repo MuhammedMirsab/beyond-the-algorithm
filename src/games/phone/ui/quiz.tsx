@@ -3,21 +3,26 @@
 import { CircleCheck, CircleX } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { KeyHints } from "@/components/ui/key-hints";
 import { StepDots } from "@/components/ui/progress";
 import { cn } from "@/lib/cn";
 import { correctIndex, QUIZ_LENGTH, QUIZ_QUESTIONS, quizScore } from "../data/quiz";
 import { sound } from "../engine/sound";
 import { useShared } from "../link/link";
 
-const LETTERS = ["A", "B", "C", "D"];
-const KEYS: Record<string, number> = { "1": 0, "2": 1, "3": 2, a: 0, b: 1, c: 2 };
+const KEYS: Record<string, number> = { "1": 0, "2": 1, "3": 2 };
 
 /** Five everyday moments, one at a time. An answer locks, then the explanation shows. */
-export function Quiz({ onDone }: { onDone: (score: number) => void }) {
+export function Quiz({ keys = true, onDone }: { keys?: boolean; onDone: (score: number) => void }) {
   const [localIndex, setIndex] = useState(0);
   const [localAnswers, setAnswers] = useState<(number | null)[]>(() => QUIZ_QUESTIONS.map(() => null));
-  // A booth screen linked to a phone shows the phone's question and answers.
-  const { index, answers } = useShared("quiz", { index: localIndex, answers: localAnswers });
+  // A booth screen linked to a phone shows the phone's question and answers (checked: they came from another device).
+  const shared = useShared("quiz", { index: localIndex, answers: localAnswers });
+  const index = Number.isInteger(shared.index) ? Math.min(QUIZ_LENGTH - 1, Math.max(0, shared.index)) : 0;
+  const answers = QUIZ_QUESTIONS.map((_, i) => {
+    const a = Array.isArray(shared.answers) ? shared.answers[i] : null;
+    return typeof a === "number" && Number.isInteger(a) && a >= 0 && a < 4 ? a : null;
+  });
   const heading = useRef<HTMLHeadingElement>(null);
 
   const question = QUIZ_QUESTIONS[index];
@@ -43,9 +48,9 @@ export function Quiz({ onDone }: { onDone: (score: number) => void }) {
     else setIndex((i) => i + 1);
   };
 
-  // Booth keys: 1 to 3 (or A to C) answer, Enter moves on.
+  // Booth keys: 1 to 3 answer, Enter moves on.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!keys || event.altKey || event.ctrlKey || event.metaKey) return;
     const option = KEYS[event.key.toLowerCase()];
     if (option != null) {
       event.preventDefault();
@@ -100,7 +105,7 @@ export function Quiz({ onDone }: { onDone: (score: number) => void }) {
                 )}
               >
                 <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-fg/10 font-mono text-[0.8125rem] font-semibold text-fg">
-                  {LETTERS[i]}
+                  {i + 1}
                 </span>
                 <span className="type-body-lg min-w-0 flex-1 font-semibold text-fg">{option.text}</span>
                 {locked && isRight ? (
@@ -131,15 +136,22 @@ export function Quiz({ onDone }: { onDone: (score: number) => void }) {
               </p>
               <p className="type-body text-fg-muted">{question.explanation}</p>
             </div>
-            <div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
               <Button variant="game" size="lg" arrow onClick={next}>
                 {last ? "See how you did" : "Next question"}
               </Button>
+              {keys ? (
+                <div className="hidden pointer-fine:block">
+                  <KeyHints items={[{ keys: ["Enter"], label: last ? "See how you did" : "Next question" }]} />
+                </div>
+              ) : null}
             </div>
           </>
-        ) : (
-          <p className="type-small hidden text-fg-subtle pointer-fine:block">Press 1, 2 or 3 to answer.</p>
-        )}
+        ) : keys ? (
+          <div className="hidden pointer-fine:block">
+            <KeyHints items={[{ keys: ["1", "2", "3"], label: "Answer" }]} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

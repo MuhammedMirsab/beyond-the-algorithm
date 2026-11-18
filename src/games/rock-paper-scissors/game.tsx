@@ -1,21 +1,26 @@
 "use client";
 
-import { Keyboard, Pointer } from "lucide-react";
+import { Camera, Keyboard, Pointer } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { CameraProblem, CameraPrompt, CameraWaiting } from "@/components/game/camera-notice";
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
 import { useIdle } from "@/lib/idle";
+import { countHabits } from "./engine/insights";
 import type { Difficulty, Gesture } from "./engine/types";
 import { isRoundLive, MatchController, type MatchView } from "./match-controller";
+import { ActionBar } from "./ui/action-bar";
+import { aiCardState, AiPanel, dealKey, GuessBlock, guessInfo, Notes } from "./ui/ai-panel";
 import { CameraView } from "./ui/camera-view";
+import { GESTURE_LABEL } from "./ui/gesture-icon";
 import { IntroView } from "./ui/intro-view";
-import { MatchPanel } from "./ui/match-panel";
+import { MatchHeader, OUTCOME_COPY } from "./ui/match-header";
+import { AiCard, PlayerCard, type PlayerCardState } from "./ui/move-cards";
 import { ResultsView } from "./ui/results-view";
 import { RoundStrip } from "./ui/round-strip";
 import { ThrowPad } from "./ui/throw-pad";
-import { useTouchScreen, withoutCameraLabel } from "./ui/use-touch-screen";
+import { useTouchScreen, useWideLayout, withoutCameraLabel } from "./ui/use-touch-screen";
 import { HandTracker, INITIAL_TRACKER_STATUS, type TrackerStatus } from "./vision/handTracker";
 
 type Screen = "intro" | "play" | "results";
@@ -158,13 +163,7 @@ export function RockPaperScissorsGame() {
   useIdle(nextPlayer, { enabled: screen !== "play" || !live });
 
   return (
-    <GameShell
-      slug="rock-paper-scissors"
-      sound
-      actions={
-        screen === "play" ? <NextPlayerButton onClick={nextPlayer} /> : null
-      }
-    >
+    <GameShell slug="rock-paper-scissors" sound actions={screen === "play" ? <NextPlayerButton onClick={nextPlayer} /> : null}>
       {screen === "intro" ? (
         <IntroView difficulty={difficulty} onDifficultyChange={setDifficulty} onCamera={playWithCamera} onKeys={playWithKeys} />
       ) : null}
@@ -176,8 +175,7 @@ export function RockPaperScissorsGame() {
           tracker={tracker}
           ready={ready}
           live={live}
-          keysLabel={withoutCameraLabel(touch)}
-          keysIcon={touch ? <Pointer /> : <Keyboard />}
+          touch={touch}
           onStart={startRound}
           onSeeResults={seeResults}
           onThrow={(gesture) => {
@@ -196,14 +194,30 @@ export function RockPaperScissorsGame() {
   );
 }
 
+/** One polite announcement per change: the chant, then the result. */
+function announcement(view: MatchView): string {
+  const { match, missed, beat } = view;
+  const last = match.lastResolvedRound;
+  if (isRoundLive(view) && beat) {
+    if (beat === "lock") return "The AI has locked its move.";
+    return beat === "shoot" ? "Shoot" : GESTURE_LABEL[beat];
+  }
+  if (missed) return "Didn't catch your hand. Play the round again.";
+  if (last) {
+    let text = `${OUTCOME_COPY[last.outcome].word}. You threw ${last.playerMove}, the AI threw ${last.aiCounterMove}. It expected ${last.predictedPlayerMove}.`;
+    if (match.phase === "match_complete") text += match.winner === "player" ? " You won the match." : " The AI won the match.";
+    return text;
+  }
+  return "";
+}
+
 function PlayScreen({
   view,
   status,
   tracker,
   ready,
   live,
-  keysLabel,
-  keysIcon,
+  touch,
   onStart,
   onSeeResults,
   onThrow,
@@ -215,21 +229,22 @@ function PlayScreen({
   tracker: HandTracker;
   ready: boolean;
   live: boolean;
-  keysLabel: string;
-  keysIcon: ReactNode;
+  touch: boolean;
   onStart: () => void;
   onSeeResults: () => void;
   onThrow: (gesture: Gesture) => void;
   onUseCamera: () => void;
   onUseKeys: () => void;
 }) {
+  const wide = useWideLayout();
+  const camera = view.inputMode === "camera";
   const playWithoutCamera = (
-    <Button variant="ghost" size="lg" icon={keysIcon} onClick={onUseKeys}>
-      {keysLabel}
+    <Button variant="ghost" size="lg" icon={touch ? <Pointer /> : <Keyboard />} onClick={onUseKeys}>
+      {withoutCameraLabel(touch)}
     </Button>
   );
 
-  if (view.inputMode === "camera") {
+  if (camera) {
     if (status.camera === "error" || status.model === "error") {
       return (
         <Centered>
@@ -259,44 +274,140 @@ function PlayScreen({
     }
   }
 
-  const detecting = live && view.match.phase === "detecting";
-  const notReadyText = status.model === "ready" ? undefined : "Loading the hand model";
+  const { match } = view;
+  const last = match.lastResolvedRound;
+  const revealed = !live && !view.missed && last !== null;
+  const shoot = live && view.beat === "shoot";
+  const notReadyText = camera && status.model !== "ready" ? "Loading the hand model" : undefined;
+  const thrown = revealed && last ? last.playerMove : null;
 
-  // Phones: your hand, then the match, then the last rounds.
-  // Tablet and up: your hand with the last rounds under it on the left, the match on the right.
-  return (
-    <div className="mx-auto grid w-full max-w-[69rem] items-start gap-8 px-4 pb-12 pt-2 sm:px-6 md:grid-cols-2 md:grid-rows-[auto_1fr] md:gap-x-8 md:gap-y-6 lg:gap-x-10 lg:px-8 lg:pt-4">
-      <div className="min-w-0 md:col-start-1 md:row-start-1">
-        {view.inputMode === "camera" ? (
-          <CameraView tracker={tracker} model={status.model} throwing={live || view.missed} />
+  const playerState: PlayerCardState = revealed ? "thrown" : live && view.pendingThrow ? "picked" : "empty";
+  const playerMove = revealed && last ? last.playerMove : view.pendingThrow;
+  const playerPrompt = live ? (touch ? "Tap your move" : "Pick your move") : "Start the round, then pick";
+
+  const switchLink = (
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      <p className="type-small text-fg-subtle">{touch ? "Playing with buttons." : "Playing with keys."} The AI works the same way.</p>
+      <Button variant="ghost" size="sm" icon={<Camera />} onClick={onUseCamera} disabled={live || match.phase === "match_complete"}>
+        Use the camera
+      </Button>
+    </div>
+  );
+
+  const header = <MatchHeader view={view} cameraMode={camera} touch={touch} />;
+  const action = (
+    <ActionBar view={view} ready={ready} notReadyText={notReadyText} touch={touch} onStart={onStart} onSeeResults={onSeeResults} />
+  );
+  const strip = <RoundStrip rounds={match.matchRounds} />;
+  const padProps = { enabled: live, shoot, selected: view.pendingThrow, thrown, onThrow, touch };
+  const liveRegion = (
+    <p className="sr-only" aria-live="polite" aria-atomic="true">
+      {announcement(view)}
+    </p>
+  );
+
+  if (wide) {
+    // The booth laptop: you on the left, the AI on the right, the chant between the scores above.
+    return (
+      <div className="mx-auto flex w-full max-w-[88rem] flex-1 flex-col gap-4 px-8 pb-4 pt-1 [--stage-h:clamp(16rem,calc(100dvh-21rem),46rem)] [@media(max-height:45rem)]:[--stage-h:clamp(16rem,calc(100dvh-19rem),46rem)]">
+        {header}
+        {camera ? (
+          <div className="grid grid-cols-[auto_minmax(21rem,38rem)] items-stretch justify-center gap-5">
+            <CameraView
+              tracker={tracker}
+              model={status.model}
+              throwing={live || view.missed}
+              beat={live ? view.beat : null}
+              thrown={thrown}
+              className="w-[calc(var(--stage-h)*4/3)] max-w-[60vw] [@media(max-height:45rem)]:[&_figcaption]:hidden"
+              boxClassName="h-[var(--stage-h)]"
+            />
+            <AiPanel view={view} />
+          </div>
         ) : (
-          <ThrowPad
-            enabled={live}
-            shoot={detecting}
-            selected={view.pendingThrow}
-            onThrow={onThrow}
-            onUseCamera={onUseCamera}
-            canSwitch={!live && view.match.phase !== "match_complete"}
-          />
+          <div className="mx-auto grid w-full max-w-[76rem] grid-cols-2 items-stretch gap-5">
+            <section aria-label="You" className="@container flex min-w-0 flex-col gap-4 rounded-xl bg-surface p-4 shadow-ring sm:p-5">
+              <span className="type-label text-fg-muted">You</span>
+              <div className="grid flex-1 content-start gap-5 @[30rem]:grid-cols-[minmax(0,10.5rem)_minmax(0,1fr)]">
+                <PlayerCard
+                  state={playerState}
+                  move={playerMove}
+                  throwKey={last?.id ?? null}
+                  prompt={playerPrompt}
+                  className="w-full max-w-[10.5rem] justify-self-center [@media(max-height:46rem)]:max-w-[9rem]"
+                />
+                <ThrowPad {...padProps} layout="column" />
+              </div>
+              {switchLink}
+            </section>
+            <AiPanel view={view} />
+          </div>
         )}
+        <div className="flex items-end justify-between gap-8">
+          {strip}
+          <div className="flex shrink-0 justify-end">{action}</div>
+        </div>
+        {liveRegion}
       </div>
-      <div className="min-w-0 md:col-start-2 md:row-span-2 md:row-start-1">
-        <MatchPanel
-          view={view}
-          ready={ready}
-          notReadyText={view.inputMode === "camera" ? notReadyText : undefined}
-          onStart={onStart}
-          onSeeResults={onSeeResults}
-        />
-      </div>
-      {view.match.matchRounds.length > 0 ? (
-        <section aria-labelledby="rps-last-rounds" className="flex min-w-0 flex-col gap-3 md:col-start-1 md:row-start-2">
-          <h2 id="rps-last-rounds" className="type-label text-fg-subtle">
-            Last rounds
-          </h2>
-          <RoundStrip rounds={view.match.matchRounds} />
-        </section>
-      ) : null}
+    );
+  }
+
+  // Phones and tablets: the chant, both moves side by side, then your controls.
+  const info = guessInfo(view);
+  return (
+    <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col gap-5 px-4 pb-10 pt-1 sm:px-6">
+      {header}
+      {camera ? (
+        <>
+          <CameraView
+            tracker={tracker}
+            model={status.model}
+            throwing={live || view.missed}
+            beat={live ? view.beat : null}
+            thrown={thrown}
+            boxClassName="aspect-[4/3]"
+          />
+          <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[9rem_minmax(0,1fr)]">
+            <AiCard state={aiCardState(view)} move={info.state === "revealed" && last ? last.aiCounterMove : null} beat={view.beat} dealKey={dealKey(view)} />
+            <GuessBlock info={info} />
+          </div>
+          {action}
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:gap-5">
+            <div className="flex flex-col items-center gap-2">
+              <PlayerCard
+                state={playerState}
+                move={playerMove}
+                throwKey={last?.id ?? null}
+                prompt={playerPrompt}
+                className="w-full max-w-[9.5rem]"
+              />
+              <span className="type-label text-fg-muted">You</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <AiCard
+                state={aiCardState(view)}
+                move={info.state === "revealed" && last ? last.aiCounterMove : null}
+                beat={view.beat}
+                dealKey={dealKey(view)}
+                className="w-full max-w-[9.5rem]"
+              />
+              <span className="type-label text-game">AI</span>
+            </div>
+          </div>
+          <ThrowPad {...padProps} />
+          {action}
+          <div className="rounded-xl bg-sunken p-4 shadow-ring">
+            <GuessBlock info={info} />
+          </div>
+          {switchLink}
+        </>
+      )}
+      <Notes habits={countHabits(view.history)} />
+      {strip}
+      {liveRegion}
     </div>
   );
 }

@@ -1,27 +1,40 @@
 "use client";
 
 import { Hand, Move, ScanSearch, Sun, Wand } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ModelLoading } from "@/components/game/camera-notice";
 import { cn } from "@/lib/cn";
-import type { CVFrameResult, DetectedGesture, FrameQualityIssue, HandLandmark } from "../engine/types";
+import type { CVFrameResult, DetectedGesture, FrameQualityIssue, Gesture, HandLandmark } from "../engine/types";
+import type { Beat } from "../match-controller";
+import { analyzeFingerExtensions } from "../vision/gestureGeometry";
 import type { HandTracker, ModelStatus } from "../vision/handTracker";
 import { HINT_COPY, HintWindow } from "../vision/hints";
-import { GESTURE_LABEL, GestureIcon } from "./gesture-icon";
+import { GESTURE_LABEL, HandGlyph } from "./gesture-icon";
 
-/** MediaPipe's 21 hand points, joined into fingers. */
-const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
-  [0, 1], [1, 2], [2, 3], [3, 4],
-  [0, 5], [5, 6], [6, 7], [7, 8],
-  [5, 9], [9, 10], [10, 11], [11, 12],
-  [9, 13], [13, 14], [14, 15], [15, 16],
-  [13, 17], [17, 18], [18, 19], [19, 20],
+const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+
+/** MediaPipe's 21 hand points: the palm, then each finger from knuckle to tip. */
+const PALM: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [0, 5],
+  [5, 9],
+  [9, 13],
+  [13, 17],
   [0, 17],
 ];
-const FINGERTIPS = new Set([4, 8, 12, 16, 20]);
+const FINGERS: ReadonlyArray<{ chain: readonly number[]; straight: (s: ReturnType<typeof analyzeFingerExtensions>) => boolean }> = [
+  { chain: [1, 2, 3, 4], straight: (s) => s.thumbExtended },
+  { chain: [5, 6, 7, 8], straight: (s) => s.indexExtended },
+  { chain: [9, 10, 11, 12], straight: (s) => s.middleExtended },
+  { chain: [13, 14, 15, 16], straight: (s) => s.ringExtended },
+  { chain: [17, 18, 19, 20], straight: (s) => s.pinkyExtended },
+];
 
 /** The rock-paper-scissors yellow, for canvases that can't read oklch(). */
 const GAME_HEX_FALLBACK = "#f9db38";
+const BENT = "rgba(255, 255, 255, 0.55)";
+const SHADOW = "rgba(0, 0, 0, 0.4)";
 
 interface Readout {
   gesture: DetectedGesture;
@@ -42,6 +55,22 @@ function skeletonColor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D)
   return ctx.fillStyle === "#000000" ? GAME_HEX_FALLBACK : css;
 }
 
+function strokePath(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[], color: string, width: number): void {
+  ctx.beginPath();
+  points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  ctx.lineWidth = width * 2.1;
+  ctx.strokeStyle = SHADOW;
+  ctx.stroke();
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+}
+
+/**
+ * The hand as the model sees it: 21 points. Straight fingers in the game
+ * colour, bent ones faded, because "which fingers are straight" is what
+ * turns the points into rock, paper or scissors.
+ */
 function drawHand(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
@@ -59,31 +88,37 @@ function drawHand(
   if (!landmarks || landmarks.length < 21) return;
 
   // Raw camera coordinates: the canvas is mirrored with CSS together with the video.
-  const line = Math.max(2, w / 170);
+  const at = (i: number) => ({ x: landmarks[i].x * w, y: landmarks[i].y * h });
+  const line = Math.max(2, w / 190);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.beginPath();
-  for (const [a, b] of HAND_CONNECTIONS) {
-    ctx.moveTo(landmarks[a].x * w, landmarks[a].y * h);
-    ctx.lineTo(landmarks[b].x * w, landmarks[b].y * h);
-  }
-  // A dark under-stroke keeps the yellow readable against bright rooms.
-  ctx.lineWidth = line * 2.2;
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
-  ctx.stroke();
-  ctx.lineWidth = line;
-  ctx.strokeStyle = color;
-  ctx.stroke();
 
-  for (let i = 0; i < landmarks.length; i++) {
-    const pt = landmarks[i];
-    const r = (FINGERTIPS.has(i) ? 2.4 : 1.6) * line;
+  for (const [a, b] of PALM) strokePath(ctx, [at(a), at(b)], "rgba(255, 255, 255, 0.4)", line * 0.8);
+
+  const state = analyzeFingerExtensions(landmarks);
+  const tips: { x: number; y: number; straight: boolean }[] = [];
+  for (const finger of FINGERS) {
+    const straight = finger.straight(state);
+    const points = finger.chain.map(at);
+    strokePath(ctx, points, straight ? color : BENT, straight ? line * 1.25 : line * 0.85);
+    tips.push({ ...points[points.length - 1], straight });
+  }
+
+  // Every point, small; fingertips bigger, filled when the finger is straight.
+  for (let i = 0; i < 21; i++) {
+    const p = at(i);
     ctx.beginPath();
-    ctx.arc(pt.x * w, pt.y * h, r, 0, Math.PI * 2);
-    ctx.fillStyle = FINGERTIPS.has(i) ? "#ffffff" : color;
+    ctx.arc(p.x, p.y, line * 0.75, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
     ctx.fill();
-    ctx.lineWidth = Math.max(1, line * 0.45);
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+  }
+  for (const tip of tips) {
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, (tip.straight ? 2.3 : 1.6) * line, 0, Math.PI * 2);
+    ctx.fillStyle = tip.straight ? color : "rgba(255, 255, 255, 0.75)";
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, line * 0.5);
+    ctx.strokeStyle = SHADOW;
     ctx.stroke();
   }
 }
@@ -99,22 +134,60 @@ const HINT_ICON: Record<FrameQualityIssue, ReactNode> = {
   no_hand: <Hand />,
 };
 
+const CHIP = "type-small inline-flex h-9 items-center gap-2 rounded-full pl-1.5 pr-3.5 font-semibold tabular-nums";
+
+/** What the model reads right now, top left: always visible, never over the middle of the picture. */
+function ReadingChip({ readout }: { readout: Readout }) {
+  const g = readout.gesture;
+  const known = g === "rock" || g === "paper" || g === "scissors";
+  return (
+    <span className={cn(CHIP, "bg-black/70 text-white")}>
+      <span className="grid size-6 place-items-center rounded-full bg-white/10">
+        {known ? (
+          <HandGlyph gesture={g} paper="var(--game)" ink="black" className="size-5" />
+        ) : (
+          <span aria-hidden className={cn("size-2 rounded-full", g === "uncertain" ? "bg-white/70" : "bg-white/35")} />
+        )}
+      </span>
+      {known ? (
+        <>
+          {GESTURE_LABEL[g]}
+          <span className="font-normal text-white/70">{readout.confidence}%</span>
+        </>
+      ) : g === "uncertain" ? (
+        "Not sure yet"
+      ) : (
+        "No hand"
+      )}
+    </span>
+  );
+}
+
 /**
- * The visitor's camera, mirrored like a selfie, with the 21 hand points the
- * model found drawn on top. A chip says what it reads and how sure it is; a
- * hint appears only for a problem that lasts.
+ * The visitor's camera, mirrored like a selfie, with the hand points the model
+ * found drawn on top. Nothing covers the middle of the picture: the chant is
+ * shown above it, its beats flash the frame, and a hint appears at the bottom
+ * only for a problem that lasts.
  */
 export function CameraView({
   tracker,
   model,
   throwing,
+  beat,
+  thrown,
   className,
+  boxClassName,
 }: {
   tracker: HandTracker;
   model: ModelStatus;
-  /** A throw is expected now (countdown or Shoot): also hint about a missing or unclear hand. */
+  /** A throw is expected now (the chant or Shoot): also hint about a missing or unclear hand. */
   throwing: boolean;
+  beat: Beat | null;
+  /** The move it read at the last reveal, until the next round starts. */
+  thrown: Gesture | null;
   className?: string;
+  /** Size of the picture itself. */
+  boxClassName?: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -157,54 +230,85 @@ export function CameraView({
   }, [tracker]);
 
   const loading = model === "loading" || model === "idle";
-  const gesture = readout.gesture;
-  const known = gesture === "rock" || gesture === "paper" || gesture === "scissors";
+  const chant = beat === "rock" || beat === "paper" || beat === "scissors";
 
   return (
-    <figure className={cn("flex min-w-0 flex-col gap-3", className)}>
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-sunken shadow-ring">
+    <figure className={cn("flex min-w-0 flex-col gap-2.5", className)}>
+      <div className={cn("relative w-full overflow-hidden rounded-xl bg-sunken shadow-ring", boxClassName)}>
         {/* Video and skeleton are mirrored together, like a mirror. */}
         <div className="absolute inset-0 -scale-x-100">
           <div ref={hostRef} className="absolute inset-0" />
           <canvas ref={canvasRef} aria-hidden className="absolute inset-0 size-full object-cover" />
         </div>
 
+        {/* The chant's beats flash the frame; at Shoot it stays lit until your throw is read. */}
+        {chant ? (
+          <motion.div
+            key={beat}
+            aria-hidden
+            initial={{ opacity: 0.85 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 0.5, ease: EASE_OUT }}
+            className="pointer-events-none absolute inset-0 rounded-xl shadow-[inset_0_0_0_3px_var(--game)]"
+          />
+        ) : null}
+        <AnimatePresence>
+          {beat === "shoot" ? (
+            <motion.div
+              key="shoot"
+              aria-hidden
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              transition={{ duration: 0.12 }}
+              className="pointer-events-none absolute inset-0 rounded-xl shadow-[inset_0_0_0_5px_var(--game)]"
+            />
+          ) : null}
+        </AnimatePresence>
+
         {!loading ? (
           <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
-            <span
-              className={cn(
-                "type-label inline-flex h-8 items-center gap-2 rounded-full bg-black/75 pl-2.5 pr-3 text-white tabular-nums",
-                "[&_svg]:size-4",
-              )}
-            >
-              {known ? (
-                <>
-                  <GestureIcon gesture={gesture} className="text-game" />
-                  {GESTURE_LABEL[gesture]} {readout.confidence}%
-                </>
-              ) : gesture === "uncertain" ? (
-                <>
-                  <span aria-hidden className="size-2 rounded-full bg-white/60" />
-                  Not sure {readout.confidence}%
-                </>
+            <AnimatePresence mode="popLayout" initial={false}>
+              {thrown ? (
+                <motion.span
+                  key={`thrown-${thrown}`}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                  transition={{ type: "spring", duration: 0.4, bounce: 0.3 }}
+                  className={cn(CHIP, "bg-game text-game-ink")}
+                >
+                  <span className="grid size-6 place-items-center rounded-full bg-game-ink/10">
+                    <HandGlyph gesture={thrown} paper="white" ink="var(--game-ink)" className="size-5" />
+                  </span>
+                  You threw {thrown}
+                </motion.span>
               ) : (
-                <>
-                  <span aria-hidden className="size-2 rounded-full bg-white/40" />
-                  No hand
-                </>
+                <motion.span key="reading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ReadingChip readout={readout} />
+                </motion.span>
               )}
-            </span>
+            </AnimatePresence>
           </div>
         ) : null}
 
-        {!loading && readout.hint ? (
-          <div className="absolute inset-x-3 bottom-3 flex justify-center sm:inset-x-4 sm:bottom-4">
-            <p className="type-small inline-flex min-h-10 items-center gap-2 rounded-lg bg-black/75 px-4 py-2 font-semibold text-white [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-warning">
-              {HINT_ICON[readout.hint]}
-              {HINT_COPY[readout.hint]}
-            </p>
-          </div>
-        ) : null}
+        <AnimatePresence>
+          {!loading && readout.hint ? (
+            <motion.div
+              key={readout.hint}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              transition={{ duration: 0.25, ease: EASE_OUT }}
+              className="absolute inset-x-3 bottom-3 flex justify-center sm:inset-x-4 sm:bottom-4"
+            >
+              <p className="type-small inline-flex min-h-10 items-center gap-2 rounded-lg bg-black/75 px-4 py-2 font-semibold text-white [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-warning">
+                {HINT_ICON[readout.hint]}
+                {HINT_COPY[readout.hint]}
+              </p>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         {loading ? (
           <div className="absolute inset-0 grid place-items-center bg-canvas/80 px-4">
@@ -212,8 +316,18 @@ export function CameraView({
           </div>
         ) : null}
       </div>
-      <figcaption className="type-small text-fg-subtle">
-        It turns your hand into 21 points, then reads the shape from how straight each finger is.
+      <figcaption className="type-small flex flex-wrap items-center gap-x-4 gap-y-1 text-fg-subtle">
+        <span>It reads your hand as 21 points and checks which fingers are straight.</span>
+        <span className="inline-flex items-center gap-3" aria-hidden>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1 w-4 rounded-full bg-game" />
+            Straight
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1 w-4 rounded-full bg-fg/50" />
+            Bent
+          </span>
+        </span>
       </figcaption>
     </figure>
   );

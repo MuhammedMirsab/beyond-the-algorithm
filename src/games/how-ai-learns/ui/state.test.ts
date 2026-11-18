@@ -32,6 +32,8 @@ const run: TrainedRun = {
   examples: 20,
   seconds: 1.2,
   sample: null,
+  map: null,
+  weights: 164_226,
 };
 
 describe("naming", () => {
@@ -53,6 +55,16 @@ describe("naming", () => {
     expect(s.groups.map((g) => g.name)).toEqual(["Bottle", ""]);
     s = reducer(s, { type: "remove-group", id: "g2" });
     expect(s.groups.length).toBe(2);
+  });
+
+  test("a tapped idea fills the next empty name, and a second tap clears it", () => {
+    let s = reducer(initialState, { type: "toggle-name", name: "Phone" });
+    s = reducer(s, { type: "toggle-name", name: "Water bottle" });
+    expect(s.groups.map((g) => g.name)).toEqual(["Phone", "Water bottle"]);
+    // Both names taken: a third idea has nowhere to go.
+    expect(reducer(s, { type: "toggle-name", name: "Pen" })).toBe(s);
+    s = reducer(s, { type: "toggle-name", name: "phone" });
+    expect(s.groups.map((g) => g.name)).toEqual(["", "Water bottle"]);
   });
 
   test("a library category fills an unnamed thing, then a new one, and lets go on a second tap", () => {
@@ -115,10 +127,35 @@ describe("training runs", () => {
     expect(next.previous?.perGroup).toEqual(run.perGroup);
   });
 
+  test("testing starts with the camera unless every thing came from the library", () => {
+    const mixed = reducer(
+      {
+        ...initialState,
+        groups: [
+          { id: "g1", name: "Phone", library: null },
+          { id: "g2", name: "Pen", library: "pens" },
+        ],
+      },
+      { type: "train-start" },
+    );
+    expect(mixed.testMode).toBe("camera");
+    const library = reducer(
+      {
+        ...initialState,
+        groups: [
+          { id: "g1", name: "Pen", library: "pens" },
+          { id: "g2", name: "Cup", library: "cups" },
+        ],
+      },
+      { type: "train-start" },
+    );
+    expect(library.testMode).toBe("photos");
+  });
+
   test("epochs only append while practising", () => {
     const log = { epoch: 1, totalEpochs: 24, accuracy: 0.5, loss: 0.7, valAccuracy: null };
     expect(reducer(initialState, { type: "train-epoch", log })).toBe(initialState);
-    const practising = reducer(initialState, { type: "train", train: { phase: "practising", history: [], total: 24 } });
+    const practising = reducer(initialState, { type: "train", train: { phase: "practising", history: [], total: 24, map: null } });
     const after = reducer(practising, { type: "train-epoch", log });
     expect(after.train.phase === "practising" && after.train.history.length).toBe(1);
   });

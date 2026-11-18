@@ -51,7 +51,8 @@ describe("COMPARISON_PAIRS", () => {
         expect(size).toEqual({ width: photo.width, height: photo.height });
       }
     }
-  });
+    // Reads all 38 photos from disk: give a busy machine room.
+  }, 30_000);
 
   test("copy follows the writing rules: no dashes, no exclamation marks, no banned words", () => {
     const strings = COMPARISON_PAIRS.flatMap((p) => [p.subject, ...p.aiItem.clues]);

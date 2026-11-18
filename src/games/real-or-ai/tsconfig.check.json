@@ -1,1 +1,1 @@
-{"extends":"../../../tsconfig.json","compilerOptions":{"incremental":false},"include":["../../../next-env.d.ts","./**/*.ts","./**/*.tsx","../../app/(games)/real-or-ai/**/*.ts","../../app/(games)/real-or-ai/**/*.tsx"]}
+{"extends":"../../../tsconfig.json","compilerOptions":{"incremental":false},"include":["../../../next-env.d.ts","./**/*.ts","./**/*.tsx","../../app/(games)/real-or-ai/**/*.ts","../../app/(games)/real-or-ai/**/*.tsx","../../components/art/games/real-or-ai-art.tsx"]}

@@ -5,8 +5,8 @@
  * Uses the same segment() and toCloud() the recogniser runs, so it shows
  * exactly what happened.
  */
-import { CLOUD_SIZE, cloudMatch, toCloud, type CloudPoint, type StrokeXY } from "./recognition/pdollar";
-import { segment } from "./recognition/recognize";
+import { CLOUD_SIZE, cloudMatch, cloudPairs, cloudSteps, toCloud, type CloudPoint, type StrokeXY } from "./recognition/pdollar";
+import { classify, segment } from "./recognition/recognize";
 import { TEMPLATES } from "./recognition/templates";
 
 export { CLOUD_SIZE };
@@ -107,4 +107,57 @@ export function firstLetterClouds(strokes: StrokeXY[], text: string): LetterClou
 export function sampleClouds(): LetterClouds {
   const [first, second] = TEMPLATES.A;
   return { char: "A", yours: toCloud(second ?? first), library: toCloud(first) };
+}
+
+/** One letter taken apart the way the recogniser handles it, for the reveal. */
+export interface LetterAnatomy {
+  /** What it was read as. */
+  char: string;
+  /** The letter's ink as the recogniser received it, one point list per stroke (surface pixels). */
+  ink: StrokeXY[];
+  /** 32 evenly spaced points along that ink, before scaling (same units as `ink`). */
+  resampled: CloudPoint[];
+  /** The same 32 points scaled and centred: what gets compared. */
+  cloud: CloudPoint[];
+  /** The closest stored shape for the character it was read as. */
+  library: CloudPoint[];
+  /** Which of your points the matcher paired with which library point. */
+  pairs: [number, number][];
+  /** The closest characters in the whole library, best first, by matching distance (lower is closer). */
+  candidates: { char: string; d: number }[];
+}
+
+/**
+ * The first letter of a reading, step by step: its ink, the 32 points along
+ * it, those points scaled and centred, the stored shape they matched, the
+ * pairs the matcher made, and the runners-up. Uses the recogniser's own
+ * segment(), cloudSteps(), cloudPairs() and classify(), so it shows exactly
+ * what happened. Null when the reading doesn't line up letter for letter.
+ */
+export function letterAnatomy(strokes: StrokeXY[], text: string): LetterAnatomy | null {
+  const groups = segment(strokes.filter((s) => s.length > 0)).flat();
+  const chars = charsOf(text);
+  if (!groups.length || chars.length !== groups.length) return null;
+  const char = chars[0];
+  const variants = templatesFor(char);
+  if (!variants) return null;
+  const ink = groups[0].strokes;
+  const { resampled, cloud } = cloudSteps(ink);
+  let best: { library: CloudPoint[]; pairs: [number, number][]; d: number } | null = null;
+  for (const variant of variants) {
+    const library = toCloud(variant);
+    const { pairs, distance } = cloudPairs(cloud, library);
+    if (!best || distance < best.d) best = { library, pairs, d: distance };
+  }
+  if (!best) return null;
+  const seen = new Set<string>();
+  const candidates: { char: string; d: number }[] = [];
+  for (const score of classify(ink)) {
+    const key = score.char.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(score);
+    if (candidates.length === 3) break;
+  }
+  return { char, ink, resampled, cloud, library: best.library, pairs: best.pairs, candidates };
 }

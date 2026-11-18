@@ -10,14 +10,19 @@ import type { InputMode, Story, StudioSession } from "../play/session";
 import { AdaptiveButton } from "./adaptive-button";
 import { HowItWorksModal } from "./how-it-works";
 
-const LEAD = "Play five instruments in the air. The camera finds the points of your hands, and the way they move becomes music.";
+const LEAD = "Play drums, piano and more in the air. The camera finds 21 points on each of your hands, and the way they move becomes music.";
 
 const STEPS = [
-  { title: "Show both hands", text: "A quick check makes sure the camera can see them." },
-  { title: "Pick an instrument and play", text: "Strike, strum or dip a fingertip in the air." },
-  { title: "Record a take or try a lesson", text: "Lessons score your timing against the beat." },
+  { title: "Raise your hands", text: "The camera finds them by itself." },
+  { title: "Hit the air over a drum", text: "A quick move down plays it. Faster is louder." },
+  { title: "Then try piano, guitar or a band", text: "Record a take, or try a lesson with a score." },
 ];
 
+/**
+ * The first screen: one tap to playing. "Play with your hands" turns on the
+ * camera and the drums together and goes straight to the stage; there is no
+ * setup in between. The art plays a wordless loop of how it works.
+ */
 export function IntroScreen({ session, onStart, returning = false }: { session: StudioSession; onStart: (mode: InputMode) => void; returning?: boolean }) {
   const [howOpen, setHowOpen] = useState(false);
   const [story, setStory] = useState<Story | null>(null);
@@ -48,16 +53,16 @@ export function IntroScreen({ session, onStart, returning = false }: { session: 
     >
       <GameIntro
         slug="air-studio"
-        art={<GameArt slug="air-studio" />}
+        art={<GameArt slug="air-studio" mode="intro" />}
         lead={LEAD}
         steps={STEPS}
         headingRef={headingRef}
-        primary={{ label: "Turn on camera", icon: <Camera />, onClick: () => onStart("camera") }}
+        primary={{ label: "Play with your hands", icon: <Camera />, onClick: () => onStart("camera") }}
         secondary={{ label: "Play with the mouse", icon: <MousePointer2 />, onClick: () => onStart("mouse") }}
         footnote={
           <span className="flex items-start gap-1.5">
             <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
-            Hand tracking runs on this device. No video is recorded or uploaded, and a take you record vanishes at Next player.
+            Hand tracking runs on this computer. No video is recorded or uploaded, and a take you record is gone at Next player.
           </span>
         }
       />

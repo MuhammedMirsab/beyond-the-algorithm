@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useCallback, useReducer, type ReactNode } from "react";
+import { useCallback, useReducer, useState, type ReactNode } from "react";
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { useIdle } from "@/lib/idle";
@@ -15,19 +15,22 @@ import { HumanResult } from "./ui/human-result";
 import { Intro } from "./ui/intro";
 import { MachinePlay } from "./ui/machine-play";
 import { MachineRight, MachineWrong } from "./ui/machine-result";
-
-const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+import { EASE_OUT } from "./ui/motion";
 
 /** Idle time before an abandoned game resets for the next visitor. */
 const IDLE_MS = { screen: 90_000, playing: 180_000 } as const;
 
-function stageOf(session: Session): string {
+/**
+ * Which screen is up. A finished "Find its number" round stays on the play
+ * screen for a beat (the line shows the number) until `resultRound` catches up.
+ */
+function stageOf(session: Session, resultRound: number): string {
   if (session.screen === "intro") return "intro";
   if (session.screen === "machine") {
     const { phase } = session.machine;
     return phase === "right" || phase === "wrong" ? `machine-${phase}` : "machine-play";
   }
-  return session.human.status === "playing" ? "human-play" : "human-result";
+  return session.human.status !== "playing" && resultRound === session.round ? "human-result" : "human-play";
 }
 
 /**
@@ -36,18 +39,20 @@ function stageOf(session: Session): string {
  */
 export function MindReaderGame() {
   const [session, dispatch] = useReducer(sessionReducer, undefined, initialSession);
-  const stage = stageOf(session);
+  const [resultRound, setResultRound] = useState(-1);
+  const stage = stageOf(session, resultRound);
 
   const nextPlayer = useCallback(() => dispatch({ type: "next-player" }), []);
-  const toIntro = useCallback(() => dispatch({ type: "to-intro" }), []);
   const setRange = useCallback((range: RangeId) => dispatch({ type: "set-range", range }), []);
   const startMachine = useCallback(() => dispatch({ type: "start-machine" }), []);
+  const playRange = useCallback((range: RangeId) => dispatch({ type: "start-machine", range }), []);
   const startHuman = useCallback(
     () => dispatch({ type: "start-human", secret: randomSecret(session.range), now: Date.now() }),
     [session.range],
   );
   const machineDispatch = useCallback((action: MachineAction) => dispatch({ type: "machine", action }), []);
   const humanDispatch = useCallback((action: HumanAction) => dispatch({ type: "human", action }), []);
+  const showHumanResult = useCallback(() => setResultRound(session.round), [session.round]);
 
   // Booth: an abandoned screen resets itself. A fresh intro has nothing to reset.
   const playing = stage === "machine-play" || stage === "human-play";
@@ -67,19 +72,26 @@ export function MindReaderGame() {
     );
   } else if (session.screen === "machine") {
     const machine = session.machine;
-    const results = { machine, dispatch: machineDispatch, onPlayAgain: startMachine, onSwitchMode: startHuman, onNextPlayer: nextPlayer };
+    const results = {
+      machine,
+      dispatch: machineDispatch,
+      onPlayAgain: startMachine,
+      onPlayRange: playRange,
+      onSwitchMode: startHuman,
+      onNextPlayer: nextPlayer,
+    };
     screen =
       machine.phase === "right" ? (
         <MachineRight {...results} />
       ) : machine.phase === "wrong" ? (
         <MachineWrong {...results} />
       ) : (
-        <MachinePlay machine={machine} dispatch={machineDispatch} onChangeRange={toIntro} />
+        <MachinePlay machine={machine} dispatch={machineDispatch} onRangeChange={setRange} />
       );
   } else {
     screen =
-      session.human.status === "playing" ? (
-        <HumanPlay human={session.human} dispatch={humanDispatch} />
+      stage === "human-play" ? (
+        <HumanPlay human={session.human} dispatch={humanDispatch} onFinished={showHumanResult} />
       ) : (
         <HumanResult human={session.human} onPlayAgain={startHuman} onSwitchMode={startMachine} onNextPlayer={nextPlayer} />
       );
@@ -120,4 +132,3 @@ function ScreenFade({ animate, children }: { animate: boolean; children: ReactNo
     </motion.div>
   );
 }
-

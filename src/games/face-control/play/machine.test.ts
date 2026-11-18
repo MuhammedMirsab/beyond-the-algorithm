@@ -6,6 +6,7 @@ import {
   CONTINUE_GUARD_MS,
   FACE_BACK_MS,
   initialState,
+  LEVEL_CARD_MS,
   LEVEL_COUNT,
   primaryEvent,
   RESULT_GUARD_MS,
@@ -56,6 +57,7 @@ const RESULT: LevelResult = {
 
 const SUMMARY: RunSummary = {
   outcome: "game-over",
+  furthest: 0.4,
   score: 900,
   previousBest: 0,
   isBest: true,
@@ -156,6 +158,16 @@ describe("CONTINUE_GUARD_MS: the jump that ended a screen can't skip the next on
     const go = transition(s, { type: "mouth" }, 1000 + CONTINUE_GUARD_MS);
     expect(go.state.phase).toBe("countdown");
     expect(go.state.countdown).toEqual({ from: 3, then: "begin" });
+  });
+
+  test("a loaded level starts by itself after its title card, unless something starts it sooner", () => {
+    const s = play(initialState(), [{ type: "choose-keyboard" }, { type: "skip-practice" }]).state;
+    const loaded = transition(s, { type: "level-loaded", index: 0 }, 0);
+    expect(loaded.effects).toContainEqual({ type: "auto-start", ms: LEVEL_CARD_MS });
+    // The timer fires start-level; a stale one after the level began is ignored.
+    const started = transition(loaded.state, { type: "start-level" }, LEVEL_CARD_MS);
+    expect(started.state.phase).toBe("countdown");
+    expect(transition(started.state, { type: "start-level" }, LEVEL_CARD_MS + 1).state).toBe(started.state);
   });
 
   test("a level that hasn't loaded can't start, and a stale load is ignored", () => {

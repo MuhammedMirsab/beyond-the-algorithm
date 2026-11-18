@@ -5,6 +5,7 @@ import type { ReactNode, Ref } from "react";
 import { gameBySlug, type GameSlug, type Need } from "@/content/games";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { KeyHints, type KeyHint } from "@/components/ui/key-hints";
 import { cn } from "@/lib/cn";
 
 const NEED_COPY: Record<Need, { label: string; icon: ReactNode }> = {
@@ -50,6 +51,7 @@ export function GameIntro({
   primary,
   secondary,
   footnote,
+  keys,
   children,
   below,
   headingRef,
@@ -65,6 +67,8 @@ export function GameIntro({
   secondary?: Action;
   /** Small print: privacy, requirements. */
   footnote?: ReactNode;
+  /** Keyboard controls, shown right under the buttons on devices with a mouse. */
+  keys?: KeyHint[];
   /** Extra controls between steps and actions (e.g. a range picker). */
   children?: ReactNode;
   /** Secondary content after the actions and small print (e.g. a QR handoff). */
@@ -81,18 +85,23 @@ export function GameIntro({
         className,
       )}
     >
+      {/* Arrival: the art settles while the text rises in, top to bottom (CSS only, see .enter). */}
       <div className="order-2 flex min-w-0 flex-col gap-7 lg:order-1">
         <div className="flex flex-col gap-4">
-          <span className="type-label text-game">{game.skill}</span>
-          <h1 ref={headingRef} tabIndex={-1} className="type-display-2 text-fg outline-none">
+          <span className="type-label enter text-game [--enter-delay:60ms]">{game.skill}</span>
+          <h1 ref={headingRef} tabIndex={-1} className="type-display-2 enter text-fg outline-none [--enter-delay:110ms]">
             {title ?? game.title}
           </h1>
-          <p className="type-body-lg max-w-[34rem] text-fg-muted">{lead ?? game.hook}</p>
+          <p className="type-body-lg enter max-w-[34rem] text-fg-muted [--enter-delay:170ms]">{lead ?? game.hook}</p>
         </div>
 
         <ol className="flex flex-col gap-3">
           {steps.map((step, i) => (
-            <li key={step.title} className="flex items-start gap-4">
+            <li
+              key={step.title}
+              className="enter flex items-start gap-4"
+              style={{ ["--enter-delay" as string]: `${230 + i * 60}ms` }}
+            >
               <span
                 aria-hidden
                 className="grid size-8 shrink-0 place-items-center rounded-full bg-game-soft font-mono text-[0.8125rem] font-semibold text-game"
@@ -109,7 +118,7 @@ export function GameIntro({
 
         {children}
 
-        <div className="flex flex-col gap-5">
+        <div className="enter flex flex-col gap-5 [--enter-delay:380ms]">
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="game"
@@ -135,6 +144,12 @@ export function GameIntro({
               </Button>
             ) : null}
           </div>
+          {keys?.length ? (
+            <div className="hidden flex-wrap items-center gap-x-4 gap-y-2 pointer-fine:flex">
+              <span className="type-small text-fg-subtle">On the keyboard</span>
+              <KeyHints items={keys} />
+            </div>
+          ) : null}
           <NeedChips slug={slug} />
           {footnote ? <p className="type-small max-w-[34rem] text-fg-subtle">{footnote}</p> : null}
         </div>
@@ -143,7 +158,7 @@ export function GameIntro({
 
       <div className="order-1 lg:order-2">
         {/* Below desktop the art is a banner, capped so the title and Start button stay in view. */}
-        <div className="tile-surface grain relative aspect-[16/10] max-h-[42dvh] w-full overflow-hidden rounded-xl lg:aspect-square lg:max-h-[min(640px,calc(100dvh-160px))]">
+        <div className="tile-surface grain enter-art relative aspect-[16/10] max-h-[42dvh] w-full overflow-hidden rounded-xl lg:aspect-square lg:max-h-[min(640px,calc(100dvh-160px))]">
           <div className="absolute inset-0 z-[2]">{art}</div>
         </div>
       </div>

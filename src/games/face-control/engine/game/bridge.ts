@@ -48,6 +48,8 @@ export interface RunState {
   runTime: number;
   deaths: number;
   levelDeaths: number;
+  /** Furthest the ball got through the current level, 0 (start) to 1 (finish line). */
+  furthest: number;
 }
 
 export const START_LIVES = 5;
@@ -64,6 +66,7 @@ export function newRun(): RunState {
     runTime: 0,
     deaths: 0,
     levelDeaths: 0,
+    furthest: 0,
   };
 }
 

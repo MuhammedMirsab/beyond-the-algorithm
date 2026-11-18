@@ -151,6 +151,27 @@ describe("FrameGesture", () => {
     expect(state.active).toBe(0);
   });
 
+  test("says why two raised hands make no frame yet, and goes quiet once they do", () => {
+    // Thumb and index together: not an L.
+    expect(feed(() => [leftPinch(), rightPinch()], 2).state.hint).toBe("open");
+    // Two good Ls, but almost touching: the frame would be a sliver.
+    const close = () => [
+      hand({ x: 620, y: 600 }, { x: 690, y: 590 }, { x: 620, y: 530 }),
+      hand({ x: 700, y: 600 }, { x: 630, y: 590 }, { x: 700, y: 530 }),
+    ];
+    gesture.reset();
+    expect(feed(close, 2).state.hint).toBe("apart");
+    // A proper frame: no hint, before and after it locks.
+    gesture.reset();
+    const first = feed(() => [leftL(), rightL()], 1);
+    expect(first.state.locked).toBe(false);
+    expect(first.state.hint).toBeNull();
+    expect(feed(() => [leftL(), rightL()], 10).state.hint).toBeNull();
+    // One hand: nothing to say about the shape yet.
+    gesture.reset();
+    expect(feed(() => [leftL()], 3).state.hint).toBeNull();
+  });
+
   test("the lens fades in after a lock", () => {
     const { state } = feed(() => [leftL(), rightL()], 15);
     expect(state.locked).toBe(true);

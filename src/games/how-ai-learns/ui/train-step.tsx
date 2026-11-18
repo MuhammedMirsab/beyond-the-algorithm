@@ -1,17 +1,21 @@
 "use client";
 
 import Image from "next/image";
+import { ArrowRight } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { KeyHints } from "@/components/ui/key-hints";
 import { Progress } from "@/components/ui/progress";
 import { Stat } from "@/components/ui/score";
-import { MachineLabel } from "@/components/ui/surface";
 import { ModelLoading } from "@/components/game/camera-notice";
+import type { TrainMap } from "../engine/projection";
 import { EMBEDDING_SIZE, MODEL_NAME } from "../engine/vision";
 import { AccuracyChart } from "./accuracy-chart";
+import { ClusterMap, MarkSwatch } from "./cluster-map";
 import { pct } from "./copy";
 import { EmbeddingDots } from "./embedding-dots";
 import { StepLayout } from "./step-layout";
-import type { TrainState } from "./state";
+import { trainingGroups, type TrainState } from "./state";
 import type { LearnGame } from "./use-learn-game";
 
 const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
@@ -33,12 +37,12 @@ function copyFor(train: TrainState): { title: string; lead: string } {
     case "practising":
       return {
         title: "Practising on your examples",
-        lead: "Each round it labels every example, checks the answers, and adjusts itself to make fewer mistakes.",
+        lead: "Each round it labels every example, checks the answers, and adjusts itself to be less wrong.",
       };
     case "done":
       return {
-        title: `Trained on ${train.run.examples} photos`,
-        lead: `That took ${train.run.seconds.toFixed(1)} seconds on this device. Now test it on photos it has never seen.`,
+        title: `Trained on ${train.run.examples} photos in ${train.run.seconds.toFixed(1)} seconds`,
+        lead: "Now test it on things it has never seen.",
       };
     case "error":
       return { title: "Training didn’t finish", lead: train.message };
@@ -49,6 +53,23 @@ export function TrainStep({ game }: { game: LearnGame }) {
   const { state, model, actions } = game;
   const train = state.train;
   const { title, lead } = copyFor(train);
+  const done = train.phase === "done";
+
+  // Space tests it once training is done.
+  const goRef = useRef(actions.go);
+  useEffect(() => {
+    goRef.current = actions.go;
+  });
+  useEffect(() => {
+    if (!done) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.code !== "Space" && e.key !== " ") || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      e.preventDefault();
+      goRef.current("test");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [done]);
 
   const announce =
     train.phase === "reading"
@@ -84,6 +105,7 @@ export function TrainStep({ game }: { game: LearnGame }) {
           </Button>
         ) : null
       }
+      note={done ? <KeyHints className="hidden justify-end lg:flex" items={[{ keys: ["Space"], label: "Test it" }]} /> : null}
     >
       <p aria-live="polite" className="sr-only">
         {announce}
@@ -103,17 +125,29 @@ export function TrainStep({ game }: { game: LearnGame }) {
 
       {train.phase === "reading" ? (
         <div className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid items-center gap-4 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
             <figure className="flex flex-col gap-3 rounded-xl bg-surface p-4 shadow-ring">
               <div className="relative aspect-[5/4] overflow-hidden rounded-md bg-sunken">
                 {train.current ? (
-                  <Image src={train.current.photo.url} alt={`${train.current.photo.label}: ${train.current.photo.title}`} fill unoptimized sizes="(min-width: 640px) 500px, 100vw" className="object-cover" />
+                  <Image
+                    key={train.current.photo.id}
+                    src={train.current.photo.url}
+                    alt={`${train.current.photo.label}: ${train.current.photo.title}`}
+                    fill
+                    unoptimized
+                    sizes="(min-width: 640px) 500px, 100vw"
+                    className="object-cover"
+                  />
                 ) : null}
               </div>
-              <figcaption className="type-label tabular-nums text-fg-subtle">
-                Photo {train.done} of {train.total}
+              <figcaption className="flex items-baseline justify-between gap-2">
+                <span className="type-body truncate font-semibold text-fg">{train.current?.photo.label ?? ""}</span>
+                <span className="type-label tabular-nums text-fg-subtle">
+                  Photo {train.done} of {train.total}
+                </span>
               </figcaption>
             </figure>
+            <ArrowRight aria-hidden className="mx-auto size-7 rotate-90 text-game sm:rotate-0" />
             <figure className="dot-field flex flex-col gap-3 rounded-xl bg-surface p-4 shadow-ring">
               {train.current ? (
                 <EmbeddingDots values={train.current.embedding} label={`The ${NUMBERS} numbers MobileNet made from this photo, drawn as dots.`} />
@@ -130,11 +164,7 @@ export function TrainStep({ game }: { game: LearnGame }) {
         </div>
       ) : null}
 
-      {train.phase === "practising" || train.phase === "done" ? (
-        <TrainingPanel game={game} />
-      ) : null}
-
-
+      {train.phase === "practising" || train.phase === "done" ? <TrainingPanel game={game} /> : null}
     </StepLayout>
   );
 }
@@ -145,58 +175,59 @@ function TrainingPanel({ game }: { game: LearnGame }) {
   if (train.phase !== "practising" && train.phase !== "done") return null;
   const history = train.phase === "done" ? train.run.history : train.history;
   const total = train.phase === "done" ? train.run.history.length : train.total;
+  const map: TrainMap | null = train.phase === "done" ? train.run.map : train.map;
   const last = history.at(-1);
+  const labels = trainingGroups(state.groups).map((g) => g.label);
+  const photos = map?.points.length ?? 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid gap-6 rounded-xl bg-surface p-5 shadow-ring sm:p-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
-        <div className="flex min-w-0 flex-col gap-4">
+    <div className="grid gap-4 lg:grid-cols-2">
+      {map ? (
+        <section aria-labelledby="map-title" className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-ring sm:p-6">
           <div className="flex flex-col gap-1">
-            <h2 className="type-title-3 text-fg">How many of its examples it gets right</h2>
-            <p className="type-small text-fg-subtle">After each practice round.</p>
-          </div>
-          <AccuracyChart history={history} total={total} />
-        </div>
-        <div className="grid grid-cols-2 content-start gap-x-6 gap-y-5 lg:grid-cols-1">
-          <Stat value={last ? `${last.epoch} of ${total}` : `0 of ${total}`} label="Practice rounds" />
-          <Stat value={last ? pct(last.accuracy) : "0%"} label="Examples it gets right" />
-          {last ? (
-            <div className="col-span-2 flex flex-col gap-1 lg:col-span-1">
-              <MachineLabel className="tabular-nums">Loss {last.loss.toFixed(3)}</MachineLabel>
-              <span className="type-caption text-fg-subtle">How wrong it still is. Lower is better.</span>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {train.phase === "done" ? (
-        <section aria-labelledby="averages" className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-ring sm:p-6">
-          <div className="flex flex-col gap-1">
-            <h2 id="averages" className="type-title-3 text-fg">
-              What your examples have in common
+            <h2 id="map-title" className="type-title-3 text-fg">
+              Your {photos} photos as numbers
             </h2>
-            <p className="type-small max-w-[40rem] text-fg-subtle">
-              The average of each group’s {NUMBERS} numbers. Same place, same number, so you can compare them. A new photo
-              that matches none of these gets “I don’t know”.
-            </p>
+            <p className="type-small text-fg-subtle">Each dot is one photo. Photos with similar numbers land close together.</p>
           </div>
-          <ul className={`grid gap-4 ${train.run.labels.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-            {train.run.labels.map((label, i) => (
-              <li key={label} className="dot-field flex flex-col gap-2 rounded-lg bg-sunken p-3">
-                <EmbeddingDots values={train.run.centroids[i]} label={`Average numbers of the ${label.toLowerCase()} examples, drawn as dots.`} />
-                <span className="type-label text-fg-subtle">
-                  Average {label.toLowerCase()} · {train.run.perGroup[label] ?? 0} photos
-                </span>
+          <div className="dot-field overflow-hidden rounded-lg bg-sunken">
+            <ClusterMap
+              map={map}
+              labels={labels}
+              fly={train.phase === "practising"}
+              label={`A map of your ${photos} photos. Photos of the same thing land close together.`}
+            />
+          </div>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {labels.map((l) => (
+              <li key={l} className="type-label inline-flex items-center gap-1.5 text-fg-muted">
+                <MarkSwatch label={l} labels={labels} />
+                {l}
               </li>
             ))}
           </ul>
-          {model.state === "ready" ? (
-            <MachineLabel>
-              {MODEL_NAME} · {model.backend}
-            </MachineLabel>
-          ) : null}
         </section>
       ) : null}
+
+      <section aria-labelledby="rounds-title" className="flex flex-col gap-5 rounded-xl bg-surface p-5 shadow-ring sm:p-6">
+        <div className="flex flex-col gap-1">
+          <h2 id="rounds-title" className="type-title-3 text-fg">
+            The last layer practising
+          </h2>
+          <p className="type-small text-fg-subtle">After each round: how many examples it gets right, and how wrong it still is.</p>
+        </div>
+        <AccuracyChart history={history} total={total} />
+        <div className="grid grid-cols-3 gap-4">
+          <Stat value={last ? `${last.epoch} of ${total}` : `0 of ${total}`} label="Rounds" />
+          <Stat value={last ? pct(last.accuracy) : "0%"} label="Examples right" />
+          <Stat value={last ? last.loss.toFixed(2) : "…"} label="Loss" />
+        </div>
+        {train.phase === "done" && model.state === "ready" ? (
+          <span className="type-label text-fg-subtle">
+            {MODEL_NAME} · {model.backend} · {train.run.weights.toLocaleString("en")} numbers adjusted
+          </span>
+        ) : null}
+      </section>
     </div>
   );
 }

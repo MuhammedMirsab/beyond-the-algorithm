@@ -151,22 +151,26 @@ export function WritingSurface({
       } else if (frame?.handVisible && frame.cursor) {
         const x = Math.min(Math.max(frame.cursor.x, 0), 1) * width;
         const y = Math.min(Math.max(frame.cursor.y, 0), 1) * height;
+        // Two looks that can't be confused, matching the status chip: pen down is a
+        // solid nib in the game colour with a glow; pen lifted is an empty dashed ring.
         if (frame.penDown) {
-          halo(x, y, size * 0.5 + 9);
+          halo(x, y, size * 0.5 + 12);
           ctx.fillStyle = c.accent;
           ctx.beginPath();
-          ctx.arc(x, y, size * 0.5 + 1.5, 0, Math.PI * 2);
+          ctx.arc(x, y, size * 0.5 + 2.5, 0, Math.PI * 2);
           ctx.fill();
         } else {
           ctx.strokeStyle = c.muted;
-          ctx.lineWidth = 1.5;
-          ctx.globalAlpha = frame.settling ? 0.45 : 0.9;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = frame.settling ? 0.45 : 0.95;
+          ctx.setLineDash([4, 5]);
           ctx.beginPath();
-          ctx.arc(x, y, size * 0.5 + 8, 0, Math.PI * 2);
+          ctx.arc(x, y, size * 0.5 + 10, 0, Math.PI * 2);
           ctx.stroke();
+          ctx.setLineDash([]);
           ctx.fillStyle = c.muted;
           ctx.beginPath();
-          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.arc(x, y, 2.5, 0, Math.PI * 2);
           ctx.fill();
           ctx.globalAlpha = 1;
         }

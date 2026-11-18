@@ -6,6 +6,9 @@ import type { Hand, Pt } from "./hands";
  * near the camera or far from it.
  */
 
+/** After a hit, the hand must slow below this share of the strike threshold before the next hit can count. */
+export const REARM_FRACTION = 0.35;
+
 /**
  * Downward "air tap". Fires on the frame the downward speed crosses the
  * threshold (lowest latency), then waits for the hand to slow down or reverse
@@ -27,7 +30,7 @@ export class StrikeDetector {
     const v = useTip ? h.tipVel : h.vel;
     this.peak = Math.max(v.y, this.peak * 0.9);
     if (!this.armed) {
-      if (v.y < threshold * 0.35 && now - this.lastHit > this.minIntervalMs) this.armed = true;
+      if (v.y < threshold * REARM_FRACTION && now - this.lastHit > this.minIntervalMs) this.armed = true;
       return null;
     }
     // Reject mostly sideways swipes.

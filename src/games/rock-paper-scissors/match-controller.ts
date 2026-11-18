@@ -3,16 +3,18 @@
  * (`useSyncExternalStore`). One instance per game mount.
  *
  * The round order is the exhibit: Space → the AI seals its move from earlier
- * rounds only → 3, 2, 1 → Shoot → your throw (camera or R/P/S) → reveal.
+ * rounds only (a beat on its own, so you see it lock) → rock, paper,
+ * scissors → shoot → your throw (camera or R/P/S) → reveal.
  *
- * - The AI's memory of a visitor (`history`, `learning`) lives here, in memory
- *   only. `newMatch` keeps it (rematch); `forget` wipes it (next player).
+ * - The AI's memory of a visitor (`history`, `guesses`, `learning`) lives
+ *   here, in memory only. `newMatch` keeps it (rematch); `forget` wipes it
+ *   (next player).
  * - At Shoot the camera's earlier frames are forgotten, and the first 300 ms
  *   are ignored while the hand changes shape (a fist pumped during the
- *   countdown must not count as rock).
+ *   chant must not count as rock).
  * - No confident throw 3 s after Shoot: the round is "missed" and can be
  *   replayed with the same sealed move.
- * - R/P/S pressed during the countdown are kept and thrown at Shoot.
+ * - R/P/S pressed during the lock or the chant are kept and thrown at Shoot.
  *
  * Browser only: methods are called from event handlers and effects.
  */
@@ -26,7 +28,7 @@ import {
   setCountdownStep,
   type ActiveMatchState,
 } from "./engine/gameStateManager";
-import type { CVFrameResult, Difficulty, Gesture, LearningSnapshot, RoundRecord } from "./engine/types";
+import type { CVFrameResult, Difficulty, Gesture, LearningSnapshot, PredictionBreakdown, RoundRecord } from "./engine/types";
 import {
   canAcceptRoundGesture,
   clearValidationBuffer,
@@ -38,36 +40,53 @@ import {
 
 export type InputMode = "camera" | "keys";
 
+/** Where a round is: the AI locks its move, then the chant, then the throw. */
+export type Beat = "lock" | "rock" | "paper" | "scissors" | "shoot";
+
 export interface MatchView {
   match: ActiveMatchState;
   /** What the AI has learned about this visitor, across rematches. */
   learning: LearningSnapshot;
   /** Every round this visitor has finished, across rematches. */
   history: RoundRecord[];
+  /** What it thought before each round in `history`, same order: its odds, its guess and its clues. */
+  guesses: PredictionBreakdown[];
   inputMode: InputMode;
   /** The camera caught nothing at Shoot; the sealed round can be played again. */
   missed: boolean;
-  /** A key pressed during the countdown, thrown at Shoot. */
+  /** A key pressed before Shoot, thrown at Shoot. */
   pendingThrow: Gesture | null;
+  /** The live beat of the round, or null between rounds. */
+  beat: Beat | null;
 }
 
 export const MODE = "first_to_five" as const;
 export const TARGET_WINS = 5;
-/** One beat of "3, 2, 1, Shoot". */
-export const STEP_MS = 700;
+/** The lock gets a beat to itself before the chant, so the order is visible. */
+export const LEAD_IN_MS = 700;
+/** One beat of "rock, paper, scissors". */
+export const STEP_MS = 600;
+/** From Space to Shoot. */
+export const TO_SHOOT_MS = LEAD_IN_MS + STEP_MS * 3;
 /** Ignore the camera this long after Shoot while the hand changes shape. */
 export const SHOOT_GRACE_MS = 300;
 /** Give up on the camera this long after Shoot. */
 export const SHOOT_TIMEOUT_MS = 3000;
+/** The result sound waits for the AI's card to turn, landing with the verdict. */
+const VERDICT_SOUND_MS = 300;
+
+const BEAT_FOR_STEP: Record<3 | 2 | 1, Beat> = { 3: "rock", 2: "paper", 1: "scissors" };
 
 function freshView(difficulty: Difficulty, inputMode: InputMode = "camera"): MatchView {
   return {
     match: createNewMatchState(MODE, difficulty),
     learning: createInitialLearningSnapshot(),
     history: [],
+    guesses: [],
     inputMode,
     missed: false,
     pendingThrow: null,
+    beat: null,
   };
 }
 
@@ -117,14 +136,14 @@ export class MatchController {
     if (inputMode === this.view.inputMode) return;
     this.clearTimers();
     const match = isRoundLive(this.view) || this.view.missed ? this.unsealed(this.view.match) : this.view.match;
-    this.set({ inputMode, match, missed: false, pendingThrow: null });
+    this.set({ inputMode, match, missed: false, pendingThrow: null, beat: null });
   }
 
   /** A fresh match. The AI keeps what it learned about this visitor (rematch). */
   newMatch(difficulty: Difficulty): void {
     this.clearTimers();
     this.validation = createValidationState();
-    this.set({ match: createNewMatchState(MODE, difficulty), missed: false, pendingThrow: null });
+    this.set({ match: createNewMatchState(MODE, difficulty), missed: false, pendingThrow: null, beat: null });
   }
 
   /** A fresh match and a fresh AI: nothing about the last visitor is kept (next player). */
@@ -145,9 +164,9 @@ export class MatchController {
   startRound(): boolean {
     const { match, missed, history, learning } = this.view;
 
-    // Replay a missed round: same sealed move, countdown again.
+    // Replay a missed round: same sealed move, the lock beat and the chant again.
     if (missed && match.phase === "locked" && match.sealedCommitment) {
-      this.set({ missed: false, pendingThrow: null, match: { ...match, countdownValue: 3 } });
+      this.set({ missed: false, pendingThrow: null, beat: "lock", match: { ...match, countdownValue: 3 } });
       this.audio?.playLock();
       this.runCountdown();
       return true;
@@ -155,9 +174,9 @@ export class MatchController {
 
     if (match.phase !== "idle" && match.phase !== "round_complete") return false;
 
-    // Steps 1-5: predict from finished rounds only, pick the counter move, seal it. Then count down.
+    // Steps 1-5: predict from finished rounds only, pick the counter move, seal it. Then the chant.
     const locked = prepareAndLockRound(match, history, learning);
-    this.set({ match: locked, missed: false, pendingThrow: null });
+    this.set({ match: locked, missed: false, pendingThrow: null, beat: "lock" });
     this.audio?.playLock();
     this.runCountdown();
     return true;
@@ -165,21 +184,21 @@ export class MatchController {
 
   private runCountdown(): void {
     this.clearTimers();
-    this.audio?.playCountdownTick(3);
-    this.later(STEP_MS, () => this.step(2));
-    this.later(STEP_MS * 2, () => this.step(1));
-    this.later(STEP_MS * 3, () => this.shoot());
+    this.later(LEAD_IN_MS, () => this.step(3));
+    this.later(LEAD_IN_MS + STEP_MS, () => this.step(2));
+    this.later(LEAD_IN_MS + STEP_MS * 2, () => this.step(1));
+    this.later(TO_SHOOT_MS, () => this.shoot());
   }
 
-  private step(value: 2 | 1): void {
+  private step(value: 3 | 2 | 1): void {
     if (!this.view.match.sealedCommitment) return;
-    this.set({ match: setCountdownStep(this.view.match, value) });
+    this.set({ match: setCountdownStep(this.view.match, value), beat: BEAT_FOR_STEP[value] });
     this.audio?.playCountdownTick(value);
   }
 
   private shoot(): void {
     if (!this.view.match.sealedCommitment) return;
-    this.set({ match: setCountdownStep(this.view.match, "SHOOT") });
+    this.set({ match: setCountdownStep(this.view.match, "SHOOT"), beat: "shoot" });
     this.audio?.playCountdownTick("SHOOT");
     this.validation = clearValidationBuffer(this.validation);
     this.shootAt = performance.now();
@@ -224,8 +243,9 @@ export class MatchController {
 
   /** Steps 7-11: score the throw against the sealed move and update what the AI knows. */
   private resolve(gesture: Gesture): void {
-    const { match, learning, history } = this.view;
-    if (match.phase !== "detecting") return;
+    const { match, learning, history, guesses } = this.view;
+    if (match.phase !== "detecting" || !match.sealedCommitment) return;
+    const guess = match.sealedCommitment.breakdown;
     const result = resolveRoundWithValidatedGesture(match, gesture, learning, history);
     if (!result.accepted || !result.roundRecord) return;
     this.clearTimers();
@@ -235,31 +255,37 @@ export class MatchController {
       match: result.nextMatch,
       learning: result.nextLearning,
       history: [...history, round],
+      guesses: [...guesses, guess],
       missed: false,
       pendingThrow: null,
+      beat: null,
     });
 
     const audio = this.audio;
     if (!audio) return;
+    // The card turns now; the result sounds when the verdict lands.
     audio.playReveal();
-    if (result.nextMatch.phase === "match_complete") {
-      if (result.nextMatch.winner === "player") audio.playMatchWon();
-      else audio.playDefeat();
-    } else if (round.outcome === "player_win") {
-      if (result.nextMatch.currentPlayerStreak >= 3) audio.playStreakCelebration();
-      else audio.playVictory();
-    } else if (round.outcome === "ai_win") {
-      audio.playDefeat();
-    } else {
-      audio.playDraw();
-    }
+    const next = result.nextMatch;
+    this.later(VERDICT_SOUND_MS, () => {
+      if (next.phase === "match_complete") {
+        if (next.winner === "player") audio.playMatchWon();
+        else audio.playDefeat();
+      } else if (round.outcome === "player_win") {
+        if (next.currentPlayerStreak >= 3) audio.playStreakCelebration();
+        else audio.playVictory();
+      } else if (round.outcome === "ai_win") {
+        audio.playDefeat();
+      } else {
+        audio.playDraw();
+      }
+    });
   }
 
   private miss(): void {
     const { match } = this.view;
     if (match.phase !== "detecting" || !match.sealedCommitment) return;
     this.clearTimers();
-    this.set({ match: rearmRound(match), missed: true, pendingThrow: null });
+    this.set({ match: rearmRound(match), missed: true, pendingThrow: null, beat: null });
     this.audio?.playMiss();
   }
 
@@ -281,7 +307,7 @@ export class MatchController {
     this.audio = null;
     this.validation = createValidationState();
     if (isRoundLive(this.view) || this.view.missed) {
-      this.view = { ...this.view, match: this.unsealed(this.view.match), missed: false, pendingThrow: null };
+      this.view = { ...this.view, match: this.unsealed(this.view.match), missed: false, pendingThrow: null, beat: null };
     }
   }
 }

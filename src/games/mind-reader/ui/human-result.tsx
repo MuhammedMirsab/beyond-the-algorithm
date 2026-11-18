@@ -2,21 +2,23 @@
 
 import { motion } from "motion/react";
 import { useState } from "react";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
-import { NextPlayerIcon } from "@/components/game/next-player";
+import { KeyHints } from "@/components/ui/key-hints";
 import { Score, Stat } from "@/components/ui/score";
 import { useLocalBoard } from "@/lib/leaderboard";
-import { middleStrategyPath, numberRange, type ScoreBreakdown } from "../engine/game-engine";
+import { middleStrategySteps, numberRange, type ScoreBreakdown } from "../engine/game-engine";
 import { elapsedSeconds, humanScore, type HumanState } from "../engine/human";
-import { doublingSum, formatNumber, type RangeId } from "../engine/ranges";
-import { GuessTrail } from "./bits";
-import { useHeadingFocus } from "./hooks";
+import { doublingSum, formatNumber } from "../engine/ranges";
+import { useHeadingFocus, useKeys } from "./hooks";
+import { CapacityGrid, ClueSplits, HalvingBars, MiddleSplit } from "./how-visuals";
+import { StrategyCompare } from "./strategy-compare";
 
 const count = (n: number, one: string, many: string) => `${formatNumber(n)} ${n === 1 ? one : many}`;
 
-/** End of "Find its number": the verdict, the score (wins only), the board and the reveal. */
+/** End of "Find its number": the verdict, the score (wins only), the board, and how to always win. */
 export function HumanResult({
   human,
   onPlayAgain,
@@ -34,7 +36,7 @@ export function HumanResult({
   const won = score != null;
   const guesses = human.guesses.length;
   const seconds = elapsedSeconds(human);
-  const middle = middleStrategyPath(human.secret, range.min, range.max);
+  useKeys({ r: onPlayAgain });
 
   return (
     <div ref={wrapper} className="contents [&_h1]:outline-none">
@@ -68,74 +70,59 @@ export function HumanResult({
             <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
               Next player
             </Button>
+            <KeyHints className="hidden basis-full pt-1 pointer-fine:flex" items={[{ keys: ["R"], label: "Play again" }]} />
           </>
         }
       >
         {won ? <ScoreAndBoard human={human} score={score} /> : null}
-
-        <section aria-labelledby="mind-reader-compare" className="flex flex-col gap-6 rounded-xl bg-surface p-5 shadow-ring sm:p-6">
-          <div className="flex flex-col gap-1.5">
-            <h2 id="mind-reader-compare" className="type-title-2 text-fg">
-              Your guesses and the middle
-            </h2>
-            <p className="type-body max-w-[40rem] text-fg-muted">
-              The arrows show which way its number was. The second row always guesses the middle of what&apos;s left.
-            </p>
-          </div>
-          <dl className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2.5">
-              <dt className="type-label text-fg-subtle">You</dt>
-              <dd>
-                <GuessTrail guesses={human.guesses} />
-              </dd>
-            </div>
-            <div className="flex flex-col gap-2.5">
-              <dt className="type-label text-fg-subtle">Always the middle</dt>
-              <dd>
-                <GuessTrail
-                  guesses={middle.map((value) => ({
-                    value,
-                    result: value === human.secret ? "correct" : human.secret > value ? "higher" : "lower",
-                  }))}
-                />
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        <MiddleStrategy range={human.range} secret={human.secret} guesses={guesses} won={won} middle={middle.length} />
-
+        <StrategyCompare human={human} />
+        <MiddleStrategy human={human} />
         {won ? null : <BoardOnly />}
       </ResultPanel>
     </div>
   );
 }
 
-function MiddleStrategy({ range, secret, guesses, won, middle }: { range: RangeId; secret: number; guesses: number; won: boolean; middle: number }) {
-  const { min, max, maxGuesses, label } = numberRange(range);
+function MiddleStrategy({ human }: { human: HumanState }) {
+  const { min, max, maxGuesses, label } = numberRange(human.range);
   const first = Math.floor((min + max) / 2);
   const upper = Math.floor((first + 1 + max) / 2);
   const lower = Math.floor((min + first - 1) / 2);
-  const found = `finds ${formatNumber(secret)} in ${count(middle, "guess", "guesses")}, and never needs more than ${maxGuesses} for any number from ${label}.`;
+  const path = middleStrategySteps(human.secret, min, max);
+  const clues = human.clues.map((c) => ({ question: c.question, before: c.before, after: c.after }));
+
+  const steps = [
+    {
+      title: "Guess the middle",
+      visual: <MiddleSplit max={max} />,
+      text: `Start with ${formatNumber(first)}. Higher or lower, about half of the numbers are gone in one guess.`,
+    },
+    {
+      title: "Then the middle of what's left",
+      visual: <HalvingBars start={max} />,
+      text: `Higher? Guess ${formatNumber(upper)}. Lower? Guess ${formatNumber(lower)}. For ${formatNumber(human.secret)} that's ${path.map((s) => formatNumber(s.guess)).join(", ")}.`,
+    },
+    {
+      title: `${maxGuesses} guesses are always enough`,
+      visual: <CapacityGrid max={max} pin={human.secret} />,
+      text: `${doublingSum(maxGuesses)}, more than ${formatNumber(max)}. That's binary search, the way a computer finds a word in a sorted list.`,
+    },
+    ...(clues.length > 0
+      ? [
+          {
+            title: "The best clues cut in half",
+            visual: <ClueSplits clues={clues} />,
+            text: "A yes or no answer can cross out at most half of what's left, so a clue that splits the numbers evenly is worth the most.",
+          },
+        ]
+      : []),
+  ];
 
   return (
     <HowItWorks
-      title="The best strategy: guess the middle"
-      intro={won ? `You used ${count(guesses, "guess", "guesses")}. Guessing the middle ${found}` : `Guessing the middle ${found}`}
-      steps={[
-        {
-          title: "Guess the middle",
-          text: `Start with ${formatNumber(first)}. Higher or lower, half of the numbers are gone in one guess.`,
-        },
-        {
-          title: "Then the middle of what's left",
-          text: `If it's higher, guess ${formatNumber(upper)}. If it's lower, guess ${formatNumber(lower)}. Keep cutting what's left in half.`,
-        },
-        {
-          title: `${maxGuesses} guesses are always enough`,
-          text: `${doublingSum(maxGuesses)}, more than ${formatNumber(max)}. That's binary search, the way a computer finds a word in a sorted list.`,
-        },
-      ]}
+      title="How to always find it"
+      intro={`Guessing the middle finds any number from ${label} in ${maxGuesses} guesses or fewer.`}
+      steps={steps}
     />
   );
 }

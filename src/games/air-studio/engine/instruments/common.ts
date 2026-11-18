@@ -6,7 +6,12 @@ import { settings } from "../settings";
 import { speedToVelocity, StrikeDetector } from "../tracking/gestures";
 import type { Hand, Pt, TrackFrame } from "../tracking/hands";
 import { fromReach, strikeThreshold, toReach } from "../tracking/reach";
-import { C, fitLabel, font, motion, pill, rgba, rr } from "./palette";
+import { C, font, motion, padLabel, pill, rgba, rr } from "./palette";
+
+/** How long a hit lights its pad, punches it out, and sends a ring outwards (seconds). */
+const FLASH_S = 0.32;
+const PUNCH_S = 0.16;
+const RING_S = 0.38;
 
 /** One instrument: gestures in, sound and a canvas overlay out (copied from the original app). */
 export interface Controller {
@@ -64,19 +69,27 @@ export function drawHands(g: CanvasRenderingContext2D, f: TrackFrame, w: number,
       }
     }
     const p = opts.point === "tip" ? hand.tip : hand.palm;
+    const radius = (hand.fist ? 9 : 13) * u;
+    // A dark rim under the coloured ring, so it reads over a bright picture.
+    g.strokeStyle = rgba(C.canvas, 0.55);
+    g.lineWidth = 5.5;
+    g.beginPath();
+    g.arc(p.x * w, p.y * h, radius, 0, Math.PI * 2);
+    g.stroke();
     g.strokeStyle = rgba(col);
     g.lineWidth = 2.5;
-    g.beginPath();
-    g.arc(p.x * w, p.y * h, (hand.fist ? 9 : 13) * u, 0, Math.PI * 2);
     g.stroke();
     if (hand.fist) {
       g.fillStyle = rgba(col);
       g.fill();
     }
     g.font = font(700, 12 * u);
-    g.fillStyle = rgba(col);
     g.textAlign = "center";
-    g.fillText(hand.label === "Left" ? "L" : "R", p.x * w, p.y * h - 20 * u);
+    g.lineWidth = 3;
+    g.strokeStyle = rgba(C.canvas, 0.6);
+    g.strokeText(hand.label === "Left" ? "L" : "R", p.x * w, p.y * h - radius - 7 * u);
+    g.fillStyle = rgba(col);
+    g.fillText(hand.label === "Left" ? "L" : "R", p.x * w, p.y * h - radius - 7 * u);
   }
 }
 
@@ -159,6 +172,19 @@ export abstract class PadController implements Controller {
     emitHit(this.inst, piece, vel, hand, this.preset(), speed);
   }
 
+  /** The pads in a short fill (the kit saying it's ready). Not the visitor's playing: nothing is announced or counted. */
+  demoFill(): string[] {
+    const ids = this.pads.map((p) => p.id);
+    const order = ["kick", "hhc", "snare", "toml", "crash"].filter((id) => ids.includes(id));
+    return order.length >= 3 ? order : ids.slice(0, 5);
+  }
+
+  demoHit(piece: string, vel: number, now: number) {
+    if (!this.pads.some((p) => p.id === piece)) return;
+    this.kit.play(piece, vel);
+    this.flashes.set(piece, { t: now, v: vel });
+  }
+
   update(f: TrackFrame, now: number) {
     const thr = strikeThreshold(this.sensOffset());
     for (const hand of f.hands) {
@@ -178,31 +204,45 @@ export abstract class PadController implements Controller {
     const gap = 0.012;
     for (const pad of this.pads) {
       const r = reachRect(pad.x + gap, pad.y + gap, pad.x + pad.w - gap, pad.y + pad.h - gap);
-      const x = r.x * w;
-      const y = r.y * h;
-      const pw = r.w * w;
-      const ph = r.h * h;
+      let x = r.x * w;
+      let y = r.y * h;
+      let pw = r.w * w;
+      let ph = r.h * h;
       const fl = this.flashes.get(pad.id);
       const age = fl ? (now - fl.t) / 1000 : 9;
+      const lit = !!fl && age < FLASH_S;
       const isTarget = this.targets.includes(pad.id);
-      rr(g, x, y, pw, ph, 10);
-      g.fillStyle = rgba(C.canvas, 0.46);
+      // A hit punches the pad out a little and it settles (movement: not under reduced motion).
+      if (fl && !motion.reduced && age < PUNCH_S) {
+        const k = 1 - age / PUNCH_S;
+        const grow = 1 + 0.05 * k * k * (0.5 + fl.v * 0.5);
+        x -= (pw * (grow - 1)) / 2;
+        y -= (ph * (grow - 1)) / 2;
+        pw *= grow;
+        ph *= grow;
+      }
+      // Light enough that the visitor stays visible through every pad.
+      rr(g, x, y, pw, ph, 12);
+      g.fillStyle = rgba(C.canvas, 0.28);
       g.fill();
-      if (fl && age < 0.25) {
-        g.fillStyle = rgba(C.game, 0.55 * (1 - age / 0.25) * (0.4 + fl.v * 0.6));
+      if (fl && lit) {
+        const k = 1 - age / FLASH_S;
+        g.fillStyle = rgba(C.game, 0.72 * k * k * (0.45 + fl.v * 0.55));
         g.fill();
       }
-      g.lineWidth = age < 0.25 ? 2 : 1.25;
-      g.strokeStyle = age < 0.25 ? rgba(C.game) : rgba(C.fg, 0.3);
+      g.lineWidth = lit ? 3 : 1.5;
+      g.strokeStyle = lit ? rgba(C.game) : rgba(C.fg, 0.45);
       g.stroke();
-      g.fillStyle = rgba(C.fg);
-      fitLabel(g, pad.label ?? PIECE_LABEL[pad.id] ?? pad.id, x + pw / 2, y + ph / 2, pw - 12, Math.max(12, Math.min(18, pw / 9)) * u);
-      if (isTarget) drawTarget(g, x, y, pw, ph, u, 10);
-      // Impact ring (movement: not under reduced motion).
-      if (!motion.reduced && age < 0.3) {
-        g.strokeStyle = rgba(C.game, 1 - age / 0.3);
-        g.lineWidth = 2;
-        rr(g, x - age * 30, y - age * 30, pw + age * 60, ph + age * 60, 12);
+      padLabel(g, pad.label ?? PIECE_LABEL[pad.id] ?? pad.id, x + pw / 2, y + ph / 2, pw - 16, Math.max(13, Math.min(19, pw / 8)) * u, lit);
+      if (isTarget) drawTarget(g, x, y, pw, ph, u, 12);
+      // Impact ring, easing out (movement: not under reduced motion).
+      if (!motion.reduced && age < RING_S) {
+        const k = age / RING_S;
+        const out = 1 - (1 - k) * (1 - k);
+        const grow = out * 26 * u;
+        g.strokeStyle = rgba(C.game, 0.9 * (1 - k));
+        g.lineWidth = 2.5 * (1 - k) + 0.5;
+        rr(g, x - grow, y - grow, pw + grow * 2, ph + grow * 2, 12 + grow);
         g.stroke();
       }
     }

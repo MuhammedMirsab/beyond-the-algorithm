@@ -1,10 +1,20 @@
 /**
- * Single-pass compositor. One full-screen triangle; for every pixel:
+ * Two programs share one lens library:
+ *
+ * FRAGMENT_SHADER, the single-pass compositor. One full-screen triangle; for
+ * every pixel:
  *   1. sample the camera (cover/contain fit, optional mirror)
  *   2. signed distance to the hand frame (4 inward edge lines → AA mask)
  *   3. inside  → the selected lens (screen-space, so patterns never swim with
  *                hand jitter — the frame is a window onto a filtered layer)
  *      outside → the "world": desaturated + dimmed while a frame is up
+ *
+ * PREVIEW_FRAGMENT_SHADER, the filter picker's live thumbnails: one canvas
+ * holds every thumbnail, and each pixel runs the lens of the thumbnail it
+ * sits in, on the same camera picture scaled to fit. The library's view
+ * uniforms (video rect, frame centre and box, face) become per-thumbnail
+ * globals through #defines, so both programs run the exact same lens code.
+ *
  * Lens order must match LENSES in ./lenses.ts.
  *
  * The capture flash of the original app is gone: the booth never saves
@@ -17,7 +27,7 @@ void main() {
 }
 `;
 
-export const FRAGMENT_SHADER = `#version 300 es
+const MAIN_HEADER = `#version 300 es
 precision highp float;
 precision highp int;
 
@@ -39,7 +49,14 @@ uniform float uDpr;
 uniform vec4 uFace[4];
 
 out vec4 outColor;
+`;
 
+/**
+ * Helpers and the eleven lenses. Reads uVideo, uVideoRect, uMirror, uCenter,
+ * uBox, uTime, uDpr and uFace: uniforms in the compositor, per-thumbnail
+ * globals in the preview.
+ */
+const LENS_LIBRARY = `
 // ───────────────────────────── helpers
 vec2 toUV(vec2 p) {
   vec2 uv = (p - uVideoRect.xy) / uVideoRect.zw;
@@ -65,14 +82,6 @@ float bayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75)))
 float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
 float bayer8(vec2 a) { return bayer4(0.5 * a) * 0.25 + bayer2(a); }
 
-float frameSD(vec2 p) {
-  float d = dot(uEdges[0].xy, p) + uEdges[0].z;
-  d = min(d, dot(uEdges[1].xy, p) + uEdges[1].z);
-  d = min(d, dot(uEdges[2].xy, p) + uEdges[2].z);
-  d = min(d, dot(uEdges[3].xy, p) + uEdges[3].z);
-  return d;
-}
-
 float frameSpan() { return max(1.0, max(uBox.z - uBox.x, uBox.w - uBox.y)); }
 
 float sobel(vec2 p, float o) {
@@ -89,7 +98,7 @@ float sobel(vec2 p, float o) {
   return length(vec2(gx, gy));
 }
 
-// ───────────────────────────── 0 · halftone (LED dot matrix)
+// ───────────────────────────── halftone (LED dot matrix)
 vec3 lensHalftone(vec2 p) {
   float cell = 7.0 * uDpr;
   vec2 c = (floor(p / cell) + 0.5) * cell;
@@ -101,7 +110,7 @@ vec3 lensHalftone(vec2 p) {
   return mix(vec3(0.012), ink, m);
 }
 
-// ───────────────────────────── 1 · thermal
+// ───────────────────────────── thermal
 vec3 thermalRamp(float t) {
   t = clamp(t, 0.0, 1.0) * 6.0;
   vec3 c0 = vec3(0.02, 0.01, 0.10);
@@ -132,7 +141,7 @@ vec3 lensThermal(vec2 p) {
   return thermalRamp(heat);
 }
 
-// ───────────────────────────── 2 · night vision
+// ───────────────────────────── night vision
 vec3 lensNight(vec2 p) {
   float l = pow(clamp(luma(cam(p)) * 1.9, 0.0, 1.0), 0.8);
   l += (hash12(p * 0.73 + fract(uTime * 7.31) * 311.0) - 0.5) * 0.22;
@@ -141,7 +150,7 @@ vec3 lensNight(vec2 p) {
   return vec3(0.32, 1.0, 0.42) * max(l, 0.0) * scan * (0.45 + 0.55 * vig) + vec3(0.0, 0.025, 0.005);
 }
 
-// ───────────────────────────── 3 · ascii (5×5 bitmap glyphs: " .:-=+*#%@")
+// ───────────────────────────── ascii (5×5 bitmap glyphs: " .:-=+*#%@")
 const int GLYPHS[10] = int[10](0, 4194304, 131200, 14336, 459200, 4357252, 18289105, 11512810, 27070835, 15728622);
 
 float glyphBit(int n, vec2 q) {
@@ -162,7 +171,7 @@ vec3 lensAscii(vec2 p) {
   return mix(vec3(0.008, 0.014, 0.008), ink, on);
 }
 
-// ───────────────────────────── 4 · 1-bit ordered dither
+// ───────────────────────────── 1-bit ordered dither
 vec3 lensDither(vec2 p) {
   float px = 2.0 * uDpr;
   vec2 g = floor(p / px);
@@ -171,14 +180,14 @@ vec3 lensDither(vec2 p) {
   return mix(vec3(0.05, 0.05, 0.06), vec3(0.95, 0.93, 0.87), step(bayer8(g), l));
 }
 
-// ───────────────────────────── 5 · x-ray
+// ───────────────────────────── x-ray
 vec3 lensXray(vec2 p) {
   float v = pow(1.0 - luma(cam(p)), 1.8);
   float e = smoothstep(0.08, 0.6, sobel(p, 1.5 * uDpr));
   return vec3(0.50, 0.78, 1.0) * v * 0.9 + vec3(0.85, 0.95, 1.0) * e * 0.9 + vec3(0.01, 0.02, 0.04);
 }
 
-// ───────────────────────────── 6 · blueprint
+// ───────────────────────────── blueprint
 float gridLine(vec2 p, float spacing, float width) {
   vec2 d = abs(fract(p / spacing + 0.5) - 0.5) * spacing;
   return 1.0 - smoothstep(0.0, width, min(d.x, d.y));
@@ -192,7 +201,7 @@ vec3 lensBlueprint(vec2 p) {
   return mix(col, vec3(0.88, 0.95, 1.0), e);
 }
 
-// ───────────────────────────── 7 · 8-bit (16-colour palette + ordered dither)
+// ───────────────────────────── 8-bit (16-colour palette + ordered dither)
 const vec3 PALETTE[16] = vec3[16](
   vec3(0.04, 0.04, 0.07), vec3(0.13, 0.17, 0.35), vec3(0.47, 0.16, 0.36), vec3(0.02, 0.49, 0.34),
   vec3(0.64, 0.33, 0.22), vec3(0.37, 0.35, 0.33), vec3(0.75, 0.76, 0.79), vec3(1.00, 0.96, 0.90),
@@ -216,7 +225,7 @@ vec3 lensPixel(vec2 p) {
   return best * (1.0 - 0.2 * seam);
 }
 
-// ───────────────────────────── 8 · glitch
+// ───────────────────────────── glitch
 vec3 lensGlitch(vec2 p) {
   float t = floor(uTime * 15.0);
   float band = floor(p.y / (12.0 * uDpr));
@@ -230,7 +239,7 @@ vec3 lensGlitch(vec2 p) {
   return col * (0.88 + 0.12 * sin(p.y / uDpr * 1.7 + uTime * 30.0));
 }
 
-// ───────────────────────────── 9 · loupe (magnifier with lateral CA)
+// ───────────────────────────── loupe (magnifier with lateral CA)
 vec3 lensLoupe(vec2 p) {
   vec2 d = p - uCenter;
   vec2 q = uCenter + d / 2.2;
@@ -242,7 +251,7 @@ vec3 lensLoupe(vec2 p) {
 }
 
 
-// ───────────────────────────── 10 · cartoon (3D animated film look)
+// ───────────────────────────── cartoon (3D animated film look)
 // What makes the look, and how each part is faked in one pass:
 //   big eyes, big head, small chin → three local warps around face points
 //   smooth "subsurface" skin       → edge-preserving (bilateral) blur + warm glow in skin tones
@@ -367,22 +376,32 @@ vec3 lensCartoon(vec2 p) {
 
 vec3 lens(int id, vec2 p) {
   switch (id) {
-    case 0: return lensHalftone(p);
+    case 0: return lensPixel(p);
     case 1: return lensThermal(p);
-    case 2: return lensNight(p);
-    case 3: return lensAscii(p);
-    case 4: return lensDither(p);
-    case 5: return lensXray(p);
-    case 6: return lensBlueprint(p);
-    case 7: return lensPixel(p);
-    case 8: return lensGlitch(p);
-    case 9: return lensLoupe(p);
-    case 10: return lensCartoon(p);
+    case 2: return lensCartoon(p);
+    case 3: return lensHalftone(p);
+    case 4: return lensAscii(p);
+    case 5: return lensNight(p);
+    case 6: return lensXray(p);
+    case 7: return lensBlueprint(p);
+    case 8: return lensDither(p);
+    case 9: return lensGlitch(p);
+    case 10: return lensLoupe(p);
   }
   return cam(p);
 }
+`;
 
+const MAIN_COMPOSE = `
 // ───────────────────────────── compose
+float frameSD(vec2 p) {
+  float d = dot(uEdges[0].xy, p) + uEdges[0].z;
+  d = min(d, dot(uEdges[1].xy, p) + uEdges[1].z);
+  d = min(d, dot(uEdges[2].xy, p) + uEdges[2].z);
+  d = min(d, dot(uEdges[3].xy, p) + uEdges[3].z);
+  return d;
+}
+
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   float sd = frameSD(p);
@@ -420,3 +439,86 @@ void main() {
   outColor = vec4(col, 1.0);
 }
 `;
+
+export const FRAGMENT_SHADER = MAIN_HEADER + LENS_LIBRARY + MAIN_COMPOSE;
+
+/** Most thumbnails the preview program lays out (one per lens). */
+export const PREVIEW_MAX_CELLS = 12;
+
+const PREVIEW_HEADER = `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform sampler2D uVideo;
+uniform float uMirror;
+uniform float uTime;
+uniform float uDpr;
+uniform vec2 uRes;              // canvas size (device px)
+uniform vec4 uCells[${PREVIEW_MAX_CELLS}];         // thumbnail rects (device px, y down): x, y, w, h
+uniform int uCount;
+uniform float uRadius;          // thumbnail corner radius (device px)
+uniform vec4 uLocalRect;        // the camera picture fitted into one thumbnail (thumbnail px)
+// The Cartoon lens face, as fractions of the main view's video rect:
+// [0] eyeR.xy eyeL.xy · [1] center.xy faceW eyeW (of the rect width) · [2] chin.xy presence 0 · [3] cheekR.xy cheekL.xy
+uniform vec4 uFaceN[4];
+
+out vec4 outColor;
+
+// The library's view uniforms, per thumbnail.
+vec4 gRect;
+vec2 gCenter;
+vec4 gBox;
+vec4 gFace[4];
+#define uVideoRect gRect
+#define uCenter gCenter
+#define uBox gBox
+#define uFace gFace
+`;
+
+const PREVIEW_MAIN = `
+vec2 toCell(vec2 n) { return gRect.xy + n * gRect.zw; }
+
+float roundRectSD(vec2 p, vec2 size, float r) {
+  vec2 q = abs(p - size * 0.5) - (size * 0.5 - r);
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void main() {
+  vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  int id = -1;
+  vec4 cell = vec4(0.0);
+  for (int i = 0; i < ${PREVIEW_MAX_CELLS}; i++) {
+    if (i >= uCount) break;
+    vec4 c = uCells[i];
+    if (p.x >= c.x && p.y >= c.y && p.x < c.x + c.z && p.y < c.y + c.w) {
+      id = i;
+      cell = c;
+      break;
+    }
+  }
+  if (id < 0) {
+    outColor = vec4(0.0);
+    return;
+  }
+
+  vec2 local = p - cell.xy;
+  float alpha = clamp(0.5 - roundRectSD(local, cell.zw, uRadius), 0.0, 1.0);
+  if (alpha <= 0.0) {
+    outColor = vec4(0.0);
+    return;
+  }
+
+  gRect = uLocalRect;
+  gCenter = cell.zw * 0.5;
+  gBox = vec4(0.0, 0.0, cell.zw);
+  gFace[0] = vec4(toCell(uFaceN[0].xy), toCell(uFaceN[0].zw));
+  gFace[1] = vec4(toCell(uFaceN[1].xy), uFaceN[1].z * gRect.z, uFaceN[1].w * gRect.z);
+  gFace[2] = vec4(toCell(uFaceN[2].xy), uFaceN[2].z, 0.0);
+  gFace[3] = vec4(toCell(uFaceN[3].xy), toCell(uFaceN[3].zw));
+
+  vec3 col = clamp(lens(id, local), 0.0, 1.0);
+  outColor = vec4(col * alpha, alpha);
+}
+`;
+
+export const PREVIEW_FRAGMENT_SHADER = PREVIEW_HEADER + LENS_LIBRARY + PREVIEW_MAIN;

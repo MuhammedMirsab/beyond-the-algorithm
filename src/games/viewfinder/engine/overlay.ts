@@ -1,5 +1,5 @@
 import { dist, type Vec2 } from "./geometry";
-import { FRAME_POINTS, POINTS_PER_HAND, type FrameState, type TrackedHand } from "./gesture";
+import { FRAME_POINTS, LM, POINTS_PER_HAND, type FrameState, type TrackedHand } from "./gesture";
 
 const TAU = Math.PI * 2;
 
@@ -20,12 +20,12 @@ interface Ripple {
 
 export interface OverlayParams {
   state: FrameState;
-  lensIndex: number;
   lensName: string;
   accent: string;
   time: number;
+  /** "AI view": every landmark, the corner numbers and the points readout. */
   showSkeleton: boolean;
-  /** Face points the Cartoon lens is using (shown with the skeleton). */
+  /** Face points the Cartoon lens is using (shown in AI view). */
   face: Vec2[];
   /** prefers-reduced-motion: ripples fade in place instead of expanding. */
   reducedMotion: boolean;
@@ -39,30 +39,38 @@ export function rgba(hex: string, alpha: number) {
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 
 /**
- * The right half of the frame's top edge. The original showed a blinking
- * "REC" timecode here, but nothing is ever recorded, so it now states the
- * exhibit's point instead: the frame is 4 of the 42 points the model found.
+ * AI view's readout along the frame's top edge: the frame is 4 of the 42
+ * points the model found. (The original showed a blinking "REC" timecode
+ * here, but nothing is ever recorded.) Sentence case, like all text.
  */
-const POINTS_LABEL = `${FRAME_POINTS} OF ${POINTS_PER_HAND * 2} POINTS`;
+export const POINTS_LABEL = `${FRAME_POINTS} of ${POINTS_PER_HAND * 2} points`;
+
+/** Reads a next/font family variable set on <html>, with a fallback stack. */
+function fontFamily(variable: string, fallback: string) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
+  return value ? `${value}, ${fallback}` : fallback;
+}
 
 /**
  * Crisp 2D chrome drawn above the WebGL layer at full device resolution:
- * fingertip dots, viewfinder corner brackets, the lens label riding the
- * top edge of the frame, pinch ripples and an optional landmark skeleton.
+ * fingertip guides, viewfinder corner brackets, the filter's name riding the
+ * top edge of the frame and pinch ripples. AI view adds every landmark, the
+ * landmark numbers of the four corners and the "4 of 42 points" readout.
  */
 export class Overlay {
   private readonly ctx: CanvasRenderingContext2D;
   private dpr = 1;
   private ripples: Ripple[] = [];
+  private readonly sans: string;
   private readonly mono: string;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D unavailable");
     this.ctx = ctx;
-    // Martian Mono, the arcade's machine voice (variable set by next/font on <html>).
-    const fontVar = getComputedStyle(document.documentElement).getPropertyValue("--font-martian").trim();
-    this.mono = fontVar ? `${fontVar}, ui-monospace, monospace` : "ui-monospace, monospace";
+    // Mona Sans for words people read, Martian Mono for the machine's voice (DESIGN.md §4).
+    this.sans = fontFamily("--font-mona", "ui-sans-serif, system-ui, sans-serif");
+    this.mono = fontFamily("--font-martian", "ui-monospace, monospace");
   }
 
   /** Drops pending ripples and frees the backing store. */
@@ -103,6 +111,8 @@ export class Overlay {
 
     if (state.active > 0.01 && state.quad.length >= 3) this.frame(state, p);
 
+    if (p.showSkeleton) for (const hand of state.hands) this.cornerNumbers(hand);
+
     this.drawRipples(p.time, p.reducedMotion);
   }
 
@@ -132,6 +142,27 @@ export class Overlay {
       ctx.arc(pt.x, pt.y, 3, 0, TAU);
       ctx.fill();
     }
+  }
+
+  /** AI view: the landmark number beside each corner fingertip (thumb tip 4, index tip 8). */
+  private cornerNumbers(hand: TrackedHand) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = `500 11px ${this.mono}`;
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    const side = hand.slot === "left" ? -1 : 1;
+    for (const [pt, n] of [
+      [hand.thumb, LM.THUMB_TIP],
+      [hand.index, LM.INDEX_TIP],
+    ] as const) {
+      const text = String(n);
+      const w = ctx.measureText(text).width;
+      ctx.fillText(text, side < 0 ? pt.x - 14 - w : pt.x + 14, pt.y - 10);
+    }
+    ctx.restore();
   }
 
   /** Before a frame locks: show the two tips each hand contributes, linked by a hairline. */
@@ -172,8 +203,11 @@ export class Overlay {
     ctx.strokeStyle = `rgba(255,255,255,${0.3 * a})`;
     ctx.stroke();
 
-    // Viewfinder corner brackets along both adjacent edges.
-    ctx.lineWidth = 2;
+    // Viewfinder corner brackets along both adjacent edges. When a frame locks
+    // they start long and settle into place over a third of a second: the "click".
+    const snap = p.reducedMotion || !state.locked ? 1 : easeOut(Math.min(1, state.lockedFor / 0.35));
+    const grow = 1 + 0.8 * (1 - snap);
+    ctx.lineWidth = 2 + (1 - snap);
     ctx.lineCap = "round";
     ctx.strokeStyle = `rgba(255,255,255,${0.95 * a})`;
     ctx.beginPath();
@@ -182,7 +216,7 @@ export class Overlay {
       for (const o of [quad[(i + n - 1) % n], quad[(i + 1) % n]]) {
         const len = dist(v, o);
         if (len < 1) continue;
-        const L = Math.min(26, len * 0.24);
+        const L = Math.min(26 * grow, len * 0.24 * grow, len * 0.45);
         ctx.moveTo(v.x, v.y);
         ctx.lineTo(v.x + ((o.x - v.x) / len) * L, v.y + ((o.y - v.y) / len) * L);
       }
@@ -207,7 +241,7 @@ export class Overlay {
     this.label(state, p);
   }
 
-  /** Lens name and the "4 of 42 points" readout, set along the frame's top edge. */
+  /** The filter's name (and, in AI view, the points readout), set along the frame's top edge. */
   private label(state: FrameState, p: OverlayParams) {
     const { ctx } = this;
     const quad = state.quad;
@@ -234,29 +268,29 @@ export class Overlay {
     ctx.save();
     ctx.translate(a.x, a.y);
     ctx.rotate(angle);
-    // Same metrics as the type-label role: 12px mono, uppercase, +0.06em.
-    ctx.font = `500 12px ${this.mono}`;
-    if ("letterSpacing" in ctx) ctx.letterSpacing = "0.72px";
     ctx.textBaseline = "alphabetic";
-    ctx.shadowColor = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur = 6;
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 8;
 
-    const y = -12;
+    const y = -13;
     const x0 = 14;
     ctx.fillStyle = rgba(p.accent, alpha);
     ctx.beginPath();
-    ctx.arc(x0 + 3, y - 3.5, 3, 0, TAU);
+    ctx.arc(x0 + 4, y - 5, 4, 0, TAU);
     ctx.fill();
-    ctx.fillStyle = `rgba(255,255,255,${0.95 * alpha})`;
-    const name = `${String(p.lensIndex + 1).padStart(2, "0")}  ${p.lensName.toUpperCase()}`;
-    ctx.fillText(name, x0 + 12, y);
+    ctx.font = `600 15px ${this.sans}`;
+    ctx.fillStyle = `rgba(255,255,255,${0.97 * alpha})`;
+    ctx.fillText(p.lensName, x0 + 14, y);
 
-    // Only when the edge is long enough for both labels with a clear gap.
-    const nameEnd = x0 + 12 + ctx.measureText(name).width;
-    const w = ctx.measureText(POINTS_LABEL).width;
-    if (len - 14 - w > nameEnd + 28) {
-      ctx.fillStyle = `rgba(255,255,255,${0.75 * alpha})`;
-      ctx.fillText(POINTS_LABEL, len - 14 - w, y);
+    // AI view only, and only when the edge is long enough for both labels with a clear gap.
+    if (p.showSkeleton) {
+      const nameEnd = x0 + 14 + ctx.measureText(p.lensName).width;
+      ctx.font = `500 12px ${this.mono}`;
+      const w = ctx.measureText(POINTS_LABEL).width;
+      if (len - 14 - w > nameEnd + 28) {
+        ctx.fillStyle = `rgba(255,255,255,${0.8 * alpha})`;
+        ctx.fillText(POINTS_LABEL, len - 14 - w, y);
+      }
     }
     ctx.restore();
   }

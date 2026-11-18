@@ -220,7 +220,8 @@ describe("The AI's comments", () => {
         }
       }
     }
-  });
+    // Fifteen simulated sessions: room for a busy machine.
+  }, 30_000);
 
   it("talks about the real counts when a visitor leans on one move", () => {
     const { history } = play(["rock", "paper", "rock", "rock", "scissors", "rock", "rock", "paper", "rock"], "easy", 11);

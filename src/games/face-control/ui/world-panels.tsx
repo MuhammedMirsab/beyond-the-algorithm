@@ -1,23 +1,27 @@
 "use client";
 
-import { Camera, Check, Circle, Keyboard, Play, RotateCcw, ScanFace, SlidersHorizontal, Trophy } from "lucide-react";
+import NumberFlow from "@number-flow/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { ArrowBigUp, Camera, Check, ChevronLeft, ChevronRight, Keyboard, Play, RotateCcw, ScanFace, SlidersHorizontal, Trophy } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NextPlayerIcon } from "@/components/game/next-player";
-import { motion } from "motion/react";
-import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { Stat } from "@/components/ui/score";
+import { KeyHints } from "@/components/ui/key-hints";
 import { Kbd } from "@/components/ui/surface";
 import { cn } from "@/lib/cn";
 import { formatScore, formatTime } from "../engine/format";
 import { LEVELS } from "../engine/game/levels";
-import { LEVEL_COUNT, type MachineState, type PracticeTask } from "../play/machine";
-import type { FaceControlSession } from "../play/session";
+import { LEVEL_CARD_MS, LEVEL_COUNT, type MachineState, type PracticeTask } from "../play/machine";
+import { PRACTICE_STEER, type FaceControlSession } from "../play/session";
 import { CameraSlot } from "./camera-slot";
 import type { RunValues } from "./hooks";
+import { Lives, MovePictogram, SparkIcon } from "./icons";
 import { MouthPrompt } from "./meters";
+import { GUIDANCE } from "./use-calibration";
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /** A centred panel over the dimmed world. Scrolls on short screens instead of clipping. */
 export function WorldPanel({ labelledBy, children, className }: { labelledBy: string; children: ReactNode; className?: string }) {
@@ -41,115 +45,244 @@ export function WorldPanel({ labelledBy, children, className }: { labelledBy: st
   );
 }
 
-/** "Press Space" on laptops; hidden on narrow screens where nobody has a keyboard. */
-function KeyHint({ keys, action }: { keys: string[]; action: string }) {
-  return (
-    <span className="type-small hidden items-center gap-1.5 text-fg-subtle lg:inline-flex">
-      {keys.map((k, i) => (
-        <span key={k} className="inline-flex items-center gap-1.5">
-          {i > 0 ? "or" : "Press"} <Kbd>{k}</Kbd>
-        </span>
-      ))}
-      {action}
-    </span>
-  );
-}
+/* ── Practice ─────────────────────────────────────────────────────── */
 
-const TASKS: { id: PracticeTask; face: string; keys: string; touch: string }[] = [
-  { id: "left", face: "Tilt left", keys: "Press ←", touch: "Hold ◀" },
-  { id: "right", face: "Tilt right", keys: "Press →", touch: "Hold ▶" },
-  { id: "jump", face: "Open your mouth", keys: "Press Space", touch: "Tap jump" },
+const TASKS: { id: PracticeTask; face: string; keys: string; key: string; touch: string; touchIcon: ReactNode }[] = [
+  { id: "left", face: "Tilt left", keys: "Roll left", key: "←", touch: "Hold left", touchIcon: <ChevronLeft /> },
+  { id: "right", face: "Tilt right", keys: "Roll right", key: "→", touch: "Hold right", touchIcon: <ChevronRight /> },
+  { id: "jump", face: "Open your mouth", keys: "Jump", key: "Space", touch: "Tap jump", touchIcon: <ArrowBigUp /> },
 ];
 
-/** Practice: a compact strip with the three moves, ticked off as the visitor does them. */
+/**
+ * Practice: the three moves as pictures, each with a live bar that fills as
+ * your face gets there and a tick when it counts. The ball in the world does
+ * the move at the same time, so the mapping is learnt by doing, not reading.
+ */
 export function PracticePanel({ session, machine, touch }: { session: FaceControlSession; machine: MachineState; touch: boolean }) {
   const face = machine.mode === "face";
+  const bars = useRef<Record<PracticeTask, HTMLSpanElement | null>>({ left: null, right: null, jump: null });
+  const done = machine.practice;
+  const count = TASKS.filter((t) => done[t.id]).length;
+
+  useEffect(() => {
+    if (!face) return;
+    return session.onFrame((s) => {
+      const fill: Record<PracticeTask, number> = {
+        left: s.hasFace ? clamp01(-s.steer / PRACTICE_STEER) : 0,
+        right: s.hasFace ? clamp01(s.steer / PRACTICE_STEER) : 0,
+        jump: s.hasFace ? clamp01(s.mouthLevel) : 0,
+      };
+      for (const id of ["left", "right", "jump"] as const) {
+        const el = bars.current[id];
+        // A move that has counted keeps its full bar.
+        if (el && !done[id]) el.style.transform = `scaleX(${fill[id].toFixed(3)})`;
+      }
+    });
+  }, [session, face, done]);
+
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-20 flex justify-center px-4 sm:px-6">
-      <motion.section
-        aria-labelledby="practice-title"
-        className="pointer-events-auto flex w-full max-w-[46rem] flex-col gap-4 rounded-xl bg-surface p-4 shadow-ring sm:p-5"
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0, transition: { duration: 0.3, ease: EASE_OUT } }}
-      >
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <h2 id="practice-title" className="type-label text-game">
-            Practice
-          </h2>
-          <ul className="flex flex-wrap gap-2">
-            {TASKS.map((task) => {
-              const done = machine.practice[task.id];
-              return (
-                <li key={task.id}>
-                  <Chip tone={done ? "game" : "neutral"} icon={done ? <Check strokeWidth={3} /> : <Circle />} className="h-9 px-3.5 text-[0.9375rem]">
-                    {face ? task.face : touch ? task.touch : task.keys}
-                    <span className="sr-only">{done ? ", done" : ", to do"}</span>
-                  </Chip>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p aria-live="polite" className="type-small text-fg-muted">
-            {machine.practiceComplete ? "You’re ready. Level 1 starts now." : "Try each move. You can’t lose lives here."}
-          </p>
-          <Button variant="secondary" size="lg" onClick={() => session.act({ type: "skip-practice" })}>
-            Start level 1
-          </Button>
-        </div>
-      </motion.section>
-    </div>
+    <motion.section
+      aria-labelledby="practice-title"
+      className="pointer-events-auto flex w-full flex-col gap-3 rounded-lg bg-surface/95 p-3 shadow-ring sm:p-4 md:w-[clamp(21rem,32vw,27rem)]"
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.35, ease: EASE_OUT } }}
+    >
+      <div className="flex items-baseline justify-between gap-3 px-1">
+        <h2 id="practice-title" className="type-small font-semibold text-fg">
+          <span className="text-game">Practice</span> · try each move
+        </h2>
+        <span className="type-label tabular-nums text-fg-subtle">{count} of 3</span>
+      </div>
+      <ol className="grid grid-cols-3 gap-2">
+        {TASKS.map((task) => {
+          const ok = done[task.id];
+          return (
+            <li
+              key={task.id}
+              className={cn(
+                "relative flex flex-col items-center gap-2 rounded-md px-2 pb-2.5 pt-3 text-center transition-colors duration-300 ease-out",
+                ok ? "bg-game-soft text-game" : "bg-sunken text-fg",
+              )}
+            >
+              <span className="grid h-8 place-items-center [&_svg]:size-7">
+                {face ? (
+                  <MovePictogram move={task.id} />
+                ) : touch ? (
+                  task.touchIcon
+                ) : (
+                  <Kbd size="md" className={ok ? "bg-game text-game-ink" : undefined}>
+                    {task.key}
+                  </Kbd>
+                )}
+              </span>
+              <span className="type-small font-semibold leading-tight">
+                {face ? task.face : touch ? task.touch : task.keys}
+                <span className="sr-only">{ok ? ", done" : ", to do"}</span>
+              </span>
+              {face ? (
+                <span aria-hidden className="relative h-1.5 w-full overflow-hidden rounded-full bg-fg/10">
+                  <span
+                    ref={(el) => {
+                      bars.current[task.id] = el;
+                    }}
+                    className={cn("absolute inset-0 origin-left rounded-full", ok ? "bg-game" : "bg-fg/50")}
+                    style={{ transform: ok ? "scaleX(1)" : "scaleX(0)" }}
+                  />
+                </span>
+              ) : null}
+              <AnimatePresence>
+                {ok ? (
+                  <motion.span
+                    aria-hidden
+                    className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-game text-game-ink [&_svg]:size-3"
+                    initial={{ scale: 0.4, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1, transition: { type: "spring", duration: 0.4, bounce: 0.4 } }}
+                  >
+                    <Check strokeWidth={3.5} />
+                  </motion.span>
+                ) : null}
+              </AnimatePresence>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="flex items-center justify-between gap-3 pl-1">
+        <p aria-live="polite" className="type-small text-fg-muted">
+          {machine.practiceComplete ? "All three. Level 1 is next." : "No lives to lose here."}
+        </p>
+        <Button variant="ghost" size="sm" onClick={() => session.act({ type: "skip-practice" })}>
+          {machine.practiceComplete ? "Start now" : "Skip to level 1"}
+        </Button>
+      </div>
+    </motion.section>
   );
 }
 
-export function LevelIntroPanel({
+/* ── Level title card ─────────────────────────────────────────────── */
+
+/**
+ * Between levels: the level's name and what to find, then 3, 2, 1, Go on the
+ * same card. It starts by itself (the thin bar shows when), so nobody has to
+ * find a button between practice and play; an open mouth or Space starts it sooner.
+ */
+export function LevelCard({
   session,
   machine,
   run,
   bestTime,
+  countdown,
 }: {
   session: FaceControlSession;
   machine: MachineState;
   run: RunValues;
   bestTime: number | undefined;
+  /** 3, 2, 1, 0 (Go) once counting, else null. */
+  countdown: number | null;
 }) {
   const level = LEVELS[machine.levelIndex];
-  const face = machine.mode === "face";
+  const face = machine.mode === "face" && machine.camera;
+  const waiting = countdown === null;
   return (
-    <WorldPanel labelledBy="level-title">
-      <div className="flex flex-col gap-3">
-        <span className="type-label text-game">
-          Level {machine.levelIndex + 1} of {LEVEL_COUNT}
-        </span>
-        <h2 id="level-title" className="type-display-2 text-fg">
-          {level.name}
-        </h2>
-        <p className="type-body-lg text-fg-muted">{level.tagline}</p>
-      </div>
-      <div className="flex flex-wrap gap-x-10 gap-y-4">
-        <Stat value={level.sparks.length} label="Sparks to find" />
-        <Stat value={run.lives} label={run.lives === 1 ? "Life" : "Lives"} />
-        {bestTime !== undefined ? <Stat value={formatTime(bestTime)} label="Your best time" /> : null}
-      </div>
-      {face ? <MouthPrompt session={session} label="Open your mouth to start" /> : null}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <Button variant="game" size="lg" arrow autoFocus onClick={() => session.act({ type: "start-level" })}>
-          Start level
-        </Button>
-        <KeyHint keys={["Space"]} action="to start" />
-      </div>
-    </WorldPanel>
+    <motion.div
+      className="pointer-events-none absolute inset-0 z-[25] grid place-items-center px-4 pt-16"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transition: { duration: 0.25, ease: EASE_OUT } }}
+      exit={{ opacity: 0, transition: { duration: 0.25, ease: EASE_OUT } }}
+    >
+      <motion.section
+        aria-labelledby="level-title"
+        className="flex w-full max-w-[27rem] flex-col items-center gap-5 rounded-xl bg-surface/95 px-6 pb-6 pt-7 text-center shadow-float sm:px-8"
+        initial={{ y: 18, scale: 0.97 }}
+        animate={{ y: 0, scale: 1, transition: { duration: 0.45, ease: EASE_OUT } }}
+        exit={{ y: -10, scale: 0.98, transition: { duration: 0.25, ease: EASE_OUT } }}
+      >
+        <div className="flex flex-col items-center gap-2.5">
+          <span className="type-label text-game">
+            Level {machine.levelIndex + 1} of {LEVEL_COUNT}
+          </span>
+          <h2 id="level-title" className="type-display-2 text-fg">
+            {level.name}
+          </h2>
+          <p className="type-body-lg text-fg-muted">{level.tagline}</p>
+        </div>
+        <ul className="type-small flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-fg-muted">
+          <li className="inline-flex items-center gap-1.5">
+            <SparkIcon className="text-game" />
+            <span>
+              <span className="font-semibold tabular-nums text-fg">{level.sparks.length}</span> sparks
+            </span>
+          </li>
+          <li className="inline-flex items-center gap-2">
+            <Lives lives={run.lives} total={5} />
+            <span>
+              <span className="font-semibold tabular-nums text-fg">{run.lives}</span> {run.lives === 1 ? "life" : "lives"}
+            </span>
+          </li>
+          {bestTime !== undefined ? (
+            <li>
+              Your best <span className="font-semibold tabular-nums text-fg">{formatTime(bestTime)}</span>
+            </li>
+          ) : null}
+        </ul>
+
+        <div className="grid h-[6.5rem] w-full place-items-center">
+          <AnimatePresence mode="popLayout" initial={false}>
+            {waiting ? (
+              <motion.div
+                key="waiting"
+                className="flex w-full flex-col items-center gap-3"
+                exit={{ opacity: 0, transition: { duration: 0.12 } }}
+              >
+                <span aria-hidden className="relative h-1 w-40 overflow-hidden rounded-full bg-fg/10">
+                  <motion.span
+                    className="absolute inset-0 origin-left rounded-full bg-game"
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ duration: LEVEL_CARD_MS / 1000, ease: "linear" }}
+                  />
+                </span>
+                <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+                  <Button variant="ghost" size="sm" icon={<Play />} onClick={() => session.act({ type: "start-level" })}>
+                    Start now
+                  </Button>
+                  <div className="hidden items-center lg:flex">
+                    {face ? (
+                      <span className="type-small text-fg-subtle">or open your mouth</span>
+                    ) : (
+                      <KeyHints items={[{ keys: ["Space"], label: "Start" }]} />
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.span
+                key={countdown}
+                aria-live="assertive"
+                className="type-score text-game"
+                initial={{ opacity: 0, scale: 0.82 }}
+                animate={{ opacity: 1, scale: 1, transition: { type: "spring", duration: 0.35, bounce: 0.3 } }}
+                exit={{ opacity: 0, scale: 1.08, transition: { duration: 0.12, ease: EASE_OUT } }}
+              >
+                {countdown === 0 ? "Go" : countdown}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
+/* ── Pause ────────────────────────────────────────────────────────── */
+
 export function PausedPanel({ session, machine, run }: { session: FaceControlSession; machine: MachineState; run: RunValues }) {
   const face = machine.mode === "face";
+  const level = LEVELS[machine.levelIndex];
   return (
     <WorldPanel labelledBy="pause-title">
       <div className="flex flex-col gap-3">
         <span className="type-label text-game">
-          Level {machine.levelIndex + 1} · {formatTime(run.levelTime)}
+          Level {machine.levelIndex + 1} · {level.name} · {formatTime(run.levelTime)}
         </span>
         <h2 id="pause-title" className="type-display-2 text-fg">
           Paused
@@ -164,11 +297,11 @@ export function PausedPanel({ session, machine, run }: { session: FaceControlSes
         </Button>
         {face ? (
           <Button variant="secondary" size="lg" icon={<ScanFace />} onClick={() => session.act({ type: "recalibrate" })}>
-            Recalibrate
+            Check my face again
           </Button>
         ) : (
           <Button variant="secondary" size="lg" icon={<Camera />} onClick={() => session.act({ type: "choose-camera" })}>
-            Use the camera
+            Use your face
           </Button>
         )}
         <Button variant="ghost" size="lg" icon={<SlidersHorizontal />} onClick={session.openSettings}>
@@ -178,13 +311,29 @@ export function PausedPanel({ session, machine, run }: { session: FaceControlSes
           Next player
         </Button>
       </div>
-      <KeyHint keys={["P", "Esc"]} action="to resume" />
+      <KeyHints items={[{ keys: ["P", "Esc"], label: "Resume" }]} className="hidden lg:flex" />
     </WorldPanel>
   );
 }
 
+/* ── Face lost ────────────────────────────────────────────────────── */
+
 /** The face left the camera: the game waits, and carries on by itself when the face is back. */
 export function FaceLostPanel({ session }: { session: FaceControlSession }) {
+  const hint = useRef<HTMLParagraphElement>(null);
+
+  useEffect(
+    () =>
+      session.onFrame((s) => {
+        const el = hint.current;
+        if (!el) return;
+        const text = s.hasFace ? "Found you. Carrying on" : GUIDANCE["no-face"];
+        if (el.textContent !== text) el.textContent = text;
+        el.dataset.ok = s.hasFace ? "true" : "false";
+      }),
+    [session],
+  );
+
   return (
     <WorldPanel labelledBy="lost-title">
       <div className="flex flex-col gap-2">
@@ -195,71 +344,150 @@ export function FaceLostPanel({ session }: { session: FaceControlSession }) {
         <p className="type-body-lg text-fg-muted">Look at the screen. The game carries on by itself once the camera finds you.</p>
       </div>
       <CameraSlot session={session} className="aspect-[4/3] w-full rounded-lg" />
+      <p
+        ref={hint}
+        aria-live="polite"
+        data-ok="false"
+        className="type-body -mt-2 font-semibold text-fg-muted transition-colors duration-150 data-[ok=true]:text-game"
+      >
+        {GUIDANCE["no-face"]}
+      </p>
       <div className="flex flex-wrap gap-3">
         <Button variant="secondary" size="lg" icon={<Keyboard />} onClick={() => session.act({ type: "choose-keyboard" })}>
           Continue with keyboard
         </Button>
         <Button variant="ghost" size="lg" icon={<ScanFace />} onClick={() => session.act({ type: "recalibrate" })}>
-          Recalibrate
+          Check my face again
         </Button>
       </div>
     </WorldPanel>
   );
 }
 
-function ScoreRow({ label, value, total = false }: { label: string; value: string; total?: boolean }) {
+/* ── Level complete ───────────────────────────────────────────────── */
+
+/** The sparks of the level as stars: the ones you took light up, sweeping left to right. */
+function SparkRow({ got, total }: { got: number; total: number }) {
   return (
-    <div className={cn("flex items-baseline justify-between gap-4", total && "mt-1 border-t border-line pt-2.5")}>
-      <dt className={cn(total ? "type-body font-semibold text-fg" : "type-small text-fg-muted")}>{label}</dt>
-      <dd className={cn("tabular-nums", total ? "type-title-3 text-fg" : "type-small font-semibold text-fg")}>{value}</dd>
+    <div role="img" aria-label={`${got} of ${total} sparks`} className="flex flex-wrap items-center gap-1">
+      {Array.from({ length: total }, (_, i) => (
+        <motion.span
+          key={i}
+          aria-hidden
+          initial={i < got ? { opacity: 0.25, scale: 0.7 } : false}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, ease: EASE_OUT, delay: 0.15 + (i / Math.max(1, total)) * 0.45 }}
+        >
+          <SparkIcon className={cn("size-[1.1rem]", i < got ? "text-game" : "text-fg/15")} />
+        </motion.span>
+      ))}
     </div>
   );
 }
 
+function verdict(sparks: number, total: number, falls: number, last: boolean) {
+  if (sparks === total && falls === 0) return "A perfect run";
+  if (sparks === total) return "Every spark found";
+  if (falls === 0) return "Not a single fall";
+  return last ? "Final level cleared" : "Nicely rolled";
+}
+
 export function LevelCompletePanel({ session, machine }: { session: FaceControlSession; machine: MachineState }) {
   const outcome = machine.outcome;
-  if (!outcome) return null;
-  const r = outcome.result;
+  const reduce = useReducedMotion();
+  const r = outcome?.result;
+  const rows = r
+    ? [
+        { label: `${r.sparks} ${r.sparks === 1 ? "spark" : "sparks"}`, value: r.sparkScore },
+        { label: "Level cleared", value: r.completionBonus },
+        { label: "Time bonus", value: r.timeBonus },
+        ...(r.sparks === r.sparksTotal ? [{ label: "Every spark", value: 300 }] : []),
+        ...(r.deaths === 0 ? [{ label: "No falls", value: 200 }] : []),
+      ]
+    : [];
+  // The bonuses land one by one and the total counts up with them: a real tally, not a count-up for show.
+  const [shown, setShown] = useState(reduce ? rows.length : 0);
+  useEffect(() => {
+    if (shown >= rows.length) return;
+    const timer = window.setTimeout(() => setShown((n) => n + 1), shown === 0 ? 520 : 240);
+    return () => window.clearTimeout(timer);
+  }, [shown, rows.length]);
+
+  if (!outcome || !r) return null;
   const last = r.levelIndex >= LEVEL_COUNT - 1;
-  const face = machine.mode === "face";
-  const allSparks = r.sparks === r.sparksTotal;
-  const noFalls = r.deaths === 0;
+  const face = machine.mode === "face" && machine.camera;
+  const start = r.total - rows.reduce((n, row) => n + row.value, 0);
+  const total = start + rows.slice(0, shown).reduce((n, row) => n + row.value, 0);
+
   return (
-    <WorldPanel labelledBy="done-title">
+    <WorldPanel labelledBy="done-title" className="gap-5">
       <div className="flex flex-col gap-3">
-        <span className="type-label text-game">Level {r.levelIndex + 1} complete</span>
+        <span className="type-label text-game">
+          Level {r.levelIndex + 1} of {LEVEL_COUNT} cleared
+        </span>
         <h2 id="done-title" className="type-display-2 text-fg">
-          {last ? "Final level cleared" : "Nicely rolled"}
+          {verdict(r.sparks, r.sparksTotal, r.deaths, last)}
         </h2>
+        <SparkRow got={r.sparks} total={r.sparksTotal} />
       </div>
-      <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
-        <Stat value={formatTime(r.time)} label="Time" />
-        <Stat value={`${r.sparks}/${r.sparksTotal}`} label="Sparks" />
-        <Stat value={r.deaths} label={r.deaths === 1 ? "Fall" : "Falls"} />
+
+      <dl className="flex flex-wrap items-end gap-x-8 gap-y-3">
+        <div className="flex flex-col gap-1">
+          <dt className="type-label text-fg-subtle">Time</dt>
+          <dd className="type-title-2 tabular-nums text-fg">{formatTime(r.time)}</dd>
+        </div>
+        <div className="flex flex-col gap-1">
+          <dt className="type-label text-fg-subtle">{r.deaths === 1 ? "Fall" : "Falls"}</dt>
+          <dd className="type-title-2 tabular-nums text-fg">{r.deaths}</dd>
+        </div>
         {outcome.previousBest !== null ? (
           outcome.newBestTime ? (
-            <Chip tone="game" icon={<Trophy />} className="mb-1">
-              New best time
-            </Chip>
+            <div className="mb-1">
+              <dt className="sr-only">Your best</dt>
+              <dd>
+                <Chip tone="game" icon={<Trophy />}>
+                  New best time
+                </Chip>
+              </dd>
+            </div>
           ) : (
-            <Stat value={formatTime(outcome.previousBest)} label="Your best time" />
+            <div className="flex flex-col gap-1">
+              <dt className="type-label text-fg-subtle">Your best</dt>
+              <dd className="type-title-2 tabular-nums text-fg-muted">{formatTime(outcome.previousBest)}</dd>
+            </div>
           )
         ) : null}
-      </div>
-      <dl className="flex flex-col gap-1.5 rounded-lg bg-sunken px-4 py-3.5">
-        <ScoreRow label={`Sparks, ${r.sparks} × 100`} value={`+${formatScore(r.sparkScore)}`} />
-        <ScoreRow label="Level complete" value={`+${formatScore(r.completionBonus)}`} />
-        <ScoreRow label="Time bonus" value={`+${formatScore(r.timeBonus)}`} />
-        {allSparks ? <ScoreRow label="Every spark" value="+300" /> : null}
-        {noFalls ? <ScoreRow label="No falls" value="+200" /> : null}
-        <ScoreRow label="Score so far" value={formatScore(r.total)} total />
       </dl>
-      {face ? <MouthPrompt session={session} label="Open your mouth to continue" /> : null}
+
+      <div className="flex flex-col gap-1.5 rounded-lg bg-sunken px-4 py-3.5">
+        <ul className="flex flex-col gap-1">
+          {rows.map((row, i) => (
+            <motion.li
+              key={row.label}
+              className="flex items-baseline justify-between gap-4"
+              initial={false}
+              animate={{ opacity: i < shown ? 1 : 0.28, x: i < shown ? 0 : -4 }}
+              transition={{ duration: 0.25, ease: EASE_OUT }}
+            >
+              <span className="type-small text-fg-muted">{row.label}</span>
+              <span className="type-small font-semibold tabular-nums text-fg">+{formatScore(row.value)}</span>
+            </motion.li>
+          ))}
+        </ul>
+        <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-line pt-2.5">
+          <span className="type-body font-semibold text-fg">Score</span>
+          <span className="type-title-2 tabular-nums text-game">
+            <NumberFlow value={total} />
+          </span>
+        </div>
+      </div>
+
+      {face ? <MouthPrompt session={session} label={last ? "Open your mouth to see your results" : "Open your mouth to go on"} /> : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <Button variant="game" size="lg" arrow autoFocus onClick={() => session.act({ type: "next" })}>
-          {last ? "See results" : "Next level"}
+          {last ? "See my results" : `Go to level ${r.levelIndex + 2}`}
         </Button>
-        <KeyHint keys={["Space"]} action="to continue" />
+        <KeyHints items={[{ keys: ["Space"], label: "Continue" }]} className="hidden lg:flex" />
       </div>
     </WorldPanel>
   );

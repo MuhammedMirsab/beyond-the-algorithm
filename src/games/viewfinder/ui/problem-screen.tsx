@@ -4,11 +4,11 @@ import { Notice } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
 import type { ViewfinderIssue } from "../engine/camera";
 
-/** Viewfinder's two issues that the shared camera copy doesn't cover. */
+/** Finger frame's two issues that the shared camera copy doesn't cover. */
 const OWN_COPY = {
   webgl: {
-    title: "This browser can't draw the lenses",
-    text: "Viewfinder draws on the graphics card with WebGL 2. Turn on hardware acceleration in the browser settings, or open the arcade in the latest Chrome or Edge.",
+    title: "This browser can't draw the filters",
+    text: "Finger frame draws its filters on the graphics card with WebGL 2. Turn on hardware acceleration in the browser settings, or open the arcade in the latest Chrome or Edge.",
   },
   stopped: {
     title: "The camera stopped",

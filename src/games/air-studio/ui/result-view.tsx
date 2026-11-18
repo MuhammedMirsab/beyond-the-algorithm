@@ -1,7 +1,8 @@
 "use client";
 
 import { ListMusic, RotateCcw, Trophy } from "lucide-react";
-import type { Ref } from "react";
+import { motion } from "motion/react";
+import { useEffect, useState, type Ref } from "react";
 import { ResultPanel } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -12,6 +13,16 @@ import type { LessonResult, Story } from "../play/session";
 import { StudioHowItWorks } from "./how-it-works";
 import { OffsetChart, offsetWords, Recommendations } from "./report-bits";
 import { SoundCredits } from "./sound-credits";
+
+/** The score rolls up from zero a moment after the result arrives: the one big reveal of a lesson. */
+function RevealScore({ value }: { value: number }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShown(value), 380);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+  return <Score value={shown} label="Score" tone="game" />;
+}
 
 function verdict(r: LessonResult): string {
   const { correct, perfect, targets } = r.report;
@@ -50,7 +61,7 @@ export function ResultView({
       }
       title={verdict(result)}
       headingRef={headingRef}
-      score={<Score value={r.overall ?? 0} label="Score" tone="game" />}
+      score={<RevealScore value={r.overall ?? 0} />}
       stats={
         <>
           <Stat value={r.perfect ?? 0} label={`On time, within ${win.perfect} ms`} />
@@ -74,10 +85,15 @@ export function ResultView({
         </>
       }
     >
-      <section aria-label="Your timing" className="flex flex-col gap-8 rounded-xl bg-surface p-6 shadow-ring sm:p-8">
-        <OffsetChart offsets={r.offsets} window={win.perfect} />
+      <motion.section
+        aria-label="Your timing"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.25 } }}
+        className="flex flex-col gap-8 rounded-xl bg-surface p-6 shadow-ring sm:p-8"
+      >
+        <OffsetChart offsets={r.offsets} window={win.perfect} reveal />
         <Recommendations items={r.recommendations} />
-      </section>
+      </motion.section>
       <StudioHowItWorks story={story} />
       <SoundCredits />
     </ResultPanel>

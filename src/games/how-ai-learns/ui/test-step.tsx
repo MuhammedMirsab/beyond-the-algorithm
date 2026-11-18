@@ -12,9 +12,9 @@ import { photoUrl, type DatasetPhoto } from "../engine/dataset";
 import { decide, outcomeOf, THRESHOLD_MAX, THRESHOLD_MIN, type Decision, type Outcome } from "../engine/rules";
 import { withArticle } from "./copy";
 import { LiveTest } from "./live-test";
-import { tallyResults, type TestResult } from "./state";
+import { tallyResults, trainingGroups, type TestResult } from "./state";
 import { StepLayout } from "./step-layout";
-import { useCamera } from "./use-camera";
+import { cameraPermission, useCamera } from "./use-camera";
 import type { LearnGame } from "./use-learn-game";
 import { OutcomeBadge, Verdict } from "./verdict";
 
@@ -52,8 +52,20 @@ export function TestStep({ game }: { game: LearnGame }) {
   const cameraOff = camera.status === "off";
   const welcomed = state.cameraWelcomed;
   useEffect(() => {
-    if (cameraMode && cameraOff && welcomed) void start();
-  }, [cameraMode, cameraOff, welcomed, start]);
+    if (!cameraMode || !cameraOff) return;
+    if (welcomed) {
+      void start();
+      return;
+    }
+    // The browser already allows the camera here (the booth after its first visitor): no need to ask.
+    let live = true;
+    void cameraPermission().then((permission) => {
+      if (live && permission === "granted") dispatch({ type: "camera-welcomed" });
+    });
+    return () => {
+      live = false;
+    };
+  }, [cameraMode, cameraOff, welcomed, start, dispatch]);
 
   if (state.train.phase !== "done") return null;
   const run = state.train.run;
@@ -100,7 +112,8 @@ export function TestStep({ game }: { game: LearnGame }) {
     if (next) dispatch({ type: "select-test", id: next.photo.id });
   };
 
-  const labels = run.labels;
+  // In the order the visitor named them, "No object" last: the same marks as on the training map.
+  const labels = trainingGroups(state.groups).map((g) => g.label);
   // With no library groups there are no test photos: the camera is the test.
   const cameraOnly = testPhotos.length === 0;
   const mode = cameraOnly ? "camera" : state.testMode;
@@ -108,15 +121,12 @@ export function TestStep({ game }: { game: LearnGame }) {
   return (
     <StepLayout
       step="test"
-      title={cameraOnly ? "Test it with the camera" : "Test it on photos it has never seen"}
+      title={mode === "camera" ? "Test it with the camera" : "Test it on photos it has never seen"}
       lead={
-        cameraOnly ? (
-          <p>Hold up each thing you taught it. Then take it away and see what it says when nothing is there.</p>
+        mode === "camera" ? (
+          <p>Hold up each thing you taught it. Then take it away, or show it something it never learned.</p>
         ) : (
-          <p>
-            None of these {total} photos were in its examples. Tap one to see what it says, or hold something up to the
-            camera.
-          </p>
+          <p>None of these {total} photos were in its examples. Tap one to see what it says.</p>
         )
       }
       secondary={
@@ -138,30 +148,27 @@ export function TestStep({ game }: { game: LearnGame }) {
             value={state.testMode}
             onValueChange={setMode}
             options={[
-              { value: "photos", label: "Test photos" },
               { value: "camera", label: "Camera" },
+              { value: "photos", label: `${total} new photos` },
             ]}
           />
         )}
 
         {mode === "camera" ? (
-          <div className="flex flex-col gap-4">
-            <div className="rounded-xl bg-surface p-4 shadow-ring sm:p-5">
-              <LiveTest
-                camera={camera}
-                videoRef={videoRef}
-                onRetry={() => void start()}
-                labels={labels}
-                threshold={threshold}
-                similarityCutoff={similarityCutoff}
-                onWelcome={() => {
-                  dispatch({ type: "camera-welcomed" });
-                  void start();
-                }}
-              />
-            </div>
-            <ThresholdCard value={threshold} onChange={(v) => dispatch({ type: "threshold", value: v })} />
-          </div>
+          <LiveTest
+            camera={camera}
+            videoRef={videoRef}
+            onRetry={() => void start()}
+            labels={labels}
+            threshold={threshold}
+            similarityCutoff={similarityCutoff}
+            map={run.map}
+            onWelcome={() => {
+              dispatch({ type: "camera-welcomed" });
+              void start();
+            }}
+            aside={<ThresholdCard value={threshold} onChange={(v) => dispatch({ type: "threshold", value: v })} />}
+          />
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:items-start">
             <div className="flex min-w-0 flex-col gap-5">

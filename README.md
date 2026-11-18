@@ -8,8 +8,8 @@ Ten short games that show what AI can work out about you. Built by IISJ Computer
 | | Rock, paper, scissors | `/rock-paper-scissors` | Learns your habits, locks its move first |
 | It sees you | Face Control | `/face-control` | 478 face landmarks become a controller |
 | | AirWrite | `/airwrite` | 21 hand landmarks write; an on-device matcher reads the letters |
-| | Viewfinder | `/viewfinder` | Two-hand tracking frames a live lens |
-| | Air Studio | `/air-studio` | Hand gestures (strikes, strums, height) play five instruments |
+| | Finger frame | `/viewfinder` | Two-hand tracking: 4 fingertips frame a live filter |
+| | Air Studio | `/air-studio` | Hand gestures (strikes, strums, height) play drums, piano and more |
 | It learns from you | Train the machine | `/train-the-machine` | Pose classification from your examples |
 | | See how AI learns | `/how-ai-learns` | Transfer learning on MobileNet |
 | It's already around you | Real or AI? | `/real-or-ai` | Spot the AI-edited photo |
@@ -56,7 +56,7 @@ src/content/games.ts     the registry of games
 ## At the booth
 
 - Open the arcade full screen (F11). Each game has a **Next player** button that clears everything; intro and result screens also reset after about 90 seconds of no input.
-- On the laptop, the phone game shows a QR code. Scanning it links the visitor's phone to the booth screen, so their phone's sensors drive what everyone sees. **Next player** on either device ends the link.
+- On the laptop, the phone game shows a QR code. Scanning it links one visitor's phone to the booth screen, so their phone's sensors drive what everyone sees. If the phone locks or leaves the game, the laptop waits 90 seconds (with a QR for the next visitor and **Start over now**); a link with no new readings for 3 minutes ends by itself. **Next player** on the laptop frees the screen while the phone keeps playing on its own; on the phone it resets both.
 - Test the camera games with the real webcam and lighting before doors open.
 
 ## Credits

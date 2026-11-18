@@ -1,21 +1,32 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
-const QUERY = "(pointer: coarse)";
-
-function subscribe(onChange: () => void) {
-  const query = window.matchMedia(QUERY);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+/** True while a media query matches. False on the server. */
+export function useMedia(query: string): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const list = window.matchMedia(query);
+      list.addEventListener("change", onChange);
+      return () => list.removeEventListener("change", onChange);
+    },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }
-
-const getTouch = () => window.matchMedia(QUERY).matches;
-const getServerTouch = () => false;
 
 /** True on phones and tablets (no R, P and S keys there: the same mode plays with on-screen buttons). */
 export function useTouchScreen(): boolean {
-  return useSyncExternalStore(subscribe, getTouch, getServerTouch);
+  return useMedia("(pointer: coarse)");
+}
+
+/** The booth laptop layout: you and the AI side by side. */
+export function useWideLayout(): boolean {
+  return useMedia("(min-width: 1024px)");
 }
 
 /** "Play with keys", or "Play with buttons" on a touch screen. */

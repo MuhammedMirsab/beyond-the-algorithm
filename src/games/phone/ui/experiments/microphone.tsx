@@ -14,17 +14,20 @@ import { LEVEL_HISTORY, useMicLevel } from "../../sensors/use-mic-level";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
 import {
   IslandLabel,
-  LiveControl,
-  liveControlHasPrimary,
   ModeSwitch,
   STAGE_BOTTOM,
   StageScore,
   StageShell,
   useIslandNotice,
+  useLatch,
+  type SensorGate,
   type Source,
+  type Task,
 } from "../parts";
 
 const WAVE_POINTS = 96;
+/** A clap or a shout: louder than talking. */
+const CLAP_AT = 70;
 
 const SIM_SOUNDS: { id: SimSound; label: string }[] = [
   { id: "quiet", label: "A quiet room" },
@@ -32,18 +35,20 @@ const SIM_SOUNDS: { id: SimSound; label: string }[] = [
   { id: "crowd", label: "A busy hall" },
 ];
 
+const numbers = (value: unknown): number[] => (Array.isArray(value) ? value.filter((v): v is number => typeof v === "number") : []);
+
 export function MicrophoneExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
   const mic = useMicLevel();
   const [mode, setMode] = useState<Source>(caps.media ? "live" : "sim");
   const [simSound, setSimSound] = useState<SimSound | null>(null);
+  const [triedSounds, setTriedSounds] = useState<SimSound[]>([]);
   const [simLevel, setSimLevel] = useState(0);
   const [simHistory, setSimHistory] = useState<number[]>([]);
-  const { markTested } = ctx;
+  const { markTested, mirrored } = ctx;
 
   const link = useLink();
   const sending = link.role === "phone" && link.linked;
-  const mirrored = link.role === "host" && link.linked;
   const [wave, setWave] = useState<number[] | null>(null);
 
   // A linked phone sends a rough outline of the wave, 12 times a second: enough to draw, far too little to hear.
@@ -99,59 +104,68 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
     setMode(next);
   };
 
-  const level = sim ? simLevel : shared.level;
-  const history = sim ? simHistory : shared.history;
+  const level = sim ? simLevel : Number(shared.level) || 0;
+  const history = sim ? simHistory : numbers(shared.history);
   const active = sim ? shared.simSound != null : live;
   const guess = active ? soundGuess(history) : null;
   const island = useIslandNotice(live, <IslandLabel tone="microphone">Microphone on</IslandLabel>);
+
+  const clapped = useLatch(live && level >= CLAP_AT);
+  const listened = useLatch(active && history.length >= LEVEL_HISTORY);
+  const tasks: Task[] = sim
+    ? [
+        { id: "pick", label: "Pick a sound", done: triedSounds.length > 0 },
+        { id: "all", label: "Try all three, and watch the guess change", done: triedSounds.length >= SIM_SOUNDS.length },
+      ]
+    : [
+        { id: "clap", label: "Clap once, loudly", done: clapped },
+        { id: "listen", label: "Let it listen to the room for 3 seconds", done: listened },
+      ];
 
   const readout = [
     { label: "Loudness", value: active ? `${level} of 100` : "Waiting" },
     {
       label: "Samples a second",
-      value: sim ? "Simulated" : shared.sampleRate ? shared.sampleRate.toLocaleString("en") : "Waiting",
+      value: sim ? "Simulated" : shared.sampleRate ? Number(shared.sampleRate).toLocaleString("en") : "Waiting",
     },
     { label: "Seconds it listens to", value: "The last 3" },
     { label: "Recorded or saved", value: "Nothing" },
   ];
 
-  const tryIt = (
-    <div className="flex flex-col gap-5">
-      {caps.media ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
-      {sim ? (
-        <div className="flex flex-col gap-3">
-          <p className="type-body text-fg-muted">Pick a sound. Each one is a made-up wave.</p>
-          <div className="flex flex-wrap gap-2">
-            {SIM_SOUNDS.map((s) => (
-              <ToggleChip
-                key={s.id}
-                pressed={shared.simSound === s.id}
-                onClick={() => {
-                  setSimSound(s.id);
-                  markTested();
-                }}
-              >
-                {s.label}
-              </ToggleChip>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <LiveControl
-          status={shared.status}
-          startLabel="Turn on microphone"
-          startIcon={<Mic />}
-          stopLabel="Turn off microphone"
-          onStart={mic.start}
-          onStop={mic.stop}
-          issue={issueCopy("microphone", mic.status)}
-          onSimulate={() => switchMode("sim")}
-          privacy="Sound stays on this device. Nothing is recorded or uploaded."
-          liveHint="Talk, clap, then stay quiet for a few seconds. On a real phone, an orange or green dot at the top of the screen means an app is using the microphone."
-        />
-      )}
-    </div>
-  );
+  const gate: SensorGate | null = sim
+    ? null
+    : {
+        status: shared.status,
+        startLabel: "Turn on microphone",
+        startIcon: <Mic />,
+        onStart: mic.start,
+        stopLabel: "Turn off microphone",
+        onStop: mic.stop,
+        issue: issueCopy("microphone", mic.status),
+        onSimulate: () => switchMode("sim"),
+        privacy: link.controller
+          ? "Sound stays on this phone. The booth screen gets only the loudness and a rough outline of the wave."
+          : "Sound stays on this device. Nothing is recorded or uploaded.",
+      };
+
+  const controls =
+    sim && !mirrored ? (
+      <div className="flex flex-wrap gap-2">
+        {SIM_SOUNDS.map((s) => (
+          <ToggleChip
+            key={s.id}
+            pressed={shared.simSound === s.id}
+            onClick={() => {
+              setSimSound(s.id);
+              setTriedSounds((list) => (list.includes(s.id) ? list : [...list, s.id]));
+              markTested();
+            }}
+          >
+            {s.label}
+          </ToggleChip>
+        ))}
+      </div>
+    ) : null;
 
   return (
     <ExperimentLayout
@@ -167,7 +181,7 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
             <Waveform
               analyser={sim || mirrored ? null : mic.analyser}
               synth={sim ? shared.simSound : null}
-              samples={mirrored && !sim ? shared.wave : null}
+              samples={mirrored && !sim ? (shared.wave ? numbers(shared.wave) : null) : null}
               active={active}
             />
             <LevelBars history={history} />
@@ -175,11 +189,14 @@ export function MicrophoneExperiment({ ctx }: ExperimentProps) {
           <p className={cn("type-label px-5 text-game", STAGE_BOTTOM)}>{guess ? guess.label : "Not listening"}</p>
         </StageShell>
       }
-      tryIt={tryIt}
+      gate={gate}
+      modeSwitch={caps.media && !mirrored ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
+      controls={controls}
+      tasks={tasks}
       readout={readout}
       guess={guess}
       guessWaiting="Turn on the microphone, or pick a sound, to see what it guesses."
-      primaryTaken={!sim && liveControlHasPrimary(shared.status)}
+      numbers={active ? `loudness ${level} of 100${!sim && shared.sampleRate ? `   ${Number(shared.sampleRate).toLocaleString("en")} samples a second` : ""}` : null}
       summary={active ? `Loudness ${level} of 100. Guess: ${guess?.label ?? ""}.` : "Microphone is off."}
     />
   );
@@ -240,12 +257,13 @@ function Waveform({
 /** The last 3 seconds of loudness, the evidence behind the guess. */
 function LevelBars({ history }: { history: number[] }) {
   const slots = LEVEL_HISTORY;
-  const start = slots - history.length;
+  const shown = history.slice(-slots);
+  const start = slots - shown.length;
   return (
     <svg viewBox={`0 0 ${slots * 3} 30`} preserveAspectRatio="none" aria-hidden className="h-12 w-full">
       {Array.from({ length: slots }, (_, i) => {
-        const value = i >= start ? history[i - start] : 0;
-        const h = Math.max(1, (value / 100) * 30);
+        const value = i >= start ? shown[i - start] : 0;
+        const h = Math.max(1, (Math.min(100, value) / 100) * 30);
         return <rect key={i} x={i * 3 + 0.5} y={30 - h} width={2} height={h} rx={0.6} className={value > QUIET_LEVEL ? "fill-game" : "fill-fg/20"} />;
       })}
     </svg>

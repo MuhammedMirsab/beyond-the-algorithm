@@ -2,10 +2,9 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
-import { Button, IconButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/chip";
 import { Segmented, SliderRow, SwitchRow } from "@/components/ui/controls";
-import { Modal } from "@/components/ui/dialog";
 import { DRUM_PACKS } from "../engine/audio/instruments/drums";
 import { GUITAR_PRESETS } from "../engine/audio/instruments/guitar";
 import { PIANO_PRESETS } from "../engine/audio/instruments/piano";
@@ -13,7 +12,7 @@ import { SYNTH_PRESETS } from "../engine/audio/instruments/synth";
 import { DRUM_LAYOUTS } from "../engine/instruments/drums";
 import { PERC_LAYOUTS } from "../engine/instruments/percussion";
 import { NOTE_NAMES, PROGRESSIONS, SCALES, type ProgressionId, type ScaleId } from "../engine/music";
-import { DEFAULTS, INSTRUMENT_NAMES, settings, type InstrumentId, type PercLayout, type Settings } from "../engine/settings";
+import { DEFAULTS, settings, type InstrumentId, type PercLayout, type Settings } from "../engine/settings";
 import { useSettings } from "./hooks";
 
 /** A labelled group of options. */
@@ -168,8 +167,8 @@ function DrumOptions() {
           value={s.layout}
           onValueChange={(layout) => u({ layout })}
           options={[
-            { value: "standard", label: DRUM_LAYOUTS.standard.label },
             { value: "compact", label: DRUM_LAYOUTS.compact.label },
+            { value: "standard", label: DRUM_LAYOUTS.standard.label },
           ]}
         />
       </Field>
@@ -291,34 +290,18 @@ const RESET: Record<InstrumentId, () => void> = {
   percussion: () => settings.update("percussion", structuredClone(DEFAULTS.percussion)),
 };
 
+/** Puts one instrument's options back to the defaults. */
+export const resetInstrument = (id: InstrumentId) => RESET[id]();
+
 /** The current instrument's options. They change the sound at once; Next player puts them back. */
-export function InstrumentOptionsModal({ instrument, open, onOpenChange }: { instrument: InstrumentId | null; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const name = instrument ? INSTRUMENT_NAMES[instrument] : "Instrument";
+export function InstrumentOptions({ instrument }: { instrument: InstrumentId }) {
   return (
-    <Modal
-      open={open && instrument !== null}
-      onOpenChange={onOpenChange}
-      title={`${name} options`}
-      description="Changes apply as you play."
-      size="lg"
-      footer={
-        <>
-          <Button variant="ghost" onClick={() => instrument && RESET[instrument]()}>
-            Reset to defaults
-          </Button>
-          <Button variant="game" onClick={() => onOpenChange(false)}>
-            Done
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-7">
-        {instrument === "piano" ? <PianoOptions /> : null}
-        {instrument === "drums" ? <DrumOptions /> : null}
-        {instrument === "guitar" ? <GuitarOptions /> : null}
-        {instrument === "synth" ? <SynthOptions /> : null}
-        {instrument === "percussion" ? <PercussionOptions /> : null}
-      </div>
-    </Modal>
+    <div className="flex flex-col gap-7">
+      {instrument === "piano" ? <PianoOptions /> : null}
+      {instrument === "drums" ? <DrumOptions /> : null}
+      {instrument === "guitar" ? <GuitarOptions /> : null}
+      {instrument === "synth" ? <SynthOptions /> : null}
+      {instrument === "percussion" ? <PercussionOptions /> : null}
+    </div>
   );
 }

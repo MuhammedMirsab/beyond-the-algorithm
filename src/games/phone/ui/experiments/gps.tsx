@@ -8,22 +8,23 @@ import { cn } from "@/lib/cn";
 import { DAY_END, DAY_START, DAY_STEP, MAP_SIZE, ROADS, type PlaceId } from "../../data/places";
 import { formatDistance, gpsGuess, guessesUntil, positionAt, SCALES, scaleFromAccuracy, sourceGuess, trailUntil } from "../../engine/gps";
 import { clockLabel, type Guess } from "../../engine/math";
+import { useLink, useShared } from "../../link/link";
 import { issueCopy } from "../../sensors/status";
 import { useCapabilities } from "../../sensors/use-device";
-import { useShared } from "../../link/link";
 import { useGeolocation, type LocationFix } from "../../sensors/use-geolocation";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
 import {
   IslandLabel,
-  LiveControl,
-  liveControlHasPrimary,
   ModeSwitch,
   STAGE_BOTTOM,
   StageScore,
   StageShell,
   useIslandNotice,
+  useLatch,
   type ReadoutRow,
+  type SensorGate,
   type Source,
+  type Task,
 } from "../parts";
 
 interface DayState {
@@ -32,14 +33,14 @@ interface DayState {
   seen: number;
 }
 
-type DayAction = { type: "set"; minute: number } | { type: "step" } | { type: "restart" };
+type DayAction = { type: "set"; minute: number } | { type: "step"; by?: number } | { type: "restart" };
 
 function dayReducer(state: DayState, action: DayAction): DayState {
   switch (action.type) {
     case "set":
       return { minute: action.minute, seen: Math.max(state.seen, action.minute) };
     case "step": {
-      const minute = Math.min(DAY_END, state.minute + DAY_STEP);
+      const minute = Math.min(DAY_END, Math.max(DAY_START, state.minute + (action.by ?? DAY_STEP)));
       return { minute, seen: Math.max(state.seen, minute) };
     }
     case "restart":
@@ -51,13 +52,18 @@ const PLAY_STEP_MS = 110;
 
 const WHERE: Record<PlaceId, string> = { home: "A house", school: "School", sports: "Sports ground" };
 
+function isTyping(target: EventTarget | null) {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) || target.getAttribute("role") === "slider");
+}
+
 export function GpsExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
   const geoLocal = useGeolocation();
   const [mode, setMode] = useState<Source>(caps.location ? "live" : "sim");
   const [dayLocal, dispatch] = useReducer(dayReducer, { minute: DAY_START, seen: DAY_START });
   const [playing, setPlaying] = useState(false);
-  const { markTested } = ctx;
+  const { markTested, mirrored } = ctx;
+  const link = useLink();
 
   // Only how sure the phone is and its speed are shared, never coordinates (the phone never keeps them either).
   const shared = useShared("gps", {
@@ -67,10 +73,11 @@ export function GpsExperiment({ ctx }: ExperimentProps) {
     fixes: geoLocal.fixes,
     day: dayLocal,
   });
-  const geo = { ...geoLocal, status: shared.status, fix: shared.fix, fixes: shared.fixes };
-  const day = shared.day;
+  const fix: LocationFix | null = shared.fix && typeof shared.fix.accuracy === "number" ? shared.fix : null;
+  // Values from another device are checked before use: a bad one falls back to this device's own.
+  const day = shared.day && typeof shared.day.minute === "number" && typeof shared.day.seen === "number" ? shared.day : dayLocal;
   const sim = shared.mode === "sim";
-  const live = !sim && geo.status === "live" && geo.fix != null;
+  const live = !sim && shared.status === "live" && fix != null;
   const running = mode === "sim" && playing && dayLocal.minute < DAY_END;
 
   useEffect(() => {
@@ -90,14 +97,63 @@ export function GpsExperiment({ ctx }: ExperimentProps) {
     setMode(next);
   };
 
+  const play = () => {
+    if (mode !== "sim") switchMode("sim");
+    if (running) {
+      setPlaying(false);
+      return;
+    }
+    if (dayLocal.minute >= DAY_END) dispatch({ type: "restart" });
+    setPlaying(true);
+    markTested();
+  };
+
+  // Booth keys for the made-up day: Space plays or pauses, arrows move the time.
+  useEffect(() => {
+    if (!sim || mirrored) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || isTyping(event.target)) return;
+      if (event.key === " ") {
+        event.preventDefault();
+        setPlaying((p) => !p && dayLocal.minute < DAY_END);
+        if (dayLocal.minute >= DAY_END) {
+          dispatch({ type: "restart" });
+          setPlaying(true);
+        }
+        markTested();
+      } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        setPlaying(false);
+        dispatch({ type: "step", by: event.key === "ArrowRight" ? DAY_STEP : -DAY_STEP });
+        markTested();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sim, mirrored, dayLocal.minute, markTested]);
+
   const position = positionAt(day.minute);
   const guesses = guessesUntil(day.seen);
   const latest = guesses[guesses.length - 1];
   const points = trailUntil(day.minute);
 
+  const found = useLatch(live);
+  const moved = useLatch(sim && day.seen > DAY_START);
+  const allPlaces = useLatch(sim && guesses.length >= 3);
+  const tasks: Task[] = [
+    sim ? { id: "move", label: "Move through the day", done: moved } : { id: "find", label: "Find your location", done: found },
+    {
+      id: "places",
+      label: "Watch it work out your home, school and sport",
+      done: allPlaces,
+      action: { label: "Play the day", onClick: play },
+    },
+  ];
+
   let guess: Guess | null = null;
   let readout: ReadoutRow[];
   let summary: string;
+  let numbers: string | null;
   if (sim) {
     guess = latest ? { label: latest.title, because: latest.because } : null;
     readout = [
@@ -107,78 +163,65 @@ export function GpsExperiment({ ctx }: ExperimentProps) {
       { label: "Places worked out", value: `${guesses.length} of 3` },
     ];
     summary = `${clockLabel(day.minute)}. ${guess ? `Guess: ${guess.label}.` : ""}`;
+    numbers = `${clockLabel(day.minute)}   ${points.length} points on the map`;
   } else {
-    const fix: LocationFix | null = geo.fix;
     guess = fix ? gpsGuess(fix.accuracy) : null;
     readout = [
       { label: "Accurate to", value: fix ? formatDistance(fix.accuracy) : "Waiting" },
       { label: "Probably from", value: fix ? sourceGuess(fix.accuracy) : "Waiting" },
       { label: "Speed", value: fix?.speed != null ? `${Math.round(fix.speed * 3.6)} km/h` : "Not known" },
-      { label: "Fixes so far", value: String(geo.fixes) },
+      { label: "Fixes so far", value: String(Number(shared.fixes) || 0) },
       { label: "Coordinates", value: "Never shown or kept" },
     ];
     summary = fix ? `Accurate to ${formatDistance(fix.accuracy)}. Guess: ${guess?.label ?? ""}.` : "Waiting for a location fix.";
+    numbers = fix ? `accurate to ${formatDistance(fix.accuracy)}   from ${sourceGuess(fix.accuracy).toLowerCase()}` : null;
   }
 
   const island = useIslandNotice(live, <IslandLabel tone="location">Location on</IslandLabel>);
 
+  const gate: SensorGate | null = sim
+    ? null
+    : {
+        status: shared.status,
+        startLabel: "Find my location",
+        startIcon: <LocateFixed />,
+        onStart: geoLocal.start,
+        stopLabel: "Stop location",
+        onStop: geoLocal.stop,
+        issue: issueCopy("location", geoLocal.status),
+        onSimulate: () => switchMode("sim"),
+        privacy: link.controller
+          ? "Your coordinates are never shown, kept or sent. The booth screen gets only how close the phone can get."
+          : "Your coordinates are never shown, kept or sent. Only how close it can get.",
+      };
+
   const playLabel = running ? "Pause" : day.minute >= DAY_END ? "Play the day again" : "Play the day";
-  const tryIt = (
-    <div className="flex flex-col gap-5">
-      {caps.location ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
-      {sim ? (
-        <div className="flex flex-col gap-4">
-          <p className="type-body text-fg-muted">
-            One made-up school day. Move through it and watch the app name places from where the phone spends its time.
-          </p>
-          <SliderRow
-            label="Time of day"
-            value={day.minute}
-            min={DAY_START}
-            max={DAY_END}
-            step={DAY_STEP}
-            valueText={clockLabel(day.minute)}
-            onValueChange={(minute) => {
-              setPlaying(false);
-              dispatch({ type: "set", minute });
-              if (minute > DAY_START) markTested();
-            }}
-          />
-          <div>
-            <Button
-              variant="secondary"
-              size="lg"
-              icon={running ? <Pause /> : <Play />}
-              onClick={() => {
-                if (running) {
-                  setPlaying(false);
-                  return;
-                }
-                if (dayLocal.minute >= DAY_END) dispatch({ type: "restart" });
-                setPlaying(true);
-                markTested();
-              }}
-            >
-              {playLabel}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <LiveControl
-          status={geo.status}
-          startLabel="Find my location"
-          startIcon={<LocateFixed />}
-          stopLabel="Stop location"
-          onStart={geo.start}
-          onStop={geo.stop}
-          issue={issueCopy("location", geo.status)}
-          onSimulate={() => switchMode("sim")}
-          privacy="Your coordinates are never shown, kept or sent. Only how close it can get."
-          liveHint="Step near a window or outside and watch the circle shrink. Then try the simulated day."
+  const controls =
+    sim && !mirrored ? (
+      <div className="flex flex-col gap-4">
+        <p className="type-body text-fg-muted">One made-up school day. Watch the app name places from where the phone spends its time.</p>
+        <SliderRow
+          label="Time of day"
+          value={dayLocal.minute}
+          min={DAY_START}
+          max={DAY_END}
+          step={DAY_STEP}
+          valueText={clockLabel(dayLocal.minute)}
+          onValueChange={(minute) => {
+            setPlaying(false);
+            dispatch({ type: "set", minute });
+            if (minute > DAY_START) markTested();
+          }}
         />
-      )}
-    </div>
-  );
+        <div>
+          <Button variant="secondary" size="lg" icon={running ? <Pause /> : <Play />} onClick={play}>
+            {playLabel}
+          </Button>
+        </div>
+      </div>
+    ) : !sim && live && !mirrored ? (
+      <p className="type-body text-fg-muted">Step near a window or outside and watch the number shrink. Then play the made-up day.</p>
+    ) : null;
 
   return (
     <ExperimentLayout
@@ -187,19 +230,24 @@ export function GpsExperiment({ ctx }: ExperimentProps) {
       source={sim ? "sim" : "live"}
       stageLabel={sim ? "A map of a made-up town during one day" : "How closely your phone can find you"}
       island={island}
-      stage={
-        sim ? (
-          <DayStage minute={day.minute} seen={day.seen} />
-        ) : (
-          <AccuracyStage fix={geo.fix} searching={geo.status === "starting"} />
-        )
-      }
-      tryIt={tryIt}
+      stage={sim ? <DayStage minute={day.minute} seen={day.seen} /> : <AccuracyStage fix={fix} searching={shared.status === "starting"} />}
+      gate={gate}
+      modeSwitch={caps.location && !mirrored ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
+      controls={controls}
+      tasks={tasks}
       readout={readout}
       guess={guess}
       guessWaiting={sim ? "Move the time of day to start." : "Find your location to see what it can tell."}
-      primaryTaken={!sim && liveControlHasPrimary(geo.status)}
+      numbers={numbers}
       summary={summary}
+      keys={
+        sim
+          ? [
+              { keys: ["Space"], label: "Play or pause" },
+              { keys: ["←", "→"], label: "Move the time" },
+            ]
+          : undefined
+      }
     />
   );
 }
@@ -211,11 +259,7 @@ function AccuracyStage({ fix, searching }: { fix: LocationFix | null; searching:
     <StageShell title="Location" source="live" className="dot-field">
       <div className="flex flex-1 flex-col justify-center gap-8 px-5">
         {fix ? (
-          <StageScore
-            value={km ? Math.round(fix.accuracy / 100) / 10 : Math.round(fix.accuracy)}
-            suffix={km ? " km" : " m"}
-            label="Accurate to"
-          />
+          <StageScore value={km ? Math.round(fix.accuracy / 100) / 10 : Math.round(fix.accuracy)} suffix={km ? " km" : " m"} label="Accurate to" />
         ) : (
           <div className="flex flex-col gap-3">
             {searching ? <LoaderCircle aria-hidden className="size-6 animate-spin text-game" /> : null}
@@ -229,7 +273,7 @@ function AccuracyStage({ fix, searching }: { fix: LocationFix | null; searching:
               <li
                 key={step.id}
                 className={cn(
-                  "flex items-center justify-between gap-3 rounded-md px-3 py-2.5",
+                  "flex items-center justify-between gap-3 rounded-md px-3 py-2.5 transition-[background-color,color] duration-300 ease-out",
                   here ? "bg-game text-game-ink" : "bg-fg/[0.04] text-fg-subtle",
                 )}
               >
@@ -262,8 +306,9 @@ const LABELS: Record<PlaceId, { x: number; y: number }> = {
 function DayStage({ minute, seen }: { minute: number; seen: number }) {
   const position = positionAt(minute);
   const points = trailUntil(minute);
-  const guessed = new Set(guessesUntil(seen).map((g) => g.place));
-  const titles = Object.fromEntries(guessesUntil(seen).map((g) => [g.place, g.title])) as Partial<Record<PlaceId, string>>;
+  const known = guessesUntil(seen);
+  const guessed = new Set(known.map((g) => g.place));
+  const titles = Object.fromEntries(known.map((g) => [g.place, g.title])) as Partial<Record<PlaceId, string>>;
   const [time, suffix] = clockLabel(minute).split(" ");
   return (
     <StageShell title="Location" source="sim">
@@ -272,12 +317,7 @@ function DayStage({ minute, seen }: { minute: number; seen: number }) {
         <span className="type-label text-fg-subtle">{suffix}</span>
       </div>
       <div className="min-h-0 flex-1 px-2 py-2">
-        <svg
-          viewBox={`0 0 ${MAP_SIZE.width} ${MAP_SIZE.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          aria-hidden
-          className="size-full"
-        >
+        <svg viewBox={`0 0 ${MAP_SIZE.width} ${MAP_SIZE.height}`} preserveAspectRatio="xMidYMid meet" aria-hidden className="size-full">
           {[
             [6, 48, 36, 26],
             [58, 48, 36, 26],
@@ -288,14 +328,7 @@ function DayStage({ minute, seen }: { minute: number; seen: number }) {
             <rect key={`${x}-${y}`} x={x} y={y} width={w} height={h} rx={2.5} className="fill-fg/[0.05]" />
           ))}
           {ROADS.map((road, i) => (
-            <polyline
-              key={i}
-              points={road.map((p) => `${p.x},${p.y}`).join(" ")}
-              fill="none"
-              strokeWidth={4.5}
-              strokeLinecap="round"
-              className="stroke-fg/[0.12]"
-            />
+            <polyline key={i} points={road.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" strokeWidth={4.5} strokeLinecap="round" className="stroke-fg/[0.12]" />
           ))}
           <rect x={63} y={18} width={20} height={15} rx={2} className="fill-fg/[0.16]" />
           <rect x={65} y={83} width={22} height={18} rx={3} className="fill-fg/[0.1] stroke-fg/[0.22]" strokeWidth={0.6} />
@@ -320,15 +353,10 @@ function DayStage({ minute, seen }: { minute: number; seen: number }) {
   );
 }
 
+/** A name the map already knows, in the machine voice, sentence case. */
 function MapName({ x, y, text }: { x: number; y: number; text: string }) {
   return (
-    <text
-      x={x}
-      y={y}
-      textAnchor="middle"
-      className="fill-fg-subtle"
-      style={{ fontFamily: "var(--font-mono)", fontSize: 3.6, letterSpacing: "0.06em", textTransform: "uppercase" }}
-    >
+    <text x={x} y={y} textAnchor="middle" className="fill-fg-subtle" style={{ fontFamily: "var(--font-mono)", fontSize: 3.8 }}>
       {text}
     </text>
   );

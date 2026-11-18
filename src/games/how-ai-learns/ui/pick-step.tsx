@@ -4,6 +4,7 @@ import Image from "next/image";
 import { Check, ImageOff, LoaderCircle, Plus, X } from "lucide-react";
 import { useId } from "react";
 import { Button } from "@/components/ui/button";
+import { ToggleChip } from "@/components/ui/chip";
 import { Notice } from "@/components/game/panels";
 import { cn } from "@/lib/cn";
 import { photoUrl } from "../engine/dataset";
@@ -13,6 +14,8 @@ import { loadDataset } from "./use-dataset";
 import type { LearnGame } from "./use-learn-game";
 
 const PLACEHOLDERS = ["e.g. Phone", "e.g. Bottle", "e.g. Pen"];
+/** Things visitors usually have on them: one tap instead of typing. */
+const IDEAS = ["Phone", "Water bottle", "Pen", "Keys", "Watch", "Glasses"];
 
 /**
  * Step 1: the visitor names the things they will show the camera. The photo
@@ -89,6 +92,27 @@ export function PickStep({ game }: { game: LearnGame }) {
                 </div>
               );
             })}
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <span className="type-small text-fg-subtle">Or tap what you have with you</span>
+            <div className="flex flex-wrap gap-2">
+              {IDEAS.map((idea) => {
+                const owner = groups.find((g) => g.name.trim().toLowerCase() === idea.toLowerCase());
+                const empty = groups.find((g) => !g.name.trim());
+                return (
+                  <ToggleChip
+                    key={idea}
+                    pressed={!!owner}
+                    disabled={!owner && !empty}
+                    // The reducer picks the field, so two quick taps never land in the same one.
+                    onClick={() => dispatch({ type: "toggle-name", name: idea })}
+                    className="disabled:opacity-45"
+                  >
+                    {idea}
+                  </ToggleChip>
+                );
+              })}
+            </div>
           </div>
           {!full ? (
             <Button

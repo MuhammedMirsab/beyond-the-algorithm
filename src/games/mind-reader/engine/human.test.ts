@@ -24,9 +24,9 @@ describe("find its number", () => {
   test("higher and lower point the right way and narrow what's possible", () => {
     let state = createHumanState("100", 37, 0);
     state = guess(state, 50);
-    expect(state.guesses[0]).toMatchObject({ value: 50, result: "lower", before: 100, after: 49 });
+    expect(state.guesses[0]).toMatchObject({ value: 50, result: "lower", before: 100, after: 49, low: 1, high: 100, middle: 50 });
     state = guess(state, 20);
-    expect(state.guesses[1]).toMatchObject({ result: "higher", before: 49, after: 29 });
+    expect(state.guesses[1]).toMatchObject({ result: "higher", before: 49, after: 29, low: 1, high: 49, middle: 25 });
     expect(possibleNumbers(state)[0]).toBe(21);
     expect(guessesLeft(state)).toBe(5);
   });
@@ -110,10 +110,21 @@ describe("session", () => {
     expect(session).toMatchObject({ screen: "intro", range: "100" });
   });
 
-  test("the range can't change mid-game", () => {
+  test("the range can change before the first question, never after", () => {
     let session = sessionReducer(initialSession(), { type: "start-machine" });
+    session = sessionReducer(session, { type: "set-range", range: "1000" });
+    expect(session).toMatchObject({ screen: "machine", range: "1000", machine: { range: "1000", phase: "think" } });
+    session = sessionReducer(session, { type: "machine", action: { type: "start" } });
     session = sessionReducer(session, { type: "set-range", range: "10" });
-    expect(session.range).toBe("100");
+    expect(session.range).toBe("1000");
+    let human = sessionReducer(initialSession(), { type: "start-human", secret: 4, now: 0 });
+    human = sessionReducer(human, { type: "set-range", range: "10" });
+    expect(human.range).toBe("100");
+  });
+
+  test("play again can start on a different range", () => {
+    const session = sessionReducer(initialSession(), { type: "start-machine", range: "1000" });
+    expect(session).toMatchObject({ screen: "machine", range: "1000", machine: { range: "1000" } });
   });
 
   test("announces the question and the feedback", () => {

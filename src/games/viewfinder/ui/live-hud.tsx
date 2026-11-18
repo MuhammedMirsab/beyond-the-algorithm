@@ -1,269 +1,226 @@
 "use client";
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  Gauge,
-  ScanEye,
-  SwitchCamera,
-  TrianglesCenterlineDashedVertical,
-} from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, type ReactNode } from "react";
-import { IconButton } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/surface";
-import { cn } from "@/lib/cn";
-import { LENSES, LENS_COUNT, lensKey } from "../engine/lenses";
+import { Hand, ScanEye, SwitchCamera } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
+import { buttonStyles, IconButton } from "@/components/ui/button";
+import { KeyHints } from "@/components/ui/key-hints";
+import { POINTS_PER_HAND } from "../engine/gesture";
+import type { LensPreview } from "../engine/preview";
 import type { EngineSnapshot } from "../engine/store";
-import { pinchHint, pointsReadout, statsReadout, statusText } from "./copy";
+import { cn } from "@/lib/cn";
+import { KEY_HINTS, coach, formatCount, type CoachKind } from "./copy";
+import { FilterStrip } from "./filter-strip";
+
+const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+
+/** A "why no frame yet" nudge waits until it has held this long, so it never flickers. */
+const HINT_SETTLE_MS = 900;
+/** How long the pinch tip stays up over a frame nobody has pinched yet. */
+const PINCH_TIP_MS = 10_000;
 
 /**
- * Everything drawn over the live camera. Solid surfaces only (bg-surface/90
- * pills with the hairline ring), never blur: the video is the show.
- * Top: what to do next. Bottom: which lens, the lens picker, view toggles.
+ * Everything drawn over the live camera, and nothing more: the camera
+ * picture is the show. Top: the one thing to do next, gone once the visitor
+ * has made a frame and pinched. Bottom: the filters as live thumbnails, AI
+ * view, and (laptops only) the keys. Solid surfaces, never blur.
  */
 export function LiveHud({
   snap,
-  showStats,
   canFlip,
   onLens,
-  onStep,
-  onMirror,
   onSkeleton,
-  onStats,
   onFlip,
+  connectPreview,
 }: {
   snap: EngineSnapshot;
-  showStats: boolean;
   canFlip: boolean;
   onLens: (index: number) => void;
-  onStep: (delta: number) => void;
-  onMirror: () => void;
   onSkeleton: () => void;
-  onStats: () => void;
   onFlip: () => void;
+  connectPreview: (preview: LensPreview) => () => void;
 }) {
-  const hint = pinchHint(snap);
-  const benchTitle = snap.bench
-    ? `Startup test on this device: GPU ${fmtMs(snap.bench.GPU)}, CPU ${fmtMs(snap.bench.CPU)}. The faster one runs the model.`
-    : undefined;
+  const hint = useSettled(snap.hint, HINT_SETTLE_MS);
+  // The pinch tip steps aside after a while even if nobody pinches: the picture comes first.
+  const pinchTipDone = useHeldFor(snap.locked && snap.pinches === 0, PINCH_TIP_MS);
+  const instruction = coach({
+    locked: snap.locked,
+    everLocked: snap.everLocked,
+    leftHand: snap.leftHand,
+    rightHand: snap.rightHand,
+    hint,
+    pinches: pinchTipDone ? Math.max(1, snap.pinches) : snap.pinches,
+    mirror: snap.mirror,
+  });
 
   return (
     <>
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+4.5rem)] sm:px-6">
-        <StatusChip locked={snap.locked} hands={snap.hands} />
-        {hint ? <Pill className="type-small min-h-9 px-4 py-1.5 text-fg">{hint}</Pill> : null}
-        {snap.skeleton ? (
-          <Pill className="type-label min-h-8 px-3 py-1.5 text-fg-muted">{pointsReadout(snap.hands)}</Pill>
-        ) : null}
-        {showStats ? (
-          <Pill className="type-label min-h-8 px-3 py-1.5 tabular-nums text-fg-muted" title={benchTitle}>
-            {statsReadout(snap)}
-          </Pill>
-        ) : null}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center px-4 pt-[calc(env(safe-area-inset-top)+4.75rem)] sm:px-6">
+        <AnimatePresence initial={false}>
+          {instruction ? (
+            <CoachPill
+              key="coach"
+              text={instruction.text}
+              kind={instruction.kind}
+              left={snap.leftHand}
+              right={snap.rightHand}
+            />
+          ) : null}
+        </AnimatePresence>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6 lg:px-8 lg:pb-8">
-        <LensReadout index={snap.lens} />
-        <LensPicker active={snap.lens} onLens={onLens} onStep={onStep} />
-        <div className="flex max-w-full flex-wrap items-center justify-center gap-3">
-          <div role="group" aria-label="View" className="pointer-events-auto flex items-center gap-2">
-            <IconButton
-              label="Mirror the picture"
-              icon={<TrianglesCenterlineDashedVertical />}
-              pressed={snap.mirror}
-              onClick={onMirror}
-              aria-keyshortcuts="M"
-              className={TOGGLE}
-            />
-            <IconButton
-              label="Show what the AI sees"
-              icon={<ScanEye />}
-              pressed={snap.skeleton}
-              onClick={onSkeleton}
-              aria-keyshortcuts="H"
-              className={TOGGLE}
-            />
-            <IconButton label="Show stats" icon={<Gauge />} pressed={showStats} onClick={onStats} className={TOGGLE} />
-            {canFlip ? <IconButton label="Switch camera" icon={<SwitchCamera />} onClick={onFlip} /> : null}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6 lg:px-8">
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          {/* Laptops only (a fine pointer and room beside the strip): a small corner legend, away from faces. */}
+          <div className="hidden justify-self-start xl:pointer-fine:block">
+            <KeyHints items={KEY_HINTS} layout="list" className="gap-y-2 rounded-lg bg-surface/85 py-3 pl-3 pr-4 shadow-ring" />
           </div>
-          <KeyLegend />
+
+          <FilterStrip
+            active={snap.lens}
+            showName={!snap.locked}
+            onLens={onLens}
+            connectPreview={connectPreview}
+            className="justify-self-center"
+          />
+
+          <div className="flex items-center gap-2 justify-self-end max-sm:order-first">
+            {canFlip ? <IconButton label="Switch camera" icon={<SwitchCamera />} onClick={onFlip} className="pointer-events-auto" /> : null}
+            <AiViewToggle on={snap.skeleton} hands={snap.hands} onToggle={onSkeleton} />
+          </div>
         </div>
       </div>
     </>
   );
 }
 
-/** Pressed toggles turn solid white, like a pressed ToggleChip. */
-const TOGGLE = "aria-pressed:bg-fg aria-pressed:text-canvas aria-pressed:shadow-none aria-pressed:hover:bg-white";
-
-const fmtMs = (ms: number | null) => (ms == null ? "not available" : `${ms.toFixed(1)} ms`);
-
-/** A solid readout over the video. Wraps (balanced) rather than clipping on narrow phones. */
-function Pill({ className, children, title }: { className?: string; children: ReactNode; title?: string }) {
-  return (
-    <div
-      title={title}
-      className={cn(
-        "inline-flex max-w-full items-center justify-center text-balance rounded-full bg-surface/90 text-center shadow-ring",
-        title && "pointer-events-auto",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
+/** True once `on` has stayed true for `ms`; false again as soon as it turns false. */
+function useHeldFor(on: boolean, ms: number) {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    const id = window.setTimeout(() => setHeld(true), ms);
+    return () => {
+      window.clearTimeout(id);
+      setHeld(false);
+    };
+  }, [on, ms]);
+  return on && held;
 }
 
-/** What to do next. Announced politely; the new line fades in over 150ms. */
-function StatusChip({ locked, hands }: { locked: boolean; hands: number }) {
-  const text = statusText({ locked, hands });
+/** Returns `value` once it has stayed the same for `ms`; null meanwhile and whenever it is null. */
+function useSettled<T>(value: T | null, ms: number): T | null {
+  const [settled, setSettled] = useState<T | null>(null);
+  useEffect(() => {
+    if (value === null) return;
+    const id = window.setTimeout(() => setSettled(value), ms);
+    return () => window.clearTimeout(id);
+  }, [value, ms]);
+  return value === null ? null : settled === value ? settled : null;
+}
+
+/**
+ * The instruction. Two hand marks show what the camera has found so far
+ * (screen-left and screen-right hand), so a visitor sees each hand register
+ * the moment it comes up. The pinch step shows a pinching glyph instead.
+ */
+function CoachPill({ text, kind, left, right }: { text: string; kind: CoachKind; left: boolean; right: boolean }) {
   return (
-    <div className="inline-flex h-11 max-w-full items-center gap-2.5 rounded-full bg-surface/90 pl-4 pr-5 shadow-ring sm:h-13 sm:gap-3 sm:pl-5 sm:pr-6">
-      <span
-        aria-hidden
-        className={cn(
-          "size-2.5 shrink-0 rounded-full transition-colors duration-150 ease-out",
-          locked ? "bg-game" : hands > 0 ? "bg-fg-muted" : "bg-fg-subtle",
-        )}
-      />
-      <span aria-live="polite" aria-atomic className="type-body sm:type-title-3 min-w-0 truncate font-semibold text-fg">
+    <motion.div
+      className="inline-flex min-h-12 max-w-full items-center gap-3 rounded-[24px] bg-surface/90 py-2 pl-3 pr-5 shadow-ring sm:min-h-14 sm:rounded-full sm:pl-3.5 sm:pr-6"
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8, transition: { duration: 0.2, ease: EASE_OUT } }}
+      transition={{ duration: 0.3, ease: EASE_OUT }}
+    >
+      <span className="grid h-8 shrink-0 place-items-center rounded-full bg-sunken px-2 sm:h-9">
+        {kind === "pinch" ? <PinchGlyph /> : <HandMarks left={left} right={right} />}
+      </span>
+      <span aria-live="polite" aria-atomic className="type-body sm:type-title-3 min-w-0 text-balance font-semibold text-fg sm:truncate">
         <motion.span
           key={text}
-          className="block truncate"
+          className="block sm:truncate"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.15, ease: EASE_OUT }}
         >
           {text}
         </motion.span>
       </span>
-    </div>
+    </motion.div>
   );
 }
 
-/**
- * "Halftone · 1 of 10" and, from tablet width up, what the lens does to the
- * pixels. On very short screens (landscape phones) it stays for screen
- * readers only, so the top and bottom of the HUD never meet; the active
- * lens is still visible in the picker.
- */
-function LensReadout({ index }: { index: number }) {
-  const lens = LENSES[index];
+/** One mark per side of the screen; it fills (with a small pop) when a hand is found there. */
+function HandMarks({ left, right }: { left: boolean; right: boolean }) {
   return (
-    <div className="flex max-w-full flex-col items-center gap-0.5 rounded-lg bg-surface/90 px-5 py-2.5 text-center shadow-ring [@media(max-height:31rem)]:sr-only">
-      <p aria-live="polite" aria-atomic className="flex items-baseline gap-2">
-        <motion.span
-          key={lens.id}
-          className="type-title-3 text-fg"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {lens.name}
-        </motion.span>
-        <span aria-hidden className="type-label text-fg-subtle">
-          ·
-        </span>
-        <span className="type-label tabular-nums text-fg-subtle">
-          {index + 1} of {LENS_COUNT}
-        </span>
-      </p>
-      <p className="type-small hidden max-w-[34rem] text-fg-muted sm:block">{lens.blurb}</p>
-    </div>
+    <span className="flex items-center gap-1.5" role="img" aria-label={handsLabel(left, right)}>
+      <HandMark on={left} flip={false} />
+      <HandMark on={right} flip />
+    </span>
   );
 }
 
-/**
- * Eleven lenses as one segmented row (the Segmented look, sized for many).
- * Scrolls sideways on narrow screens and keeps the active lens centred.
- */
-function LensPicker({
-  active,
-  onLens,
-  onStep,
-}: {
-  active: number;
-  onLens: (index: number) => void;
-  onStep: (delta: number) => void;
-}) {
-  const listRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const reduceMotion = useReducedMotion();
-  const placed = useRef(false);
+const handsLabel = (left: boolean, right: boolean) =>
+  left && right ? "Both hands found" : left || right ? "One hand found" : "No hands found yet";
 
-  useEffect(() => {
-    const list = listRef.current;
-    const item = itemRefs.current[active];
-    if (!list || !item) return;
-    const left = item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2;
-    // First placement is instant; later lens changes glide unless motion is reduced.
-    list.scrollTo({ left, behavior: placed.current && !reduceMotion ? "smooth" : "auto" });
-    placed.current = true;
-  }, [active, reduceMotion]);
-
+function HandMark({ on, flip }: { on: boolean; flip: boolean }) {
   return (
-    <div className="pointer-events-auto flex max-w-full items-center gap-2">
-      <IconButton label="Previous lens" icon={<ChevronLeft />} onClick={() => onStep(-1)} aria-keyshortcuts="ArrowLeft" />
-      <div
-        ref={listRef}
-        role="group"
-        aria-label="Lenses"
-        className="no-scrollbar relative flex min-w-0 snap-x items-center gap-1 overflow-x-auto rounded-full bg-surface/90 p-1 shadow-ring"
+    <motion.span
+      aria-hidden
+      className={cn("grid place-items-center transition-colors duration-150 ease-out", on ? "text-game" : "text-fg-faint")}
+      animate={{ scale: on ? 1 : 0.84 }}
+      transition={on ? { type: "spring", duration: 0.35, bounce: 0.3 } : { duration: 0.15, ease: EASE_OUT }}
+    >
+      {/* Lucide's hand has its thumb on the left: as drawn it is the screen-right hand, thumb toward the middle. */}
+      <Hand className={cn("size-5", flip ? null : "-scale-x-100")} strokeWidth={on ? 2.4 : 2} />
+    </motion.span>
+  );
+}
+
+/** Index finger and thumb meeting, on a loop: the two corner points a pinch brings together. */
+function PinchGlyph() {
+  return (
+    <svg viewBox="0 0 30 20" aria-hidden className="h-5 w-[30px] text-game">
+      <path d="M5 10 L23 4" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" />
+      <circle cx={23} cy={4} r={2.4} fill="currentColor" />
+      <motion.g
+        animate={{ rotate: [0, -36, -36, 0] }}
+        transition={{ duration: 1.4, times: [0, 0.3, 0.45, 1], ease: EASE_OUT, repeat: Infinity, repeatDelay: 0.6 }}
+        style={{ originX: "5px", originY: "10px" }}
       >
-        {LENSES.map((lens, i) => {
-          const on = i === active;
-          return (
-            <button
-              key={lens.id}
-              ref={(el) => {
-                itemRefs.current[i] = el;
-              }}
-              type="button"
-              aria-pressed={on}
-              aria-keyshortcuts={lensKey(i)}
-              onClick={() => onLens(i)}
-              className={cn(
-                "h-11 shrink-0 snap-center select-none whitespace-nowrap rounded-full px-4 text-[0.9375rem] font-semibold",
-                "transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97]",
-                "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fg",
-                on ? "bg-fg text-canvas focus-visible:outline-canvas" : "text-fg-muted hover:bg-fg/[0.08] hover:text-fg",
-              )}
-            >
-              {lens.name}
-            </button>
-          );
-        })}
-      </div>
-      <IconButton label="Next lens" icon={<ChevronRight />} onClick={() => onStep(1)} aria-keyshortcuts="ArrowRight" />
-    </div>
+        <path d="M5 10 L23 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" />
+        <circle cx={23} cy={16} r={2.4} fill="currentColor" />
+      </motion.g>
+    </svg>
   );
 }
 
-/** Keyboard shortcuts, only where there is a keyboard and room: wide screens with a fine pointer. */
-function KeyLegend() {
+/**
+ * "AI view": every landmark the model places, live. While it is on, the
+ * button also says how many points it is tracking right now.
+ */
+function AiViewToggle({ on, hands, onToggle }: { on: boolean; hands: number; onToggle: () => void }) {
   return (
-    <div className="type-small hidden h-11 items-center gap-5 rounded-full bg-surface/90 px-4 text-fg-muted shadow-ring lg:pointer-fine:flex">
-      <span className="inline-flex items-center gap-1.5">
-        <Kbd>1</Kbd>
-        <span>to</span>
-        <Kbd aria-label="Minus">-</Kbd>
-        <Kbd aria-label="Left arrow">←</Kbd>
-        <Kbd aria-label="Right arrow">→</Kbd>
-        <span className="ml-0.5">Lens</span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <Kbd>M</Kbd>
-        <span>Mirror</span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <Kbd>H</Kbd>
-        <span>What the AI sees</span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <Kbd>F</Kbd>
-        <span>Full screen</span>
-      </span>
-    </div>
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-keyshortcuts="H"
+      onClick={onToggle}
+      className={cn(
+        buttonStyles({ variant: "secondary", size: "md" }),
+        "pointer-events-auto",
+        on && "bg-fg text-canvas shadow-none hover:bg-white",
+      )}
+    >
+      <ScanEye />
+      <span>AI view</span>
+      {on ? (
+        <span className="type-label -mr-1 rounded-full bg-canvas/10 px-2 py-0.5 tabular-nums text-canvas/80">
+          {formatCount(hands * POINTS_PER_HAND)} points
+        </span>
+      ) : null}
+    </button>
   );
 }
+

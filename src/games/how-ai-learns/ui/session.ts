@@ -24,8 +24,23 @@ class Session {
   private visitorIds = new Set<string>();
   private blobUrls = new Set<string>();
   private classifier: Classifier | null = null;
+  /** What the live camera test answered, and how often, for this model. */
+  private live = new Map<string, number>();
   /** Bumped on reset, so late results from the last visitor are dropped. */
   private generation = 0;
+
+  /** One live answer: a label, "No object", or UNSURE. */
+  recordLive(answer: string) {
+    this.live.set(answer, (this.live.get(answer) ?? 0) + 1);
+  }
+
+  liveCounts(): Record<string, number> {
+    return Object.fromEntries(this.live);
+  }
+
+  clearLive() {
+    this.live.clear();
+  }
 
   has(id: string) {
     return this.cache.has(id);
@@ -97,6 +112,7 @@ class Session {
   resetVisitor() {
     this.generation++;
     this.setClassifier(null);
+    this.live.clear();
     for (const id of this.visitorIds) {
       this.cache.delete(id);
       this.inflight.delete(id);
@@ -106,6 +122,9 @@ class Session {
     this.blobUrls.clear();
   }
 }
+
+/** How the live test counts "I don't know". */
+export const UNSURE = "unsure";
 
 /** The page's single session. Created lazily so nothing runs on the server. */
 let instance: Session | null = null;

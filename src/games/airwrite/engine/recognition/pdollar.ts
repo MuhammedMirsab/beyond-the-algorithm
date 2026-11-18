@@ -32,7 +32,7 @@ function pathLength(pts: CloudPoint[]): number {
   return d;
 }
 
-function resample(input: CloudPoint[], n: number): CloudPoint[] {
+export function resample(input: CloudPoint[], n: number): CloudPoint[] {
   const pts = input.map((p) => ({ ...p }));
   const interval = pathLength(pts) / (n - 1);
   if (!(interval > 0)) return Array.from({ length: n }, () => ({ ...pts[0] }));
@@ -59,7 +59,7 @@ function resample(input: CloudPoint[], n: number): CloudPoint[] {
   return out.slice(0, n);
 }
 
-function scaleAndCenter(pts: CloudPoint[]): CloudPoint[] {
+export function scaleAndCenter(pts: CloudPoint[]): CloudPoint[] {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -100,10 +100,20 @@ function scaleAndCenter(pts: CloudPoint[]): CloudPoint[] {
 
 /** Strokes -> normalised point cloud. */
 export function toCloud(strokes: StrokeXY[], n = CLOUD_SIZE): CloudPoint[] {
+  return cloudSteps(strokes, n).cloud;
+}
+
+/**
+ * The two steps toCloud() takes, kept apart so they can be shown: n evenly
+ * spaced points along the ink (in the ink's own units), then the same points
+ * scaled and centred.
+ */
+export function cloudSteps(strokes: StrokeXY[], n = CLOUD_SIZE): { resampled: CloudPoint[]; cloud: CloudPoint[] } {
   const pts: CloudPoint[] = [];
   strokes.forEach((s, id) => s.forEach(([x, y]) => pts.push({ x, y, id })));
-  if (!pts.length) return [];
-  return scaleAndCenter(resample(pts, n));
+  if (!pts.length) return { resampled: [], cloud: [] };
+  const resampled = resample(pts, n);
+  return { resampled, cloud: scaleAndCenter(resampled) };
 }
 
 function cloudDistance(a: CloudPoint[], b: CloudPoint[], start: number): number {
@@ -130,6 +140,45 @@ function cloudDistance(a: CloudPoint[], b: CloudPoint[], start: number): number 
     i = (i + 1) % n;
   } while (i !== start);
   return sum;
+}
+
+/**
+ * The pairs cloudMatch() settles on: from its best starting point and
+ * direction, which point of `a` the greedy matcher paired with which point of
+ * `b`, and the total (the same number cloudMatch returns). For showing the
+ * match; recognition itself only needs the number.
+ */
+export function cloudPairs(a: CloudPoint[], b: CloudPoint[]): { pairs: [number, number][]; distance: number } {
+  const n = a.length;
+  if (!n || n !== b.length) return { pairs: [], distance: Infinity };
+  const step = Math.floor(Math.pow(n, 0.5));
+  let best = { start: 0, swap: false, d: Infinity };
+  for (let i = 0; i < n; i += step) {
+    const d1 = cloudDistance(a, b, i);
+    if (d1 < best.d) best = { start: i, swap: false, d: d1 };
+    const d2 = cloudDistance(b, a, i);
+    if (d2 < best.d) best = { start: i, swap: true, d: d2 };
+  }
+  const [from, to] = best.swap ? [b, a] : [a, b];
+  const matched = new Uint8Array(n);
+  const pairs: [number, number][] = [];
+  let i = best.start;
+  do {
+    let min = Infinity;
+    let index = -1;
+    for (let j = 0; j < n; j++) {
+      if (matched[j]) continue;
+      const d = (from[i].x - to[j].x) ** 2 + (from[i].y - to[j].y) ** 2;
+      if (d < min) {
+        min = d;
+        index = j;
+      }
+    }
+    matched[index] = 1;
+    pairs.push(best.swap ? [index, i] : [i, index]);
+    i = (i + 1) % n;
+  } while (i !== best.start);
+  return { pairs, distance: best.d };
 }
 
 /** Lower is more similar. */

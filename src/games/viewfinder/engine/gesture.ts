@@ -38,6 +38,14 @@ export type GestureEvent =
   | { type: "unlock" }
   | { type: "pinch"; slot: Slot; at: Vec2 };
 
+/**
+ * Why two hands in the picture don't make a frame (yet):
+ *  - "open": a thumb and index finger are too close together to be an L
+ *  - "shape": one fingertip sits inside the other three, so there is no four-cornered frame
+ *  - "apart": the frame would be too small (hands too close together or too far from the camera)
+ */
+export type FrameHint = "open" | "shape" | "apart";
+
 export interface FrameState {
   hands: TrackedHand[];
   locked: boolean;
@@ -47,6 +55,8 @@ export interface FrameState {
   quad: Vec2[];
   /** Seconds since the current lock started. */
   lockedFor: number;
+  /** With two hands up and no frame: what is missing. Null otherwise. */
+  hint: FrameHint | null;
 }
 
 export const TUNING = {
@@ -176,17 +186,16 @@ export class FrameGesture {
 
     let canLock = false;
     let canHold = false;
+    let hint: FrameHint | null = null;
     if (left && right) {
       const hull = convexHull([left.index, left.thumb, right.index, right.thumb]);
       const area = Math.abs(signedArea(hull)) / viewportArea;
+      const open = left.openness > TUNING.openToLock && right.openness > TUNING.openToLock;
       canHold = hull.length >= 3 && area > TUNING.minHoldArea;
-      canLock =
-        hull.length === 4 &&
-        area > TUNING.minLockArea &&
-        left.openness > TUNING.openToLock &&
-        right.openness > TUNING.openToLock;
+      canLock = hull.length === 4 && area > TUNING.minLockArea && open;
       // The frame follows the fingers live — including while one side pinches.
       if (canHold) this.quad = hull;
+      if (!canLock) hint = !open ? "open" : hull.length < 4 ? "shape" : "apart";
     }
 
     if (!this.locked) {
@@ -216,6 +225,7 @@ export class FrameGesture {
       active: this.active,
       quad: this.quad,
       lockedFor: this.locked ? tSec - this.lockedAt : 0,
+      hint: this.locked ? null : hint,
     };
   }
 

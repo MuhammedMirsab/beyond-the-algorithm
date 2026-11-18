@@ -210,7 +210,7 @@ export class SynthController implements Controller {
       g.fillStyle = rgba(C.muted);
       g.font = font(500, 11 * u, "mono");
       g.textAlign = "left";
-      g.fillText("LEFT HAND", mx + 12 * u, my + 20 * u);
+      g.fillText("Left hand", mx + 12 * u, my + 20 * u);
       g.font = font(600, 13 * u);
       g.fillStyle = rgba(C.fg);
       g.fillText("Volume", mx + 12 * u, my + 46 * u);

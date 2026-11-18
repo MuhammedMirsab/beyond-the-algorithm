@@ -609,13 +609,16 @@ function drawIcon(ctx: CanvasRenderingContext2D, icon: SignIcon) {
 
 export const SIGN_POST = 46;
 
+/** Sign lettering: the interface face (Mona Sans), sentence case, no tracking. */
+const SIGN_FONT = () => canvasFont(700, 14, "display");
+
 export function signTexture(scene: Phaser.Scene, t: Theme, icon: SignIcon, text: string) {
   const key = `sign-${t.id}-${icon}-${text}`;
   if (scene.textures.exists(key)) return { key, width: scene.textures.get(key).getSourceImage().width / TEX };
   const measure = makeCanvas(10, 10).getContext("2d")!;
-  measure.font = canvasFont(600, 12);
-  const textW = measure.measureText(text).width + text.length * 1.4;
-  const w = Math.ceil(54 + textW + 16);
+  measure.font = SIGN_FONT();
+  const textW = measure.measureText(text).width;
+  const w = Math.ceil(54 + textW + 18);
   const boardH = 50;
   const h = boardH + SIGN_POST;
   canvasTexture(scene, key, w, h, (ctx) => {
@@ -634,8 +637,7 @@ export function signTexture(scene: Phaser.Scene, t: Theme, icon: SignIcon, text:
     ctx.translate(25, boardH / 2);
     drawIcon(ctx, icon);
     ctx.restore();
-    ctx.font = canvasFont(600, 12);
-    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "1.4px";
+    ctx.font = SIGN_FONT();
     ctx.textBaseline = "middle";
     ctx.fillStyle = t.sign.ink;
     ctx.fillText(text, 60, boardH / 2 + 1);

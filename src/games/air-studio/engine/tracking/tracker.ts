@@ -2,9 +2,10 @@ import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { cameraIssueFrom, type CameraIssue } from "@/components/game/camera-notice";
 import { settings } from "../settings";
 import { openCamera, stopStream } from "./camera";
-import { EMPTY_FRAME, HandSet, type FoundHand, type HandLabel, type Pt, type TrackFrame } from "./hands";
+import { EMPTY_FRAME, HandSet, type FoundHand, type HandLabel, type TrackFrame } from "./hands";
 import { acquireHandModel, type Delegate, type HandModel, type ModelLease } from "./landmarker";
 import { playArea } from "./reach";
+import { NO_STROKE, simHandPoints, startStroke, strokeStep, type SimAnchor, type Stroke } from "./sim-hand";
 
 /**
  * Camera, hand model and simulated hands, copied from the original app's
@@ -45,8 +46,7 @@ const OFF: TrackerState = { status: "off" };
 const STALL_MS = 400;
 /** Shown until the first second of simulated frames has been counted. */
 const SIM_HZ = 60;
-/** Sim hands were drawn for a 4:3 stage; this keeps their shape on any stage. */
-const SIM_BASE_ASPECT = 4 / 3;
+
 
 class HandTracker {
   private stateValue: TrackerState = OFF;
@@ -71,10 +71,17 @@ class HandTracker {
   private lastLum = 0;
   private simTimer = 0;
   private sim = { x: 0.6, y: 0.4, fist: false, leftY: -1, visible: false };
+  /** A click's stroke: frame -1 none, 0 hide the hand, 1 top of the stroke, 2 on the way down since t0. */
+  private simStroke: Stroke = NO_STROKE;
   /** Width / height of the camera picture, or of the stage when simulating. */
   aspect = 4 / 3;
   /** Width / height of the stage, for simulated hands. */
   simAspect = 4 / 3;
+  /**
+   * Which point of a pretend hand sits on the pointer: the index fingertip
+   * (keys, pitch) or the palm (pads and strums, which play where the palm is).
+   */
+  simAnchor: SimAnchor = "tip";
   metrics: TrackerMetrics = { fps: 0, inferMs: 0, detectRate: 0, handCount: 0, brightness: 128, jitter: 0, delegate: null };
 
   /* ── Subscriptions ─────────────────────────────────────────────── */
@@ -305,6 +312,7 @@ class HandTracker {
     cancelAnimationFrame(this.simTimer);
     this.simTimer = 0;
     this.sim = { x: 0.6, y: 0.4, fist: false, leftY: -1, visible: false };
+    this.simStroke = NO_STROKE;
     this.hands.clear();
     this.lastFrame = EMPTY_FRAME;
     this.frameTimes = [];
@@ -329,15 +337,31 @@ class HandTracker {
     this.simTimer = requestAnimationFrame(tick);
   }
 
-  /** The mouse is the right hand's index fingertip, in stage coordinates (0 to 1). */
+  /** The mouse is the right hand (its fingertip or palm, see simAnchor), in stage coordinates (0 to 1). */
   simPointer(x: number, y: number) {
     this.sim.x = x;
     this.sim.y = y;
     this.sim.visible = true;
   }
 
+  /**
+   * A click or tap: the pretend hand comes down onto the pointer fast, so it
+   * goes through the same strike detection as a real hand. It vanishes for
+   * one frame first, so the jump up to the start of the stroke never reads
+   * as an upward move (an up strum on the guitar).
+   */
+  simStrike(x: number, y: number) {
+    this.sim.x = x;
+    this.sim.y = y;
+    this.sim.visible = true;
+    // Sized for how fast this screen draws: at least two frames of movement.
+    const fps = this.metrics.fps;
+    this.simStroke = startStroke(fps > 0 ? 1000 / fps : 1000 / SIM_HZ);
+  }
+
   simHide() {
     this.sim.visible = false;
+    this.simStroke = NO_STROKE;
   }
 
   simFist(on: boolean) {
@@ -362,32 +386,12 @@ class HandTracker {
   private simTick() {
     const now = performance.now();
     const aspect = this.simAspect;
-    // Horizontal offsets are drawn for a 4:3 stage; scale them so the hand keeps its shape on any stage.
-    const sx = SIM_BASE_ASPECT / aspect;
-    const mk = (cx: number, cy: number, fist: boolean): Pt[] => {
-      // A synthetic 21-point hand around (cx, cy), index tip at (cx, cy).
-      const s = 0.07;
-      const pts: Pt[] = [];
-      const base = { x: cx, y: cy + s * 2.2 };
-      pts.push(base);
-      const fingerX = [-0.9, -0.35, 0, 0.35, 0.7];
-      for (let f = 0; f < 5; f++) {
-        for (let j = 1; j <= 4; j++) {
-          const ext = fist && f > 0 ? Math.min(j, 2) * 0.35 : j;
-          pts.push({
-            x: base.x + fingerX[f] * s * (f === 0 ? 0.6 + j * 0.25 : 1) * sx,
-            y: base.y - s * (f === 0 ? 0.6 + j * 0.2 : 0.9 + ext * 0.38),
-          });
-        }
-      }
-      // Align the index tip with the pointer.
-      const dx = cx - pts[8].x;
-      const dy = cy - pts[8].y;
-      return pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
-    };
+    // A click: gone for one frame, back at the top of the stroke, then straight down onto the pointer.
+    const step = strokeStep(this.simStroke, now, this.sim.y);
+    this.simStroke = step.stroke;
     const found: FoundHand[] = [];
-    if (this.sim.visible) found.push({ label: "Right", pts: mk(this.sim.x, this.sim.y, this.sim.fist), score: 1 });
-    if (this.sim.leftY >= 0) found.push({ label: "Left", pts: mk(0.22, this.sim.leftY, false), score: 1 });
+    if (this.sim.visible && step.visible) found.push({ label: "Right", pts: simHandPoints(this.sim.x, step.y, this.sim.fist, aspect, this.simAnchor), score: 1 });
+    if (this.sim.leftY >= 0) found.push({ label: "Left", pts: simHandPoints(0.22, this.sim.leftY, false, aspect, this.simAnchor), score: 1 });
     this.aspect = aspect;
     // Simulated hands share the whole feature pipeline with camera hands.
     this.emit(this.hands.ingest(found, now, aspect, settings.get().tracking.smoothing, false));

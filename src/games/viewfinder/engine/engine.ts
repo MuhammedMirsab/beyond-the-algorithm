@@ -1,9 +1,10 @@
-import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
-import { CARTOON_LENS, LENSES, wrapLens } from "./lenses";
+import type { HandLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
+import { CARTOON_LENS, LENSES, LENS_COUNT, wrapLens } from "./lenses";
 import { FaceFollower, loadFaceTracker, type FaceTracker } from "./face";
-import { bounds, centroid, edgeLines } from "./geometry";
+import { bounds, centroid, edgeLines, signedArea } from "./geometry";
 import { FrameGesture, type FrameState, type GestureEvent, type RawHand } from "./gesture";
 import { Overlay } from "./overlay";
+import type { LensPreview } from "./preview";
 import { Renderer } from "./renderer";
 import type { EngineStore } from "./store";
 import type { HandTracker } from "./tracker";
@@ -23,10 +24,30 @@ export interface EngineOptions {
   skeleton?: boolean;
 }
 
+/** Everything the reveal reports about one visitor's session. All measured. */
+export interface SessionCounts {
+  framesTracked: number;
+  handsFound: number;
+  facesFound: number;
+  locks: number;
+  lensesTried: number;
+  lockedSeconds: number;
+  maxFramePixels: number;
+  favouriteLens: number;
+  /** Lens indices seen inside a frame, in picker order. */
+  triedLenses: number[];
+  /** Average hand model time per picture, ms (null before any picture). */
+  inferenceMs: number | null;
+}
+
 /** The GL layer is resolution-bound by the 720p camera — cap it. Chrome stays crisp at full DPR. */
 const GL_DPR_CAP = 1.5;
 const UI_DPR_CAP = 2;
 const TRANSITION_S = 0.42;
+/** Filter picker thumbnails: redrawn at most this often (they are small; 20 a second looks live). */
+const PREVIEW_INTERVAL_MS = 50;
+/** A hand counts as "up" for the coaching HUD until it has been gone this long (tracking blinks). */
+const SLOT_HOLD_S = 0.3;
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
@@ -36,6 +57,18 @@ const countBits = (mask: number) => {
   for (let m = mask; m; m &= m - 1) n++;
   return n;
 };
+
+const emptySession = () => ({
+  frames: 0,
+  hands: 0,
+  faces: 0,
+  locks: 0,
+  tried: 0,
+  lockedSeconds: 0,
+  maxFramePixels: 0,
+  inferSum: 0,
+  lensSeconds: new Float64Array(LENS_COUNT),
+});
 
 /**
  * Frame-locked pipeline. For every new camera frame, in one rendering step:
@@ -49,7 +82,8 @@ const countBits = (mask: number) => {
  *
  * Changes from the original: no capture to disk (the booth never saves
  * pictures of visitors), prefers-reduced-motion freezes decorative motion,
- * and the engine counts what the "How it works" reveal reports.
+ * the filter picker's live thumbnails are drawn from the same frames, and
+ * the engine counts what the "How it works" reveal reports.
  */
 export class ViewfinderEngine {
   private readonly video: HTMLVideoElement;
@@ -61,10 +95,13 @@ export class ViewfinderEngine {
   private readonly gesture = new FrameGesture();
   private readonly edges = new Float32Array(12);
   private readonly faceUniform = new Float32Array(16);
+  private readonly faceNormal = new Float32Array(16);
   private readonly faceFollower = new FaceFollower();
   /** Loaded the first time the Cartoon lens is picked. */
   private face: FaceTracker | null = null;
   private faceLoading = false;
+  private preview: LensPreview | null = null;
+  private lastPreviewAt = -Infinity;
   private readonly resizeObserver: ResizeObserver;
   private readonly motionQuery: MediaQueryList | null;
 
@@ -75,7 +112,8 @@ export class ViewfinderEngine {
   private prevLens: number;
   private lensChangedAt = -Infinity;
   private reducedMotion = false;
-  private state: FrameState = { hands: [], locked: false, active: 0, quad: [], lockedFor: 0 };
+  private state: FrameState = { hands: [], locked: false, active: 0, quad: [], lockedFor: 0, hint: null };
+  private readonly slotSeen = { left: -Infinity, right: -Infinity };
 
   private cssW = 1;
   private cssH = 1;
@@ -87,12 +125,13 @@ export class ViewfinderEngine {
   private pendingMeta: VideoFrameCallbackMetadata | null = null;
   private lastVfcAt = -Infinity;
   private lastVideoTime = -1;
+  private lastFrameT = -1;
   private lastDraw = 0;
   /** performance.now() of the last frame with a hand in it (the booth's "nobody here" clock). */
   private lastHandAt = 0;
   private stats = { since: 0, frames: 0, inferSum: 0, latencySum: 0, latencyN: 0 };
   /** Whole-session counters for the reveal. `tried` is a bit mask of lenses seen in a locked frame. */
-  private session = { frames: 0, hands: 0, locks: 0, tried: 0 };
+  private session = emptySession();
 
   constructor(opts: EngineOptions) {
     this.video = opts.video;
@@ -129,6 +168,11 @@ export class ViewfinderEngine {
       skeleton: this.skeleton,
       locked: false,
       hands: 0,
+      leftHand: false,
+      rightHand: false,
+      hint: null,
+      videoWidth: this.video.videoWidth,
+      videoHeight: this.video.videoHeight,
     });
   }
 
@@ -147,6 +191,7 @@ export class ViewfinderEngine {
     if (this.disposed) return;
     this.disposed = true;
     this.running = false;
+    this.preview = null;
     cancelAnimationFrame(this.raf);
     if (typeof this.video.cancelVideoFrameCallback === "function") this.video.cancelVideoFrameCallback(this.vfc);
     this.resizeObserver.disconnect();
@@ -210,19 +255,47 @@ export class ViewfinderEngine {
     this.fit = fit;
   }
 
+  /**
+   * The filter picker's thumbnail renderer (or null when the picker goes). It
+   * is drawn from the same camera frames as the main view, a few times a second.
+   */
+  setPreview(preview: LensPreview | null) {
+    this.preview = preview;
+    this.lastPreviewAt = -Infinity;
+  }
+
   /** Milliseconds since a hand was last in the picture (counts from start()). */
   handsAbsentFor(now = performance.now()) {
     return now - this.lastHandAt;
   }
 
   /** Exact session counters right now (the store only receives them twice a second). */
-  sessionCounts() {
+  sessionCounts(): SessionCounts {
+    const s = this.session;
     return {
-      framesTracked: this.session.frames,
-      handsFound: this.session.hands,
-      locks: this.session.locks,
-      lensesTried: countBits(this.session.tried),
+      framesTracked: s.frames,
+      handsFound: s.hands,
+      facesFound: s.faces,
+      locks: s.locks,
+      lensesTried: countBits(s.tried),
+      lockedSeconds: s.lockedSeconds,
+      maxFramePixels: Math.round(s.maxFramePixels),
+      favouriteLens: this.favouriteLens(),
+      triedLenses: Array.from({ length: LENS_COUNT }, (_, i) => i).filter((i) => s.tried & (1 << i)),
+      inferenceMs: s.frames ? s.inferSum / s.frames : null,
     };
+  }
+
+  private favouriteLens() {
+    let best = -1;
+    let bestS = 0;
+    this.session.lensSeconds.forEach((seconds, i) => {
+      if (seconds > bestS) {
+        bestS = seconds;
+        best = i;
+      }
+    });
+    return best;
   }
 
   // ───────────────────────────── loop
@@ -276,12 +349,13 @@ export class ViewfinderEngine {
 
       // 2b · Cartoon lens only: the face model on the same frame.
       if (this.face && this.cartoonOnScreen(t)) {
-        let lms = null;
+        let lms: NormalizedLandmark[] | null = null;
         try {
           lms = this.face.detect(video, performance.now());
         } catch (err) {
           console.error("[viewfinder] face detect failed", err);
         }
+        if (lms) this.session.faces++;
         this.faceFollower.update(
           lms,
           (l) => ({ x: rect.x + (this.mirror ? 1 - l.x : l.x) * rect.w, y: rect.y + l.y * rect.h }),
@@ -296,15 +370,24 @@ export class ViewfinderEngine {
       this.renderer.upload(video);
       this.draw(t, rect);
 
+      // 4 · the picker's thumbnails, from the same frame
+      if (this.preview && now - this.lastPreviewAt >= PREVIEW_INTERVAL_MS) {
+        const drawn = this.preview.draw({
+          video,
+          mirror: this.mirror,
+          time: this.reducedMotion ? 0 : t,
+          face: this.faceNormalized(rect),
+        });
+        if (drawn) this.lastPreviewAt = now;
+      }
+
       this.stats.frames++;
       this.stats.inferSum += inferMs;
       if (meta?.captureTime) {
         this.stats.latencySum += performance.now() - meta.captureTime;
         this.stats.latencyN++;
       }
-      this.session.frames++;
-      this.session.hands += this.state.hands.length;
-      if (this.state.hands.length > 0) this.lastHandAt = performance.now();
+      this.countFrame(t, inferMs);
     } else if (now - this.lastDraw >= 15) {
       // Between camera frames: keep animations smooth (≤ ~60 Hz), image unchanged.
       this.state = { ...this.state, active: this.gesture.animate(t) };
@@ -312,6 +395,32 @@ export class ViewfinderEngine {
     }
 
     this.flushStats(now);
+  }
+
+  /** Session counters and the coaching state for one tracked camera frame. */
+  private countFrame(t: number, inferMs: number) {
+    const s = this.session;
+    const dt = this.lastFrameT < 0 ? 0 : Math.min(0.1, Math.max(0, t - this.lastFrameT));
+    this.lastFrameT = t;
+    s.frames++;
+    s.hands += this.state.hands.length;
+    s.inferSum += inferMs;
+    if (this.state.hands.length > 0) this.lastHandAt = performance.now();
+    if (this.state.locked) {
+      s.lockedSeconds += dt;
+      s.lensSeconds[this.lens] += dt;
+      if (this.state.quad.length >= 3) {
+        const d = this.renderer.dpr;
+        s.maxFramePixels = Math.max(s.maxFramePixels, Math.abs(signedArea(this.state.quad)) * d * d);
+      }
+    }
+
+    for (const hand of this.state.hands) this.slotSeen[hand.slot] = t;
+    this.store.update({
+      leftHand: t - this.slotSeen.left < SLOT_HOLD_S,
+      rightHand: t - this.slotSeen.right < SLOT_HOLD_S,
+      hint: this.state.hint,
+    });
   }
 
   private handle(events: GestureEvent[], t: number) {
@@ -361,7 +470,6 @@ export class ViewfinderEngine {
     const lens = LENSES[this.lens];
     this.overlay.draw({
       state: s,
-      lensIndex: this.lens,
       lensName: lens.name,
       accent: lens.accent,
       time: t,
@@ -390,6 +498,25 @@ export class ViewfinderEngine {
     return u;
   }
 
+  /** The same face as fractions of the video rect, so the thumbnails can place it in their own picture. */
+  private faceNormalized(rect: { x: number; y: number; w: number; h: number }) {
+    const u = this.faceNormal;
+    const f = this.faceFollower.shape;
+    if (!f || rect.w <= 0 || rect.h <= 0) {
+      u.fill(0);
+      return u;
+    }
+    const nx = (x: number) => (x - rect.x) / rect.w;
+    const ny = (y: number) => (y - rect.y) / rect.h;
+    u.set([
+      nx(f.eyeRight.x), ny(f.eyeRight.y), nx(f.eyeLeft.x), ny(f.eyeLeft.y),
+      nx(f.center.x), ny(f.center.y), f.faceWidth / rect.w, f.eyeWidth / rect.w,
+      nx(f.chin.x), ny(f.chin.y), this.faceFollower.presence, 0,
+      nx(f.cheekRight.x), ny(f.cheekRight.y), nx(f.cheekLeft.x), ny(f.cheekLeft.y),
+    ]);
+    return u;
+  }
+
   private facePoints() {
     const f = this.faceFollower.shape;
     return f ? [f.eyeRight, f.eyeLeft, f.center, f.chin, f.cheekRight, f.cheekLeft] : [];
@@ -399,13 +526,18 @@ export class ViewfinderEngine {
     const elapsed = now - this.stats.since;
     if (elapsed < 500) return;
     const { frames, inferSum, latencySum, latencyN } = this.stats;
+    const s = this.session;
     this.store.update({
       fps: Math.round((frames * 1000) / elapsed),
       inferenceMs: frames ? Math.round((inferSum / frames) * 10) / 10 : 0,
       latencyMs: latencyN ? Math.round(latencySum / latencyN) : null,
       hands: this.state.hands.length,
-      framesTracked: this.session.frames,
-      handsFound: this.session.hands,
+      framesTracked: s.frames,
+      handsFound: s.hands,
+      facesFound: s.faces,
+      lockedSeconds: Math.round(s.lockedSeconds),
+      maxFramePixels: Math.round(s.maxFramePixels),
+      favouriteLens: this.favouriteLens(),
     });
     this.stats = { since: now, frames: 0, inferSum: 0, latencySum: 0, latencyN: 0 };
   }

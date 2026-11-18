@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft } from "lucide-react";
+import { motion } from "motion/react";
 import { useState, type Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -9,6 +10,8 @@ import { cn } from "@/lib/cn";
 import { LESSON_GROUPS, LESSONS, type Lesson } from "../engine/practice/lessons";
 import { WINDOWS, type TimingLevel } from "../engine/practice/scoring";
 import { INSTRUMENT_NAMES, type InstrumentId } from "../engine/settings";
+import { PIECE_LABEL } from "../engine/audio/instruments/drums";
+import { noteName } from "../engine/music";
 import { InstrumentGlyph } from "./instrument-glyph";
 
 const UNIT: Record<InstrumentId, [string, string]> = {
@@ -48,6 +51,72 @@ function LessonRow({ lesson, selected, best, onSelect }: { lesson: Lesson; selec
         </span>
       ) : null}
     </button>
+  );
+}
+
+/** A target's name: a note, a pad, a chord, or any pad. */
+const keyLabel = (k: string) => (k === "*" ? "Any" : (PIECE_LABEL[k] ?? (/^\d+$/.test(k) ? noteName(Number(k)) : k)));
+
+/** Beats shown in the preview. */
+const PREVIEW_BEATS = 8;
+
+/**
+ * The first two bars of the lesson on a beat grid: what you'll play and
+ * when, before you start. Drum and rhythm parts get a labelled row per pad;
+ * a tune is drawn as its shape, higher notes higher.
+ */
+function LessonPreview({ lesson }: { lesson: Lesson }) {
+  const shown = lesson.targets.filter((t) => t.beat < PREVIEW_BEATS);
+  const keys = [...new Set(shown.map((t) => t.key))];
+  const melody = keys.length > 3 && keys.every((k) => /^\d+$/.test(k));
+  const rows = melody ? 1 : keys.length;
+  const W = 340;
+  const gutter = melody ? 14 : 60;
+  const rowH = melody ? 64 : 24;
+  const top = melody ? 18 : 6;
+  const H = top + rows * rowH + 6;
+  const x = (beat: number) => gutter + (beat / PREVIEW_BEATS) * (W - gutter - 10);
+  const pitches = shown.map((t) => Number(t.key));
+  const lo = Math.min(...pitches);
+  const hi = Math.max(...pitches);
+  const y = (t: { key: string }) =>
+    melody ? top + rowH - 8 - ((Number(t.key) - lo) / Math.max(1, hi - lo)) * (rowH - 16) : top + keys.indexOf(t.key) * rowH + rowH / 2;
+  const beatsPerBar = lesson.sig === "3/4" ? 3 : 4;
+  const minGap = Math.min(...shown.slice(1).map((t, i) => x(t.beat) - x(shown[i].beat)).filter((g) => g > 0), Infinity);
+  const labelEvery = melody && minGap < 22 ? 2 : 1;
+  return (
+    <figure className="flex flex-col gap-2">
+      <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={`The first ${PREVIEW_BEATS} beats: ${shown.map((t) => keyLabel(t.key)).join(", ")}`}>
+        {Array.from({ length: PREVIEW_BEATS + 1 }, (_, b) => (
+          <line key={b} x1={x(b)} x2={x(b)} y1={2} y2={H - 2} className={b % beatsPerBar === 0 ? "stroke-fg/25" : "stroke-fg/10"} strokeWidth={1} />
+        ))}
+        {melody ? null
+          : keys.map((k, r) => (
+              <text key={k} x={gutter - 8} y={top + r * rowH + rowH / 2 + 4} textAnchor="end" className="fill-fg-muted text-[11px] font-semibold">
+                {keyLabel(k)}
+              </text>
+            ))}
+        {melody ? (
+          <polyline points={shown.map((t) => `${x(t.beat)},${y(t)}`).join(" ")} fill="none" className="stroke-game/45" strokeWidth={1.5} />
+        ) : null}
+        {shown.map((t, i) => (
+          <motion.g
+            key={`${lesson.id}-${i}`}
+            initial={{ opacity: 0, scale: 0.4 }}
+            animate={{ opacity: 1, scale: 1, transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: (t.beat / PREVIEW_BEATS) * 0.45 } }}
+            style={{ transformBox: "fill-box", transformOrigin: "center" }}
+          >
+            <circle cx={x(t.beat)} cy={y(t)} r={5.5} className="fill-game" />
+            {melody && i % labelEvery === 0 ? (
+              <text x={x(t.beat)} y={y(t) - 9} textAnchor="middle" className="fill-fg-muted text-[10px] font-semibold">
+                {keyLabel(t.key)}
+              </text>
+            ) : null}
+          </motion.g>
+        ))}
+      </svg>
+      <figcaption className="type-label text-fg-subtle">The first {PREVIEW_BEATS} beats</figcaption>
+    </figure>
   );
 }
 
@@ -117,6 +186,9 @@ export function LessonsView({
             <span className="font-semibold text-fg-muted">Tip: </span>
             {lesson.tip}
           </p>
+        </div>
+        <div className="rounded-md bg-sunken p-3">
+          <LessonPreview lesson={lesson} />
         </div>
         <div className="flex flex-col gap-2.5">
           <Segmented

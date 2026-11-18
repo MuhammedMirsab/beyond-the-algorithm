@@ -20,19 +20,14 @@ import { issueCopy } from "../../sensors/status";
 import { useCameraFrames, type CellView } from "../../sensors/use-camera-frames";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
-import {
-  IslandLabel,
-  LiveControl,
-  liveControlHasPrimary,
-  ModeSwitch,
-  STAGE_BOTTOM,
-  StageShell,
-  useIslandNotice,
-  type Source,
-} from "../parts";
+import { IslandLabel, ModeSwitch, STAGE_BOTTOM, StageShell, useIslandNotice, useLatch, type SensorGate, type Source, type Task } from "../parts";
 
 type View = "picture" | "numbers";
 const SIM_CELL = 5;
+/** Darker than this, the picture is a covered lens (the guess's own rule). */
+const DARK_BELOW = 0.12;
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 export function CameraExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
@@ -41,28 +36,30 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
   const [view, setView] = useState<View>("picture");
   const [light, setLight] = useState(50);
   const [focus, setFocus] = useState(30);
-  const { markTested } = ctx;
+  const { markTested, mirrored } = ctx;
 
   // The picture never leaves the phone. A linked booth screen gets only the numbers and the coarse dot grid.
   const link = useLink();
-  const mirrored = link.role === "host" && link.linked;
   const shared = useShared("camera", {
     mode,
     view,
     light,
     focus,
     status: cam.status,
-    stats: cam.stats,
+    stats: cam.stats ? { brightness: round2(cam.stats.brightness), sharpness: round2(cam.stats.sharpness) } : null,
     grid: cam.view ? { cols: cam.view.cols, rows: cam.view.rows, cells: Array.from(cam.view.cells, (v) => Math.round(v * 100)) } : null,
   });
-  const remoteView = useMemo<CellView | null>(
-    () =>
-      shared.grid ? { cols: shared.grid.cols, rows: shared.grid.rows, cells: Float32Array.from(shared.grid.cells, (v) => v / 100) } : null,
-    [shared.grid],
-  );
+  // The grid comes from another device: use it only if it has the shape the phone sends.
+  const remoteView = useMemo<CellView | null>(() => {
+    const grid = shared.grid;
+    if (!grid || !Array.isArray(grid.cells) || !Number.isInteger(grid.cols) || !Number.isInteger(grid.rows)) return null;
+    if (grid.cols < 1 || grid.rows < 1 || grid.cols * grid.rows !== grid.cells.length) return null;
+    return { cols: grid.cols, rows: grid.rows, cells: Float32Array.from(grid.cells, (v) => (typeof v === "number" ? v / 100 : 0)) };
+  }, [shared.grid]);
   const status = shared.status;
   const sim = shared.mode === "sim";
   const live = !sim && status === "live";
+  // The booth screen never shows a visitor's picture: only what the phone measured from it.
   const shownView: View = mirrored && !sim ? "numbers" : shared.view;
 
   useEffect(() => {
@@ -83,8 +80,9 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
     return { cells: cellGrid(simLuma, SCENE_WIDTH, SCENE_HEIGHT, cols, rows), cols, rows };
   }, [simLuma]);
 
-  const stats = sim ? simStats : shared.stats;
-  const cells = sim ? simView : mirrored ? remoteView : cam.view;
+  const measuring = sim || live;
+  const stats = !measuring ? null : sim ? simStats : shared.stats;
+  const cells = !measuring ? null : sim ? simView : mirrored ? remoteView : cam.view;
   const guess = stats ? cameraGuess(stats) : null;
 
   const switchMode = (next: Source) => {
@@ -95,6 +93,15 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
 
   const island = useIslandNotice(live, <IslandLabel tone="camera">Camera on</IslandLabel>);
 
+  const clear = useLatch(guess?.label === "Clear enough to read");
+  const dark = useLatch(stats != null && stats.brightness < DARK_BELOW);
+  const numbersSeen = useLatch(measuring && shownView === "numbers");
+  const tasks: Task[] = [
+    { id: "clear", label: sim ? "Make the photo sharp enough to read" : "Look at the camera", done: clear },
+    { id: "dark", label: sim ? "Turn the light right down" : "Cover the camera with a finger", done: dark },
+    { id: "numbers", label: "See what the phone gets", done: numbersSeen, action: { label: "Show me", onClick: () => setView("numbers") } },
+  ];
+
   const readout = [
     { label: "Brightness", value: stats ? `${Math.round(stats.brightness * 100)}%` : "Waiting" },
     { label: "Sharpness", value: stats ? `${Math.round(stats.sharpness * 100)} of 100` : "Waiting" },
@@ -103,12 +110,27 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
     { label: "Saved or uploaded", value: "Nothing" },
   ];
 
-  const tryIt = (
-    <div className="flex flex-col gap-5">
-      {caps.media ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
+  const gate: SensorGate | null = sim
+    ? null
+    : {
+        status,
+        startLabel: "Turn on camera",
+        startIcon: <Camera />,
+        onStart: cam.start,
+        stopLabel: "Turn off camera",
+        onStop: cam.stop,
+        issue: issueCopy("camera", cam.status),
+        onSimulate: () => switchMode("sim"),
+        privacy: link.controller
+          ? "The picture stays on this phone. The booth screen gets only a grid of brightness numbers."
+          : "The picture stays on this device. Nothing is recorded or uploaded.",
+      };
+
+  const controls = mirrored ? null : (
+    <div className="flex flex-col gap-4">
       {sim ? (
         <div className="flex flex-col gap-2">
-          <p className="type-body text-fg-muted">A made-up photo of a sign and a face. Make it readable.</p>
+          <p className="type-body text-fg-muted">A made-up photo of a sign and a face, measured exactly like a real one.</p>
           <SliderRow
             label="Light"
             value={light}
@@ -130,34 +152,18 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
             }}
           />
         </div>
-      ) : (
-        <LiveControl
-          status={status}
-          startLabel="Turn on camera"
-          startIcon={<Camera />}
-          stopLabel="Turn off camera"
-          onStart={cam.start}
-          onStop={cam.stop}
-          issue={issueCopy("camera", cam.status)}
-          onSimulate={() => switchMode("sim")}
-          privacy="The picture stays on this device. Nothing is recorded or uploaded."
-          liveHint={
-            <>
-              {caps.touch ? "Hold the phone at arm's length, then cover the camera with a finger." : "Look at the camera, then cover it with your hand."}{" "}
-              On a real phone, a green dot at the top of the screen means an app is using the camera right now.
-            </>
-          }
+      ) : null}
+      {measuring ? (
+        <Segmented
+          label="What the screen shows"
+          value={view}
+          onValueChange={setView}
+          options={[
+            { value: "picture", label: "Picture" },
+            { value: "numbers", label: "What the phone gets" },
+          ]}
         />
-      )}
-      <Segmented
-        label="What the screen shows"
-        value={view}
-        onValueChange={setView}
-        options={[
-          { value: "picture", label: "Picture" },
-          { value: "numbers", label: "What the phone gets" },
-        ]}
-      />
+      ) : null}
     </div>
   );
 
@@ -172,6 +178,8 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
         <StageShell title="Camera" source={sim ? "sim" : "live"} overlay className="bg-black">
           {sim ? (
             <SceneCanvas frame={simFrame} />
+          ) : mirrored ? (
+            status !== "live" ? <CameraOffNotice starting={status === "starting"} /> : null
           ) : (
             <>
               <video
@@ -194,11 +202,18 @@ export function CameraExperiment({ ctx }: ExperimentProps) {
           </div>
         </StageShell>
       }
-      tryIt={tryIt}
+      gate={gate}
+      modeSwitch={caps.media && !mirrored ? <ModeSwitch value={mode} onChange={switchMode} /> : null}
+      controls={controls}
+      tasks={tasks}
       readout={readout}
       guess={guess}
       guessWaiting="Turn on the camera to see what it can make out."
-      primaryTaken={!sim && liveControlHasPrimary(status)}
+      numbers={
+        stats
+          ? `brightness ${Math.round(stats.brightness * 100)}%   sharpness ${Math.round(stats.sharpness * 100)}${cells ? `   ${cells.cols} × ${cells.rows} numbers` : ""}`
+          : null
+      }
       summary={
         stats
           ? `Brightness ${Math.round(stats.brightness * 100)} percent, sharpness ${Math.round(stats.sharpness * 100)}. Guess: ${guess?.label ?? ""}.`

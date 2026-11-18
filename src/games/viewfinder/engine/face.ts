@@ -1,5 +1,6 @@
 import type { FaceLandmarker, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { MEDIAPIPE_MODELS, MEDIAPIPE_WASM } from "@/lib/mediapipe";
+import { FACE_IDX } from "./face-points";
 import type { Vec2 } from "./geometry";
 import { OneEuroFilter2D } from "./one-euro";
 import type { Delegate } from "./tracker";
@@ -16,20 +17,7 @@ import type { Delegate } from "./tracker";
  */
 
 /** MediaPipe face mesh indices (478-point model with irises). */
-const IDX = {
-  irisRight: 468, // the person's right eye (left side of an unmirrored picture)
-  irisLeft: 473,
-  eyeRightOuter: 33,
-  eyeRightInner: 133,
-  eyeLeftInner: 362,
-  eyeLeftOuter: 263,
-  forehead: 10,
-  chin: 152,
-  cheekRight: 50,
-  cheekLeft: 280,
-  sideRight: 234,
-  sideLeft: 454,
-} as const;
+const IDX = FACE_IDX;
 
 /** The handful of face points the Cartoon lens uses, in CSS px (display space). */
 export interface FaceShape {

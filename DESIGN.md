@@ -46,7 +46,7 @@ Dark "console" base so the cartridge colours carry the colour. One neutral ramp 
 | Game | Hue | Feeling |
 | --- | --- | --- |
 | Mind reader | pink 355 | the mind |
-| Viewfinder | coral 30 | camera "REC" red |
+| Finger frame | coral 30 | a photo frame |
 | Real or AI? | amber 62 | caution, inspect |
 | Rock, paper, scissors | yellow 98 | arcade |
 | Face Control | lime 130 | play |
@@ -78,7 +78,7 @@ Three families, each with one job.
 | Family | Role |
 | --- | --- |
 | **Mona Sans** (variable, width 75 to 125) | Everything people read. Display sizes run expanded (width 108 to 112) for a game-title feel. |
-| **Martian Mono** | The machine's voice: readouts, model facts, coordinates. Uppercase `type-label` only. Never headings, never sentences. |
+| **Martian Mono** | The machine's voice: readouts, model facts, coordinates. `type-label` only, in sentence case. Never headings, never sentences. |
 | **Doto** (dot matrix, rounded) | Scoreboard numerals, 40px and up. Never words below 32px. |
 
 Use the role utilities, never ad-hoc sizes:
@@ -94,7 +94,7 @@ Use the role utilities, never ad-hoc sizes:
 | `type-body` | 16 / 1.55 / 450 | default text |
 | `type-small` | 14 / 1.45 / 480 | helper text |
 | `type-caption` | 13 / 1.4 / 500 | metadata only |
-| `type-label` | 12 mono uppercase +0.06em | machine readouts |
+| `type-label` | 13 mono, sentence case | machine readouts |
 | `type-score` | 48 to 104 Doto | the number that matters |
 
 - No italics, anywhere. `em` and `i` are reset to normal. Emphasis is one weight step.
@@ -139,6 +139,7 @@ Every animation needs a job: feedback, where something came from, a state change
 - The delight budget is spent on rare moments: the reveal of a guess, a round result, the final score. Navigation, hover and lists stay quiet.
 - `MotionConfig reducedMotion="user"` is global. Under reduced motion, movement goes and opacity stays. Canvas and WebGL loops must check `prefers-reduced-motion` themselves.
 - Server-rendered HTML never starts invisible. Anything that can be on a page's first paint takes `initial={entrance({ opacity: 0 })}` (`@/lib/entrance`): no fade on the first paint, the usual fade on every later step. On slow venue Wi-Fi a plain `initial={{ opacity: 0 }}` is a blank screen until the JavaScript arrives.
+- Page motion without JavaScript: `.enter` rises in once on load (stagger with `--enter-delay`), `.reveal` eases in as it scrolls into view where scroll-driven animations exist (stagger a row with `--reveal-shift`: 0%, 12%, 24%...). Neither ever hides content where it can't run.
 
 ## 8. Components
 
@@ -147,7 +148,8 @@ Every animation needs a job: feedback, where something came from, a state change
 - `Button`, `ButtonLink`: variants `primary` (white), `game`, `secondary`, `ghost`, `danger`, `on-game`; sizes `sm` 36, `md` 44, `lg` 56; `arrow` adds the round arrow chip for the main action; `loading` keeps the label.
 - `IconButton`: requires `label`.
 - `Chip` (static info) and `ToggleChip` (filters). A chip never looks clickable.
-- `Card`, `Kbd`, `MachineLabel`, `StatusDot`.
+- `Card`, `Kbd` (a real key cap, `sm` or `md`), `MachineLabel`, `StatusDot`.
+- `KeyHints`: the one way to show keyboard controls, as a row (HUDs, under intro buttons) or a list (settings, help). Keys as glyphs: ←, →, Space, R.
 - `Progress` (transform-only bar), `StepDots`.
 - `ConfidenceBars`: how every game shows what the model thinks.
 - `Score` (Doto, NumberFlow; animates only on real changes), `Stat`.
@@ -157,7 +159,7 @@ Every animation needs a job: feedback, where something came from, a state change
 `src/components/game`:
 
 - `GameShell`: header with the way back, the game mark and title, an actions slot and the sound switch. `immersive` floats the header over full-bleed camera views.
-- `GameIntro`: the first screen of every game: skill, title, lead, 2 to 3 steps, one big button, requirement chips, small print, art on the game colour. Below desktop the art is a banner capped at 42% of the screen height, so the title and button stay in view.
+- `GameIntro`: the first screen of every game: skill, title, lead, 2 to 3 steps, one big button, requirement chips, small print, art on the game colour. Pass `<GameArt slug mode="intro" />`: the intro art plays a short looping breakdown of how the game works without any hover, pauses off screen, and holds a still frame under reduced motion. Below desktop the art is a banner capped at 42% of the screen height, so the title and button stay in view. `keys` puts the game's KeyHints right under the buttons, on devices with a mouse only.
 - `HowItWorks`: the reveal, numbered steps. Every game ends with one. Cards share rows (subgrid), so pictures, titles and text line up.
 - `NextPlayerButton` (header) and `NextPlayerIcon` (result screens): the one look for Next player across the arcade.
 - `ResultPanel`, `Notice`.
@@ -165,11 +167,18 @@ Every animation needs a job: feedback, where something came from, a state change
 - `Scoreboard`, `NameEntry` (skip always works) with `useLocalBoard()`.
 - `PhoneFrame`: a modern iPhone at true proportions. `PhoneHandoff`: QR code to continue on a phone.
 
+`src/components/hub` (the arcade's front page):
+
+- `SpectrumMark`: the logo, ten dots in hue order stacked 1, 2, 3, 4. Also the favicon and the share image.
+- `Globe`: the world as a few thousand points with the visitor pinned on it ("You are here" and a locating ping, CSS-anchored to cobe's marker). It sways gently around the visitor's dot; spin it away and it swings back to find you.
+- `WatchingMark`: the logo drawn large in the footer. Its dots open their eyes when it scrolls into view, follow the pointer and blink now and then; on touch screens they glance around. Still under reduced motion.
+- `GameTile`: one link per game, art on the game colour, hover moves the art.
+
 ## 9. Writing
 
 The rules from `humanizer` and the interface guidelines, applied:
 
-- Sentence case everywhere. Short sentences. Concrete nouns. Second person.
+- Sentence case everywhere, including labels, buttons, chips and text drawn on canvas. Never all caps: whole words in capitals read as generated filler. Short sentences. Concrete nouns. Second person.
 - Buttons start with a verb and name the result: "Start game", "Turn on camera", "Play again", "Next player", "Back to arcade".
 - Errors say what happened and what to do, next to the problem. No "Oops", no blame, no exclamation marks.
 - No em or en dashes in interface text. Use a comma, colon or full stop.

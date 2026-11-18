@@ -75,11 +75,11 @@ const LEVEL_1: LevelDef = {
     { x: 3040, y: 560 },
   ],
   signs: [
-    { x: 470, y: 560, icon: "tilt", text: "TILT TO ROLL" },
-    { x: 970, y: 560, icon: "mouth", text: "OPEN MOUTH · JUMP" },
-    { x: 1560, y: 490, icon: "gap", text: "JUMP THE GAP" },
-    { x: 2480, y: 560, icon: "spike", text: "AVOID SPIKES" },
-    { x: 3130, y: 560, icon: "gap", text: "HOP ACROSS" },
+    { x: 470, y: 560, icon: "tilt", text: "Tilt to roll" },
+    { x: 970, y: 560, icon: "mouth", text: "Open your mouth to jump" },
+    { x: 1560, y: 490, icon: "gap", text: "Jump the gap" },
+    { x: 2480, y: 560, icon: "spike", text: "Jump the spikes" },
+    { x: 3130, y: 560, icon: "gap", text: "Hop across" },
   ],
   finish: { x: 4450, y: 560 },
 };
@@ -146,9 +146,9 @@ const LEVEL_2: LevelDef = {
   ],
   pads: [{ x: 2180, y: 520 }],
   signs: [
-    { x: 1420, y: 500, icon: "mover", text: "RIDE ACROSS" },
-    { x: 2100, y: 520, icon: "pad", text: "SPRING UP" },
-    { x: 3110, y: 470, icon: "mover", text: "GOING UP" },
+    { x: 1420, y: 500, icon: "mover", text: "Ride across" },
+    { x: 2100, y: 520, icon: "pad", text: "Spring up" },
+    { x: 3110, y: 470, icon: "mover", text: "Going up" },
   ],
   finish: { x: 5650, y: 540 },
 };
@@ -226,10 +226,10 @@ const LEVEL_3: LevelDef = {
   ],
   boosts: [{ x: 360, y: 560 }],
   signs: [
-    { x: 230, y: 560, icon: "boost", text: "SPEED BOOST" },
-    { x: 2860, y: 520, icon: "saw", text: "TIME YOUR RUN" },
-    { x: 3250, y: 520, icon: "crusher", text: "WAIT FOR IT" },
-    { x: 5660, y: 560, icon: "finish", text: "FINAL RUN" },
+    { x: 230, y: 560, icon: "boost", text: "Speed boost" },
+    { x: 2860, y: 520, icon: "saw", text: "Time your run" },
+    { x: 3250, y: 520, icon: "crusher", text: "Wait for it" },
+    { x: 5660, y: 560, icon: "finish", text: "Final run" },
   ],
   finish: { x: 7700, y: 540 },
 };
@@ -238,7 +238,7 @@ export const LEVELS: LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3];
 
 /** Level signs describe face controls; someone on the keyboard reads the keys instead. */
 export function keyboardSign(sign: SignDef): SignDef {
-  if (sign.icon === "tilt") return { ...sign, icon: "arrows", text: "ARROWS TO ROLL" };
-  if (sign.icon === "mouth") return { ...sign, icon: "space", text: "SPACE · JUMP" };
+  if (sign.icon === "tilt") return { ...sign, icon: "arrows", text: "Arrow keys to roll" };
+  if (sign.icon === "mouth") return { ...sign, icon: "space", text: "Space to jump" };
   return sign;
 }

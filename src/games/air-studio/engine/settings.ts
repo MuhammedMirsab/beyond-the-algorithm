@@ -136,7 +136,9 @@ export const DEFAULTS: Settings = {
     volume: 0.9,
     fx: fx(0.22),
   },
-  drums: { pack: "acoustic", layout: "standard", sensOffset: 0, velocitySens: 70, volume: 0.9, fx: fx(0.12) },
+  // Booth default: five big pads (the original app's beginner kit, which most drum lessons use too). Big targets
+  // land a first hit in seconds; the full kit is one switch away in Settings.
+  drums: { pack: "acoustic", layout: "compact", sensOffset: 0, velocitySens: 70, volume: 0.9, fx: fx(0.12) },
   guitar: { preset: "acoustic", progression: "pop", chordSelect: "height", strumSens: 50, volume: 0.9, fx: fx(0.18) },
   synth: {
     level: "simple",

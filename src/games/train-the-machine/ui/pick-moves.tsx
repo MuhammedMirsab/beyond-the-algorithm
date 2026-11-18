@@ -1,8 +1,9 @@
 "use client";
 
-import { PencilLine } from "lucide-react";
+import { Hand, PencilLine, PersonStanding } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { cleanName } from "@/lib/leaderboard";
 import { cn } from "@/lib/cn";
 import { MOVE_NAME_MAX, PRESET_PAIRS, customHint, tidyMoveName, type MovePreset, type PresetPair } from "../engine/presets";
@@ -11,9 +12,15 @@ import { MoveGlyph } from "./figures";
 
 export type MovePair = [MovePreset, MovePreset];
 
+/** What recording will be like, and where to stand: decided before the camera opens. */
 function describe(pair: PresetPair) {
-  const moving = pair.moves.some((m) => classTraits(m.name).moving);
-  return moving ? `${pair.kind}. Each example records 1.5 seconds.` : `${pair.kind}. Each example is one moment.`;
+  const traits = pair.moves.map((m) => classTraits(m.name));
+  const moving = traits.some((t) => t.moving);
+  const hands = traits.every((t) => t.needsHands);
+  return {
+    line: moving ? `${pair.kind}, recorded as clips.` : `${pair.kind}, taken as snapshots.`,
+    stand: hands ? { icon: <Hand />, text: "Stay close" } : { icon: <PersonStanding />, text: "Stand back" },
+  };
 }
 
 /** Choose a ready-made pair (one tap) or name two moves. */
@@ -45,6 +52,7 @@ export function PickMoves({ onPick }: { onPick: (moves: MovePair) => void }) {
 }
 
 function PresetCard({ pair, onPick }: { pair: PresetPair; onPick: () => void }) {
+  const { line, stand } = describe(pair);
   return (
     <button
       type="button"
@@ -65,7 +73,11 @@ function PresetCard({ pair, onPick }: { pair: PresetPair; onPick: () => void }) 
           </span>
         ))}
       </span>
-      <span className="type-small mt-auto text-fg-subtle">{describe(pair)}</span>
+      {/* The chip last, so it lines up along the bottom of every card in a row. */}
+      <span className="mt-auto flex flex-col items-start gap-2.5">
+        <span className="type-small text-fg-subtle">{line}</span>
+        <Chip icon={stand.icon}>{stand.text}</Chip>
+      </span>
     </button>
   );
 }

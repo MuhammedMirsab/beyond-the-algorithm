@@ -27,6 +27,11 @@ export interface GuessRecord {
   /** Possible numbers before and after this guess. */
   before: number;
   after: number;
+  /** The smallest and largest possible numbers before this guess. */
+  low: number;
+  high: number;
+  /** The middle of what was possible before this guess: the guess that halves it. */
+  middle: number;
 }
 
 export interface AskedClue {
@@ -180,9 +185,15 @@ export function humanReducer(state: HumanState, action: HumanAction): HumanState
       if (repeat >= 0) return { ...state, event: { kind: "repeat-guess", index: repeat }, turn };
 
       const result: GuessResult = value === state.secret ? "correct" : state.secret > value ? "higher" : "lower";
-      const before = possibleNumbers(state).length;
-      const after = possibleNumbers({ ...state, guesses: [...state.guesses, { value, result, before, after: 0 }] }).length;
-      const guesses = [...state.guesses, { value, result, before, after }];
+      const possible = possibleNumbers(state);
+      const before = possible.length;
+      const window = {
+        low: possible[0] ?? value,
+        high: possible[possible.length - 1] ?? value,
+        middle: possible[Math.floor((possible.length - 1) / 2)] ?? value,
+      };
+      const after = possibleNumbers({ ...state, guesses: [...state.guesses, { value, result, before, after: 0, ...window }] }).length;
+      const guesses = [...state.guesses, { value, result, before, after, ...window }];
       const status: HumanStatus = result === "correct" ? "won" : guesses.length >= maxGuesses ? "lost" : "playing";
       return {
         ...state,

@@ -6,14 +6,24 @@ export function Card({ className, ...props }: ComponentProps<"div">) {
   return <div className={cn("rounded-lg bg-surface shadow-ring", className)} {...props} />;
 }
 
-/** A keyboard key, for shortcut hints on the booth laptop. */
-export function Kbd({ className, tone = "neutral", ...props }: ComponentProps<"kbd"> & { tone?: "neutral" | "on-game" }) {
+/**
+ * A keyboard key, drawn like a real key cap: a lighter top, a darker lip at
+ * the bottom. For shortcut hints on the booth laptop; `KeyHints` lays out several.
+ */
+export function Kbd({
+  className,
+  tone = "neutral",
+  size = "sm",
+  ...props
+}: ComponentProps<"kbd"> & { tone?: "neutral" | "on-game"; size?: "sm" | "md" }) {
   return (
     <kbd
       className={cn(
-        "inline-grid h-6 min-w-6 place-items-center rounded-xs px-1.5 font-mono text-[0.6875rem] font-medium",
-        tone === "neutral" && "bg-fg/10 text-fg-muted shadow-[inset_0_-1px_0_oklch(1_0_0/0.12)]",
-        tone === "on-game" && "bg-game-ink/[0.14] text-game-ink",
+        "inline-grid place-items-center font-mono font-medium leading-none",
+        size === "sm" ? "h-6 min-w-6 rounded-[6px] px-1.5 pb-px text-[0.6875rem]" : "h-8 min-w-8 rounded-[8px] px-2.5 pb-0.5 text-[0.8125rem]",
+        tone === "neutral" &&
+          "bg-raised text-fg shadow-[inset_0_1px_0_oklch(1_0_0/0.10),inset_0_-2px_0_oklch(0_0_0/0.45),0_0_0_1px_oklch(1_0_0/0.10)]",
+        tone === "on-game" && "bg-game-ink/[0.14] text-game-ink shadow-[inset_0_-2px_0_oklch(0_0_0/0.22)]",
         className,
       )}
       {...props}

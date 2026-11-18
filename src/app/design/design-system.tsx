@@ -13,7 +13,8 @@ import { Chip, ToggleChip } from "@/components/ui/chip";
 import { ConfidenceBars } from "@/components/ui/meter";
 import { Progress, StepDots } from "@/components/ui/progress";
 import { Score, Stat } from "@/components/ui/score";
-import { Kbd, MachineLabel } from "@/components/ui/surface";
+import { MachineLabel } from "@/components/ui/surface";
+import { KeyHints } from "@/components/ui/key-hints";
 import { Segmented, SliderRow, SwitchRow } from "@/components/ui/controls";
 import { Modal } from "@/components/ui/dialog";
 import { PhoneFrame } from "@/components/game/phone-frame";
@@ -153,9 +154,12 @@ export function DesignSystem() {
           <Chip tone="success">Correct</Chip>
           <Chip tone="danger">Fooled</Chip>
           <Chip tone="warning">Low light</Chip>
-          <span className="type-small inline-flex items-center gap-2 text-fg-subtle">
-            Press <Kbd>A</Kbd> or <Kbd>B</Kbd>
-          </span>
+          <KeyHints
+            items={[
+              { keys: ["A", "B"], label: "Pick a photo" },
+              { keys: ["Space"], label: "Zoom" },
+            ]}
+          />
         </div>
       </section>
 
@@ -176,6 +180,16 @@ export function DesignSystem() {
           <SliderRow label="Sensitivity" value={level} onValueChange={setLevel} valueText={`${level}%`} />
           <Progress value={level / 100} label="Loading model" tone="game" />
           <StepDots total={6} current={2} label="Round" />
+          <KeyHints
+            layout="list"
+            size="md"
+            items={[
+              { keys: ["←", "→"], label: "Roll" },
+              { keys: ["Space"], label: "Jump" },
+              { keys: ["1", "6"], label: "Pick an instrument", join: "to" },
+              { keys: ["Shift", "R"], label: "Restart", join: "plus" },
+            ]}
+          />
           <Button variant="secondary" onClick={() => setOpen(true)}>
             Open a modal
           </Button>

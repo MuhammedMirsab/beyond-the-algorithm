@@ -30,10 +30,13 @@ export interface LiveHands {
   delegate: string | null;
   /** Milliseconds since a hand was last seen (0 while one is in view). */
   noHandsFor: number;
-  readout: string;
+  /** Notes, hits or strums played on the current instrument. */
+  events: number;
+  /** Milliseconds since the last note (Infinity before the first), in half-second steps. */
+  sinceEvent: number;
 }
 
-const NONE: LiveHands = { left: false, right: false, size: null, fps: 0, brightness: 128, detectRate: 0, delegate: null, noHandsFor: 0, readout: "" };
+const NONE: LiveHands = { left: false, right: false, size: null, fps: 0, brightness: 128, detectRate: 0, delegate: null, noHandsFor: 0, events: 0, sinceEvent: Infinity };
 
 const same = (a: LiveHands, b: LiveHands) =>
   a.left === b.left &&
@@ -44,10 +47,11 @@ const same = (a: LiveHands, b: LiveHands) =>
   a.detectRate === b.detectRate &&
   a.delegate === b.delegate &&
   Math.floor(a.noHandsFor / 500) === Math.floor(b.noHandsFor / 500) &&
-  a.readout === b.readout;
+  a.events === b.events &&
+  a.sinceEvent === b.sinceEvent;
 
 /**
- * Hands, tracking numbers and the instrument readout, sampled a few times a
+ * Hands, tracking numbers and what the coach needs, sampled a few times a
  * second (the original app's useTrackerLive), so the interface never
  * re-renders per camera frame.
  */
@@ -63,6 +67,7 @@ export function useLive(session: StudioSession, hz = 6): LiveHands {
       if (hands.length) lastSeen = now;
       const sizes = hands.map((h) => h.size);
       const m = tracker.metrics;
+      const coach = session.coachState(now);
       const next: LiveHands = {
         left: fresh && !!f.Left,
         right: fresh && !!f.Right,
@@ -72,7 +77,8 @@ export function useLive(session: StudioSession, hz = 6): LiveHands {
         detectRate: Math.round(m.detectRate * 20) / 20,
         delegate: m.delegate,
         noHandsFor: hands.length ? 0 : now - lastSeen,
-        readout: session.instrumentController?.readout() ?? "",
+        events: coach.events,
+        sinceEvent: Number.isFinite(coach.sinceEvent) ? Math.floor(coach.sinceEvent / 500) * 500 : Infinity,
       };
       setLive((prev) => (same(prev, next) ? prev : next));
     };

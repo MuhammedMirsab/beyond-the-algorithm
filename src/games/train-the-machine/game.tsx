@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { GameArt } from "@/components/art/game-art";
-import { CameraProblem, CameraPrompt, CameraWaiting, ModelLoading } from "@/components/game/camera-notice";
+import { CameraProblem, CameraPrompt, CameraWaiting } from "@/components/game/camera-notice";
 import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
@@ -19,6 +19,7 @@ import { CollectStep } from "./ui/collect-step";
 import { EXAMPLES_NEEDED, MAX_EXAMPLES, NO_EXAMPLES, type Example, type Examples, type Move, type MoveId } from "./ui/model";
 import { PickMoves, type MovePair } from "./ui/pick-moves";
 import { ResultsStep } from "./ui/results-step";
+import { EMPTY_TALLY, tallyFrame, type TestTally } from "./ui/test-tally";
 import { TestStep } from "./ui/test-step";
 import { TrainStep } from "./ui/train-step";
 import { useCamera } from "./ui/use-camera";
@@ -29,8 +30,18 @@ type Step = "intro" | "pick" | "collect" | "train" | "test" | "results";
 const PRIVACY = "Video stays on this device. Your examples are wiped when the next player starts.";
 /** Camera steps reset after this long with nobody in view and no input. */
 const ABANDONED_MS = 90_000;
+/** New answers show at once; numbers on screen refresh this often. */
+const READOUT_MS = 150;
 
-const isMoveId = (id: string | null): id is MoveId => id === "a" || id === "b";
+/** Whether the browser will ask before opening the camera. "granted" means it won't. */
+async function cameraPermission(): Promise<PermissionState | "unknown"> {
+  try {
+    const status = await navigator.permissions?.query({ name: "camera" });
+    return status?.state ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 /**
  * Train the machine: pick two moves, show each one 5 times, train, test it,
@@ -44,7 +55,8 @@ export function TrainTheMachineGame() {
   const [active, setActive] = useState<MoveId>("a");
   const [trainMs, setTrainMs] = useState(0);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
-  const [results, setResults] = useState<{ best: Record<MoveId, number> | null; rate: number }>({ best: null, rate: 0 });
+  const [tally, setTally] = useState<TestTally>(EMPTY_TALLY);
+  const [results, setResults] = useState<{ tally: TestTally; rate: number }>({ tally: EMPTY_TALLY, rate: 0 });
   const [models, setModels] = useState<VisionModels | null>(null);
   const [modelFailed, setModelFailed] = useState(false);
   /** This visitor already said yes to the camera: later screens turn it on without asking again. */
@@ -60,7 +72,9 @@ export function TrainTheMachineGame() {
   const soundsRef = useRef<Sounds | null>(null);
   const loadRef = useRef(0);
   const shownRef = useRef({ key: "", at: 0 });
-  const bestRef = useRef<Record<MoveId, number> | null>(null);
+  const tallyRef = useRef<TestTally>(EMPTY_TALLY);
+  /** The browser already allows the camera here (the booth laptop, after the first visitor). */
+  const grantedRef = useRef(false);
 
   // The models stay loaded while the game is open and close after it unmounts.
   useEffect(() => holdVision(), []);
@@ -71,6 +85,18 @@ export function TrainTheMachineGame() {
     },
     [],
   );
+
+  // Ask the browser once per visitor whether the camera is already allowed, so
+  // a booth that said yes once never shows the "Turn on your camera" screen again.
+  useEffect(() => {
+    let live = true;
+    void cameraPermission().then((state) => {
+      if (live) grantedRef.current = state === "granted";
+    });
+    return () => {
+      live = false;
+    };
+  }, [visitor]);
 
   const sounds = useCallback(() => (soundsRef.current ??= new Sounds()), []);
 
@@ -99,16 +125,12 @@ export function TrainTheMachineGame() {
       hasHands: result.hasHands,
       motion: analyzeTemporalMotion(recent),
     });
-    if (next.scores.length) {
-      const best = { ...(bestRef.current ?? { a: 0, b: 0 }) };
-      for (const score of next.scores) if (isMoveId(score.id)) best[score.id] = Math.max(best[score.id], score.match);
-      bestRef.current = best;
-    }
-    // New answers show at once; numbers refresh a few times a second.
+    tallyRef.current = tallyFrame(tallyRef.current, next, now);
     const key = `${next.status}:${next.classId}:${next.reason}`;
-    if (key !== shownRef.current.key || now - shownRef.current.at >= 150) {
+    if (key !== shownRef.current.key || now - shownRef.current.at >= READOUT_MS) {
       shownRef.current = { key, at: now };
       setPrediction(next);
+      setTally(tallyRef.current);
     }
   };
 
@@ -135,6 +157,14 @@ export function TrainTheMachineGame() {
     void startCamera();
   };
 
+  /** Open the camera without asking when this visitor, or the browser, already said yes. */
+  const openCamera = () => {
+    if (cameraAllowed || grantedRef.current) {
+      setCameraAllowed(true);
+      void startCamera();
+    }
+  };
+
   const chooseMoves = () => {
     // Start loading the models while the visitor reads the cards.
     requestModels();
@@ -148,16 +178,12 @@ export function TrainTheMachineGame() {
     setActive("a");
     classifierRef.current?.reset();
     requestModels();
-    if (cameraAllowed) void startCamera();
+    openCamera();
     go("collect");
   };
 
   const addExample = (id: MoveId, example: Example) => {
-    const count = examples[id].length + 1;
     setExamples((prev) => ({ ...prev, [id]: [...prev[id], example].slice(0, MAX_EXAMPLES) }));
-    // Five of this move and the other still needs some: switch to it.
-    const other: MoveId = id === "a" ? "b" : "a";
-    if (count === EXAMPLES_NEEDED && examples[other].length < EXAMPLES_NEEDED) setActive(other);
   };
 
   const removeExample = (id: MoveId, exampleId: string) => {
@@ -175,21 +201,24 @@ export function TrainTheMachineGame() {
   };
 
   const startTest = () => {
-    bestRef.current = null;
+    tallyRef.current = EMPTY_TALLY;
     shownRef.current = { key: "", at: 0 };
+    setTally(EMPTY_TALLY);
     setPrediction(null);
-    if (camera.status !== "live") void startCamera();
+    if (camera.status !== "live") openCamera();
     go("test");
   };
 
   const addMore = () => {
     setPrediction(null);
-    if (camera.status !== "live") void startCamera();
+    // Straight to the move that needs examples most.
+    if (moves) setActive(examples.a.length <= examples.b.length ? "a" : "b");
+    if (camera.status !== "live") openCamera();
     go("collect");
   };
 
   const showResults = () => {
-    setResults({ best: bestRef.current, rate: perception.status.rate });
+    setResults({ tally: tallyRef.current, rate: perception.status.rate });
     stopCamera();
     go("results");
   };
@@ -213,14 +242,15 @@ export function TrainTheMachineGame() {
     classifierRef.current?.reset();
     classifierRef.current = null;
     resetPerception();
-    bestRef.current = null;
+    tallyRef.current = EMPTY_TALLY;
     shownRef.current = { key: "", at: 0 };
     setMoves(null);
     setExamples(NO_EXAMPLES);
     setActive("a");
     setTrainMs(0);
     setPrediction(null);
-    setResults({ best: null, rate: 0 });
+    setTally(EMPTY_TALLY);
+    setResults({ tally: EMPTY_TALLY, rate: 0 });
     setCameraAllowed(false);
     setVisitor((n) => n + 1);
     setStep("intro");
@@ -287,32 +317,25 @@ export function TrainTheMachineGame() {
         </Centered>
       );
     }
-    if (!models) {
-      return (
-        <Centered>
-          <ModelLoading label="Loading the body and hand models" progress={null} />
-        </Centered>
-      );
-    }
+    // The camera shows at once; the tracker finishes loading on top of it.
     return content;
   };
 
-  // The live test panel and the results screen carry their own Next player button.
-  const ready = camera.status === "live" && models !== null && !modelFailed && !perception.failed;
-  const ownNextPlayer = step === "results" || (step === "test" && ready);
+  const trackerReady = models !== null;
 
   let screen: ReactNode = null;
   if (step === "intro") {
     screen = (
       <GameIntro
         slug="train-the-machine"
-        art={<GameArt slug="train-the-machine" />}
+        art={<GameArt slug="train-the-machine" mode="intro" />}
         steps={[
-          { title: "Pick two moves to teach it" },
-          { title: `Show each move ${EXAMPLES_NEEDED} times` },
+          { title: "Pick two moves", text: "Like a wave and a clap, or hands up and hands down." },
+          { title: `Show each one ${EXAMPLES_NEEDED} times`, text: "One press records them in a row." },
           { title: "Test it, then try to fool it" },
         ]}
         primary={{ label: "Choose moves", onClick: chooseMoves }}
+        keys={[{ keys: ["Space"], label: "Record your moves, then test" }]}
         footnote={PRIVACY}
       />
     );
@@ -332,6 +355,7 @@ export function TrainTheMachineGame() {
         videoRef={videoRef}
         canvasRef={canvasRef}
         perception={perception}
+        trackerReady={trackerReady}
         sounds={sounds}
       />,
     );
@@ -342,15 +366,16 @@ export function TrainTheMachineGame() {
       <TestStep
         moves={moves}
         prediction={prediction}
+        tally={tally}
         threshold={DEFAULT_REJECTION_THRESHOLD}
         stream={camera.stream}
         videoRef={videoRef}
         canvasRef={canvasRef}
         status={perception.status}
+        trackerReady={trackerReady}
         onResults={showResults}
         onAddMore={addMore}
         onStartOver={startOver}
-        onNextPlayer={nextPlayer}
       />,
     );
   } else if (moves && step === "results") {
@@ -358,7 +383,7 @@ export function TrainTheMachineGame() {
       <ResultsStep
         moves={moves}
         examples={examples}
-        best={results.best}
+        tally={results.tally}
         rate={results.rate}
         threshold={DEFAULT_REJECTION_THRESHOLD}
         onNextPlayer={nextPlayer}
@@ -372,9 +397,8 @@ export function TrainTheMachineGame() {
     <GameShell
       slug="train-the-machine"
       sound
-      actions={
-        step !== "intro" && !ownNextPlayer ? <NextPlayerButton onClick={nextPlayer} /> : null
-      }
+      // The results screen carries its own Next player button.
+      actions={step !== "intro" && step !== "results" ? <NextPlayerButton onClick={nextPlayer} /> : null}
     >
       <motion.div
         key={`${visitor}-${step}`}

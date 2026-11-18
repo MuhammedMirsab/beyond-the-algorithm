@@ -26,43 +26,43 @@ const SCRIPTS: Record<Exclude<DemoMode, "mesh">, { length: number; keys: Key[] }
   hero: {
     length: 9.4,
     keys: [
-      { t: 0, tilt: 0, mouth: 0, label: "LOOK STRAIGHT · BALL WAITS" },
-      { t: 1.0, tilt: 16, label: "TILT RIGHT → ROLL RIGHT" },
-      { t: 2.9, mouth: 1, label: "OPEN MOUTH → JUMP" },
+      { t: 0, tilt: 0, mouth: 0, label: "Look straight, the ball waits" },
+      { t: 1.0, tilt: 16, label: "Tilt right to roll right" },
+      { t: 2.9, mouth: 1, label: "Open your mouth to jump" },
       { t: 3.45, mouth: 0 },
-      { t: 4.4, label: "TILT RIGHT → ROLL RIGHT" },
-      { t: 4.9, tilt: 0, label: "BACK TO NEUTRAL → SLOW DOWN" },
-      { t: 6.2, tilt: -16, label: "TILT LEFT → ROLL LEFT" },
-      { t: 8.2, tilt: 0, label: "LOOK STRAIGHT · BALL WAITS" },
+      { t: 4.4, label: "Tilt right to roll right" },
+      { t: 4.9, tilt: 0, label: "Look straight to slow down" },
+      { t: 6.2, tilt: -16, label: "Tilt left to roll left" },
+      { t: 8.2, tilt: 0, label: "Look straight, the ball waits" },
     ],
   },
   neutral: {
     length: 4,
-    keys: [{ t: 0, tilt: 0, mouth: 0, label: "LOOK STRAIGHT" }],
+    keys: [{ t: 0, tilt: 0, mouth: 0, label: "Look straight" }],
   },
   "tilt-left": {
     length: 4.2,
     keys: [
-      { t: 0, tilt: 0, mouth: 0, label: "NEUTRAL" },
-      { t: 0.9, tilt: -17, label: "TILT LEFT" },
-      { t: 3.0, tilt: 0, label: "NEUTRAL" },
+      { t: 0, tilt: 0, mouth: 0, label: "Straight" },
+      { t: 0.9, tilt: -17, label: "Tilt left" },
+      { t: 3.0, tilt: 0, label: "Straight" },
     ],
   },
   "tilt-right": {
     length: 4.2,
     keys: [
-      { t: 0, tilt: 0, mouth: 0, label: "NEUTRAL" },
-      { t: 0.9, tilt: 17, label: "TILT RIGHT" },
-      { t: 3.0, tilt: 0, label: "NEUTRAL" },
+      { t: 0, tilt: 0, mouth: 0, label: "Straight" },
+      { t: 0.9, tilt: 17, label: "Tilt right" },
+      { t: 3.0, tilt: 0, label: "Straight" },
     ],
   },
   mouth: {
     length: 3.6,
     keys: [
-      { t: 0, tilt: 0, mouth: 0, label: "MOUTH CLOSED" },
-      { t: 1.0, mouth: 1, label: "MOUTH OPEN → JUMP" },
+      { t: 0, tilt: 0, mouth: 0, label: "Mouth closed" },
+      { t: 1.0, mouth: 1, label: "Mouth open, jump" },
       { t: 1.6, mouth: 0 },
-      { t: 2.6, label: "MOUTH CLOSED" },
+      { t: 2.6, label: "Mouth closed" },
     ],
   },
 };
@@ -178,7 +178,7 @@ const LIGHT: DemoColors = { bg: "#ECE6DC", ink: "#16130F", faint: "rgba(22,19,15
 
 export interface DemoOptions {
   colors?: Partial<DemoColors>;
-  /** Draw the scripted TILT / MOUTH numbers. Off where a number could be mistaken for a measurement. */
+  /** Draw the scripted tilt and mouth numbers. Off where a number could be mistaken for a measurement. */
   readouts?: boolean;
 }
 
@@ -396,14 +396,14 @@ export class FaceDemo {
     const pad = Math.max(10, w * 0.05);
     if (this.mode === "mouth") {
       const ratio = (0.04 + pose.mouth * 0.32).toFixed(2);
-      ctx.fillText(`MOUTH ${ratio}`, x + pad, y + pad);
+      ctx.fillText(`Mouth ${ratio}`, x + pad, y + pad);
     } else {
       const sign = pose.tilt > 0.5 ? "+" : pose.tilt < -0.5 ? "−" : " ";
-      ctx.fillText(`TILT ${sign}${Math.abs(pose.tilt).toFixed(0).padStart(2, "0")}°`, x + pad, y + pad);
-      if (hero) ctx.fillText(`MOUTH ${(0.04 + pose.mouth * 0.32).toFixed(2)}`, x + pad, y + pad + fs * 1.4);
+      ctx.fillText(`Tilt ${sign}${Math.abs(pose.tilt).toFixed(0).padStart(2, "0")}°`, x + pad, y + pad);
+      if (hero) ctx.fillText(`Mouth ${(0.04 + pose.mouth * 0.32).toFixed(2)}`, x + pad, y + pad + fs * 1.4);
     }
     ctx.textAlign = "right";
-    ctx.fillText(hero ? "YOU" : "", x + w - pad, y + pad);
+    ctx.fillText(hero ? "You" : "", x + w - pad, y + pad);
     ctx.textAlign = "left";
     ctx.restore();
   }
@@ -664,9 +664,9 @@ export class FaceDemo {
     ctx.font = canvasFont(500, Math.max(10, Math.round(s * 0.075)));
     ctx.fillStyle = colors.label;
     ctx.textBaseline = "bottom";
-    ctx.fillText(`ROLL ${tilt >= 0 ? "+" : "−"}${Math.abs(tilt).toFixed(1)}°`, w * 0.08, h * 0.95);
+    ctx.fillText(`Roll ${tilt >= 0 ? "+" : "−"}${Math.abs(tilt).toFixed(1)}°`, w * 0.08, h * 0.95);
     ctx.textAlign = "right";
-    ctx.fillText(`MOUTH ${(0.04 + mouth * 0.32).toFixed(2)}`, w * 0.92, h * 0.95);
+    ctx.fillText(`Mouth ${(0.04 + mouth * 0.32).toFixed(2)}`, w * 0.92, h * 0.95);
     ctx.textAlign = "left";
   }
 }

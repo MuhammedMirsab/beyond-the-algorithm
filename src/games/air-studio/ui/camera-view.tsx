@@ -9,10 +9,18 @@ import type { TrackerState } from "../engine/tracking/tracker";
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
-/** Fades in after a short delay, so a camera that is already allowed never flashes a prompt. */
-function Delayed({ children, delay = 0.35 }: { children: ReactNode; delay?: number }) {
+/**
+ * Fades in after a short delay, so a camera that is already allowed never
+ * flashes a prompt. On a card, because the kit is already waiting behind it.
+ */
+function Card({ children, delay = 0.35 }: { children: ReactNode; delay?: number }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: EASE_OUT, delay }} className="flex w-full justify-center">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: EASE_OUT, delay }}
+      className="flex w-full max-w-[30rem] justify-center rounded-xl bg-canvas/90 px-6 py-7 shadow-float"
+    >
       {children}
     </motion.div>
   );
@@ -27,18 +35,24 @@ export function CameraView({ state, onRetry, onMouse }: { state: TrackerState; o
   );
   if (state.status === "waiting") {
     return (
-      <Delayed>
+      <Card>
         <CameraWaiting actions={mouse} />
-      </Delayed>
+      </Card>
     );
   }
   if (state.status === "loading") {
     return (
-      <Delayed>
-        <ModelLoading label="Loading hand tracking" detail="21 points per hand · 2 hands" progress={state.progress} actions={mouse} />
-      </Delayed>
+      <Card>
+        <ModelLoading label="Starting hand tracking" detail="21 points per hand · 2 hands" progress={state.progress} actions={mouse} />
+      </Card>
     );
   }
-  if (state.status === "error") return <CameraProblem issue={state.issue} onRetry={onRetry} alternative={mouse} />;
+  if (state.status === "error") {
+    return (
+      <Card delay={0}>
+        <CameraProblem issue={state.issue} onRetry={onRetry} alternative={mouse} />
+      </Card>
+    );
+  }
   return null;
 }

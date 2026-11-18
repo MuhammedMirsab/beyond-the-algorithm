@@ -5,28 +5,27 @@ import { useEffect, useState } from "react";
 import { Segmented } from "@/components/ui/controls";
 import { cn } from "@/lib/cn";
 import { TECH_DETAILS, WIFI_PLACES, type WifiNetwork, type WifiPlaceId } from "../../data/connection";
-import { connectionGuess, connectionLabel, speedClass } from "../../engine/connection";
+import { connectionGuess, connectionLabel, speedClass, type ConnectionInfo } from "../../engine/connection";
 import type { Guess } from "../../engine/math";
-import { useLink, useShared } from "../../link/link";
+import { useShared } from "../../link/link";
 import { useConnection } from "../../sensors/use-connection";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
-import { ModeSwitch, STAGE_BOTTOM, StageScore, StageShell, type ReadoutRow, type Source } from "../parts";
+import { ModeSwitch, STAGE_BOTTOM, StageScore, StageShell, useLatch, type ReadoutRow, type Source, type Task } from "../parts";
 
 export function ConnectionExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
   const [mode, setMode] = useState<Source>(caps.connection ? "live" : "sim");
   const local = useConnection(mode !== "sim");
   const [placeId, setPlaceId] = useState<WifiPlaceId>("home");
-  const { markTested } = ctx;
+  const [visited, setVisited] = useState<WifiPlaceId[]>([]);
+  const { markTested, mirrored } = ctx;
 
-  const link = useLink();
-  const mirrored = link.role === "host" && link.linked;
   // A linked phone's connection, not the laptop's.
   const shared = useShared("connection", { mode, info: local.info, online: local.online, placeId });
-  const conn = { info: shared.info, online: shared.online };
+  const info: ConnectionInfo | null = shared.info && typeof shared.info === "object" ? shared.info : null;
+  const online = shared.online !== false;
   const sim = shared.mode === "sim";
-  const info = conn.info;
   const live = !sim && info != null;
 
   useEffect(() => {
@@ -34,6 +33,24 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
   }, [live, markTested]);
 
   const place = WIFI_PLACES.find((p) => p.id === shared.placeId) ?? WIFI_PLACES[0];
+
+  const pick = (next: WifiPlaceId) => {
+    setMode("sim");
+    setPlaceId(next);
+    setVisited((list) => (list.includes(next) ? list : [...list, next]));
+    markTested();
+  };
+
+  const read = useLatch(live);
+  const tasks: Task[] = sim
+    ? [
+        { id: "pick", label: "Pick where you are", done: visited.length > 0 },
+        { id: "all", label: "Try all three places", done: visited.length >= WIFI_PLACES.length },
+      ]
+    : [
+        { id: "read", label: caps.touch || mirrored ? "Read this phone's connection" : "Read this laptop's connection", done: read },
+        { id: "names", label: "See what Wi-Fi names give away", done: visited.length > 0, action: { label: "Show me", onClick: () => pick("school") } },
+      ];
 
   let guess: Guess | null;
   let readout: ReadoutRow[];
@@ -45,9 +62,9 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
       { label: "Open networks", value: String(place.networks.filter((n) => !n.locked).length) },
     ];
   } else {
-    guess = info ? connectionGuess(info, conn.online) : null;
+    guess = info ? connectionGuess(info, online) : null;
     readout = [
-      { label: "Online", value: conn.online ? "Yes" : "No" },
+      { label: "Online", value: online ? "Yes" : "No" },
       { label: "Connected by", value: connectionLabel(info?.type) ?? "Not shared" },
       { label: "Speed class", value: speedClass(info?.effectiveType) ?? "Not shared" },
       { label: "Download speed", value: info?.downlink != null ? `About ${info.downlink} Mbps` : "Not shared" },
@@ -55,31 +72,16 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
     ];
   }
 
-  const tryIt = (
-    <div className="flex flex-col gap-5">
-      {caps.connection ? <ModeSwitch value={mode} onChange={setMode} /> : null}
-      {sim ? (
-        <div className="flex flex-col gap-3">
-          <p className="type-body text-fg-muted">
-            A website can&apos;t see Wi-Fi names, but apps can. Pick where you are and see what the names give away.
-          </p>
-          <Segmented
-            label="Where you are"
-            value={placeId}
-            onValueChange={(next) => {
-              setPlaceId(next);
-              markTested();
-            }}
-            options={WIFI_PLACES.map((p) => ({ value: p.id, label: p.label }))}
-          />
-        </div>
-      ) : (
-        <p className="type-body text-fg-muted">
-          These are this {caps.touch || mirrored ? "phone's" : "laptop's"} real connection readings. Any website can read them, without asking. The
-          browser rounds them on purpose.
-        </p>
-      )}
+  const controls = mirrored ? null : sim ? (
+    <div className="flex flex-col gap-3">
+      <p className="type-body text-fg-muted">A website can&apos;t see Wi-Fi names, but apps can. Pick where you are and see what the names give away.</p>
+      <Segmented label="Where you are" value={placeId} onValueChange={pick} options={WIFI_PLACES.map((p) => ({ value: p.id, label: p.label }))} />
     </div>
+  ) : (
+    <p className="type-body text-fg-muted">
+      These are this {caps.touch ? "phone's" : "laptop's"} real connection readings. Any website can read them, without asking. The browser rounds them on
+      purpose.
+    </p>
   );
 
   return (
@@ -88,13 +90,21 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
       live={live}
       source={sim ? "sim" : "live"}
       stageLabel={sim ? "A list of Wi-Fi networks nearby" : "Your connection"}
-      stage={sim ? <WifiStage networks={place.networks} guess={place.guess} /> : <ConnectionStage info={info} online={conn.online} />}
-      tryIt={tryIt}
+      stage={sim ? <WifiStage networks={place.networks} guess={place.guess} /> : <ConnectionStage info={info} online={online} />}
+      modeSwitch={caps.connection && !mirrored ? <ModeSwitch value={mode} onChange={setMode} /> : null}
+      controls={controls}
+      tasks={tasks}
       readout={readout}
       guess={guess}
       guessWaiting="Reading your connection."
+      numbers={
+        sim
+          ? `${place.networks.length} networks   strongest ${place.networks[0].name}`
+          : info
+            ? `${connectionLabel(info.type) ?? "connected"}${info.downlink != null ? `   about ${info.downlink} Mbps` : ""}${info.rtt != null ? `   ${info.rtt} ms` : ""}`
+            : null
+      }
       extra={<Radios />}
-      primaryTaken={false}
       summary={guess ? `Guess: ${guess.label}.` : "Reading your connection."}
     />
   );
@@ -124,14 +134,14 @@ function WifiStage({ networks, guess }: { networks: WifiNetwork[]; guess: string
         </ul>
       </div>
       <div className={cn("mx-4 flex flex-col gap-1 rounded-lg bg-game px-4 py-3.5", "mb-[calc(var(--phone-safe-bottom,0px)+14px)]")}>
-        <span className="type-label text-game-ink/80">Its guess</span>
+        <span className="type-label text-game-ink/80">It thinks</span>
         <span className="type-title-3 text-game-ink">{guess}</span>
       </div>
     </StageShell>
   );
 }
 
-function ConnectionStage({ info, online }: { info: ReturnType<typeof useConnection>["info"]; online: boolean }) {
+function ConnectionStage({ info, online }: { info: ConnectionInfo | null; online: boolean }) {
   return (
     <StageShell title="Connection" source="live" className="dot-field">
       <div className="flex flex-1 flex-col justify-center gap-6 px-5">

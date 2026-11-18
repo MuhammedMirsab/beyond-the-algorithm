@@ -11,6 +11,7 @@ import { resetSettings, settings } from "../engine/state/settings";
 import type { CalibMeasured, CalibrationProfile } from "../engine/vision/calibration";
 import { attachStream, CameraError, openCamera, stopStream } from "../engine/vision/camera";
 import { FaceController, type ControlSnapshot } from "../engine/vision/face-controller";
+import { FaceStats, type FaceStatsSummary } from "../engine/vision/face-stats";
 import {
   holdFaceTracker,
   loadFaceTracker,
@@ -64,6 +65,8 @@ export interface SessionView {
   machine: MachineState;
   /** 3, 2, 1, then 0 for "Go". Null when no countdown is showing. */
   countdown: number | null;
+  /** Whether the countdown starts a level (shown on its title card) or resumes one (shown on its own). */
+  countdownKind: "begin" | "resume" | null;
   toast: { id: number; text: string } | null;
   model: ModelState;
   settingsOpen: boolean;
@@ -71,6 +74,8 @@ export interface SessionView {
   tracking: TrackingStats;
   /** This visitor's best time per level index (only levels they have finished). */
   bestTimes: Partial<Record<number, number>>;
+  /** How this visitor tilted and opened their mouth while playing (set with each run's summary). */
+  faceStats: FaceStatsSummary | null;
 }
 
 const INITIAL_MODEL: ModelState = { status: "loading", stage: "download", fraction: 0, loaded: 0, total: 0, delegate: null };
@@ -79,23 +84,26 @@ const INITIAL_TRACKING: TrackingStats = { fps: null, delegate: null, points: nul
 const SERVER_VIEW: SessionView = {
   machine: initialState(),
   countdown: null,
+  countdownKind: null,
   toast: null,
   model: INITIAL_MODEL,
   settingsOpen: false,
   calibration: null,
   tracking: INITIAL_TRACKING,
   bestTimes: {},
+  faceStats: null,
 };
 
 /** Keyboard codes, plus the on-screen buttons used on touch devices. */
 const STEER_KEYS: Record<string, number> = { ArrowLeft: -1, KeyA: -1, ArrowRight: 1, KeyD: 1, TouchLeft: -1, TouchRight: 1 };
 /** Seconds of steering (past 45%) that tick off a practice task. */
 const PRACTICE_HOLD_S = 0.3;
-const PRACTICE_STEER = 0.45;
+export const PRACTICE_STEER = 0.45;
 const COUNTDOWN_STEP_MS = 560;
 const GO_SHOWN_MS = 420;
 const TOAST_MS = 1800;
-const PRACTICE_DONE_MS = 1600;
+/** After the last practice move: long enough to enjoy the tick, short enough to keep the pace. */
+const PRACTICE_DONE_MS = 1100;
 
 function issueFrom(err: unknown): Issue {
   if (err instanceof CameraError) {
@@ -129,7 +137,9 @@ export class FaceControlSession {
   readonly input = new GameInput();
   readonly run: RunState = newRun();
   readonly events = new Emitter<GameEvents>();
-  readonly ctx: GameContext = { input: this.input, run: this.run, events: this.events, view: { scrollX: 0, active: false } };
+  readonly ctx: GameContext = { input: this.input, run: this.run, events: this.events, view: { scrollX: 0, active: false, progress: 0 } };
+  /** How this visitor actually tilts and opens their mouth (memory only). */
+  private readonly stats = new FaceStats();
 
   private machine: MachineState = SERVER_VIEW.machine;
   private view: SessionView = SERVER_VIEW;
@@ -159,6 +169,7 @@ export class FaceControlSession {
   private countdownTimer = 0;
   private toastTimer = 0;
   private practiceTimer = 0;
+  private autoStartTimer = 0;
   private toastId = 0;
   private disposers: (() => void)[] = [];
   private readonly keysDown = new Set<string>();
@@ -287,6 +298,7 @@ export class FaceControlSession {
     this.cancelCountdown();
     window.clearTimeout(this.toastTimer);
     window.clearTimeout(this.practiceTimer);
+    window.clearTimeout(this.autoStartTimer);
     this.stopCamera();
     this.surface?.destroy();
     this.surface = null;
@@ -346,9 +358,13 @@ export class FaceControlSession {
 
   /** The calibration screen finished: keep this visitor's numbers (in memory only) and move on. */
   finishCalibration = (result: Omit<CalibrationResult, "aspect">) => {
-    this.profile = result.profile;
-    this.controller?.setProfile(result.profile);
-    this.setView({ calibration: { ...result, aspect: this.surface?.aspect ?? 4 / 3 } });
+    // A face check measures where the head rests. Checking again mid-game keeps
+    // the steering ranges practice already learnt from this visitor.
+    const previous = this.profile;
+    const profile = previous ? { ...result.profile, rangeLeft: previous.rangeLeft, rangeRight: previous.rangeRight } : result.profile;
+    this.profile = profile;
+    this.controller?.setProfile(profile);
+    this.setView({ calibration: { ...result, profile, aspect: this.surface?.aspect ?? 4 / 3 } });
     this.dispatch({ type: "calibrated" });
   };
 
@@ -381,6 +397,9 @@ export class FaceControlSession {
 
   private onPhaseChange(prev: MachineState, next: MachineState) {
     this.syncStage();
+    if (prev.phase === "level-intro") window.clearTimeout(this.autoStartTimer);
+    // Practice is over: the tilt the visitor held there becomes their steering range.
+    if (prev.phase === "practice" && next.phase === "level-intro") this.applyPracticeTilt();
     // Build the world (asleep, hidden) while the visitor calibrates, so practice opens on it.
     if (next.phase === "calibrate") void this.ensureHost();
     audio.duck(next.phase === "paused" || next.phase === "face-lost");
@@ -438,6 +457,10 @@ export class FaceControlSession {
         break;
       case "cancel-countdown":
         this.cancelCountdown();
+        break;
+      case "auto-start":
+        window.clearTimeout(this.autoStartTimer);
+        this.autoStartTimer = window.setTimeout(() => this.dispatch({ type: "start-level" }), effect.ms);
         break;
       case "practice-finish-soon":
         window.clearTimeout(this.practiceTimer);
@@ -498,9 +521,11 @@ export class FaceControlSession {
       delegate: this.tracker?.delegate ?? null,
       points: this.lastPoints,
     };
-    this.setView({ tracking });
+    // Only a visitor who used their face has face numbers to show.
+    this.setView({ tracking, faceStats: this.view.calibration ? this.stats.summary() : null });
     return {
       outcome,
+      furthest: outcome === "victory" ? 1 : run.furthest,
       score: run.score,
       previousBest: previous,
       isBest,
@@ -517,6 +542,8 @@ export class FaceControlSession {
     clearRecords();
     resetSettings();
     this.profile = null;
+    this.stats.reset();
+    window.clearTimeout(this.autoStartTimer);
     Object.assign(this.run, newRun());
     this.sparksBanked = 0;
     this.livesAtLevelStart = START_LIVES;
@@ -527,7 +554,7 @@ export class FaceControlSession {
     this.fpsCount = 0;
     this.lastPoints = null;
     window.clearTimeout(this.practiceTimer);
-    this.setView({ calibration: null, tracking: INITIAL_TRACKING, settingsOpen: false, bestTimes: {} });
+    this.setView({ calibration: null, tracking: INITIAL_TRACKING, settingsOpen: false, bestTimes: {}, faceStats: null });
   }
 
   private readBestTimes(): Partial<Record<number, number>> {
@@ -566,30 +593,31 @@ export class FaceControlSession {
   private startCountdown(from: number) {
     this.cancelCountdown();
     let n = from;
+    const kind = this.machine.countdown?.then ?? "begin";
     const tick = () => {
       if (!this.started) return;
       if (n > 0) {
-        this.setView({ countdown: n });
+        this.setView({ countdown: n, countdownKind: kind });
         audio.play("tick");
         n -= 1;
         this.countdownTimer = window.setTimeout(tick, COUNTDOWN_STEP_MS);
         return;
       }
-      this.setView({ countdown: 0 });
+      this.setView({ countdown: 0, countdownKind: kind });
       audio.play("go");
       this.input.clear();
       this.updateSteer();
       // A mouth still open from "open to start" must close before it can jump.
       this.controller?.rearm(true);
       this.dispatch({ type: "countdown-done" });
-      this.countdownTimer = window.setTimeout(() => this.setView({ countdown: null }), GO_SHOWN_MS);
+      this.countdownTimer = window.setTimeout(() => this.setView({ countdown: null, countdownKind: null }), GO_SHOWN_MS);
     };
     tick();
   }
 
   private cancelCountdown() {
     window.clearTimeout(this.countdownTimer);
-    if (this.view.countdown !== null) this.setView({ countdown: null });
+    if (this.view.countdown !== null) this.setView({ countdown: null, countdownKind: null });
   }
 
   // ---------------------------------------------------------------------------
@@ -718,6 +746,11 @@ export class FaceControlSession {
       this.fpsCount += 1;
     }
     this.frameListeners.forEach((fn) => fn(s));
+    const phase = this.machine.phase;
+    if (s.calibrated && (phase === "practice" || phase === "playing")) {
+      // Raw tilt is the smoothed tilt shifted by what the filter took out of the eye-line angle.
+      this.stats.feed({ t: s.t, hasFace: s.hasFace, tilt: s.tilt, tiltRaw: s.tilt + s.roll - s.rollRaw, mouth: s.mouth, mouthOpen: s.mouthOpen });
+    }
 
     if (this.machine.phase === "practice") {
       // Seconds of steering, measured in real time so slow tracking doesn't ask for a longer hold.
@@ -729,6 +762,25 @@ export class FaceControlSession {
     }
     this.lastFrameT = s.t;
     this.dispatch({ type: "frame", hasFace: s.hasFace, lost: s.status === "lost" });
+  }
+
+  /**
+   * The steering range for each side, from the tilt the visitor held in
+   * practice (the rule the old tilt calibration steps used). A side they never
+   * tilted keeps the default.
+   */
+  private applyPracticeTilt() {
+    const profile = this.profile;
+    if (!profile) return;
+    const left = this.stats.reach("left");
+    const right = this.stats.reach("right");
+    if (left === null && right === null) return;
+    const tuned = { ...profile, rangeLeft: left ?? profile.rangeLeft, rangeRight: right ?? profile.rangeRight };
+    this.profile = tuned;
+    // Assigned directly: setProfile() would also re-arm the jump.
+    if (this.controller) this.controller.profile = { ...tuned };
+    const calibration = this.view.calibration;
+    if (calibration) this.setView({ calibration: { ...calibration, profile: tuned } });
   }
 
   private onFaceJump() {

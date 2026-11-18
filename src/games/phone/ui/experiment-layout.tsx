@@ -1,18 +1,35 @@
 "use client";
 
-import { Check, LayoutGrid } from "lucide-react";
-import { useEffect, useRef, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
+import { ArrowRight, Check, LayoutGrid, Smartphone } from "lucide-react";
+import { useEffect, useRef, type HTMLAttributes, type ReactNode } from "react";
 import { SensorArt } from "@/components/art/sensor-art";
 import { PhoneFrame } from "@/components/game/phone-frame";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { KeyHints, type KeyHint } from "@/components/ui/key-hints";
+import { StepDots } from "@/components/ui/progress";
 import { cn } from "@/lib/cn";
 import type { Experiment } from "../data/experiments";
 import { clamp, type Guess } from "../engine/math";
 import { useLink } from "../link/link";
-import { LinkHandoff } from "../link/link-panel";
-import { FRAMED_QUERY, useCapabilities, useMediaQuery, useViewportHeight, useViewportWidth } from "../sensors/use-device";
-import { GuessCard, LiveSummary, Readout, SourceBadge, type ReadoutRow, type Source } from "./parts";
+import { LinkCard } from "../link/link-ui";
+import { isProblem } from "../sensors/status";
+import { FRAMED_QUERY, useMediaQuery, useThrottled, useViewportHeight, useViewportWidth } from "../sensors/use-device";
+import { SensorHow } from "./explainers";
+import {
+  GateIssue,
+  GateNote,
+  gateNeedsStart,
+  GuessCard,
+  LiveSummary,
+  Readout,
+  SourceBadge,
+  Tasks,
+  type ReadoutRow,
+  type SensorGate,
+  type Source,
+  type Task,
+} from "./parts";
 
 /** Everything an experiment needs from the game around it. */
 export interface ExperimentContext {
@@ -22,9 +39,14 @@ export interface ExperimentContext {
   total: number;
   tested: boolean;
   markTested: () => void;
+  /** The live guess and the reading behind it, kept for the summary at the end. */
+  report: (guess: string | null, live: boolean, reading: string | null) => void;
   onNext: () => void;
   nextLabel: string;
+  /** To the overview of all eight. */
   onBack: () => void;
+  /** The booth laptop is showing a linked phone: show what happens, offer no controls. */
+  mirrored: boolean;
 }
 
 export interface ExperimentProps {
@@ -32,18 +54,24 @@ export interface ExperimentProps {
 }
 
 /** Height of the shell header plus breathing room above and below the phone. */
-const CHROME_HEIGHT = 64 + 64;
+const CHROME_HEIGHT = 64 + 72;
 const PHONE_ASPECT = 2.092;
 
-/** The phone is as big as the window allows, from 260 to 380 px wide. */
+/** The drawn phone is as big as the window allows, from 250 to 380 px wide. */
 function phoneWidthFor(viewportWidth: number, viewportHeight: number) {
-  return Math.round(clamp(Math.min((viewportHeight - CHROME_HEIGHT) / PHONE_ASPECT, viewportWidth * 0.36), 260, 380));
+  return Math.round(clamp(Math.min((viewportHeight - CHROME_HEIGHT) / PHONE_ASPECT, viewportWidth * 0.34), 250, 380));
 }
 
 /**
- * One template for all eight experiments. On the booth laptop the sensor's
- * screen sits inside a drawn phone with the controls beside it; on a real
- * phone the screen goes full width and the controls follow underneath.
+ * One template for all eight experiments.
+ *
+ * On a phone: the live picture first, its guess right under it, then the one
+ * thing to do now, with the main button pinned within reach of a thumb. The
+ * details (readings, what apps work out, how it works) wait below.
+ *
+ * On the booth laptop: the sensor's screen inside a drawn phone (for motion,
+ * a 3D twin that turns with the visitor's phone), with the guess, the things
+ * to try and the details beside it.
  */
 export function ExperimentLayout({
   ctx,
@@ -53,15 +81,19 @@ export function ExperimentLayout({
   stageLabel,
   island,
   surface,
-  frameStyle,
   backdrop,
-  tryIt,
+  wrapFrame,
+  gate,
+  modeSwitch,
+  controls,
+  tasks,
   readout,
   guess,
   guessWaiting,
+  numbers,
   extra,
-  primaryTaken,
   summary,
+  keys,
 }: {
   ctx: ExperimentContext;
   /** A real sensor is streaming: lifts the sensor in the art. */
@@ -74,85 +106,84 @@ export function ExperimentLayout({
   island?: ReactNode;
   /** Props for the element around the screen (drag to tilt). */
   surface?: Omit<HTMLAttributes<HTMLDivElement>, "style"> & { "data-tilt-surface"?: string };
-  /** Style for the drawn phone only (the 3D tilt), never the full-width screen. */
-  frameStyle?: CSSProperties;
-  /** The room behind the phone (light experiment). */
+  /** The room behind the drawn phone (light experiment). */
   backdrop?: string;
-  tryIt: ReactNode;
+  /** Wraps the drawn phone on the laptop (the motion twin). */
+  wrapFrame?: (frame: ReactNode, width: number) => ReactNode;
+  /** The real sensor's on switch and its problems. Null in the simulation or when no permission is needed. */
+  gate?: SensorGate | null;
+  /** "Real sensor" or "Simulation", where both work. */
+  modeSwitch?: ReactNode;
+  /** Simulation controls and other ways to play. */
+  controls?: ReactNode;
+  tasks: Task[];
   readout: ReadoutRow[];
   guess: Guess | null;
   /** Shown in place of the guess before there's a reading. */
   guessWaiting: string;
+  /** The latest reading as one line, for How it works. */
+  numbers: string | null;
   /** Extra material under the inferences (charts, facts). */
   extra?: ReactNode;
-  /** The Try it area shows a filled button, so Next stays secondary. */
-  primaryTaken: boolean;
   /** One sentence for screen readers, throttled. */
   summary: string;
+  /** Keys this experiment adds on the laptop. */
+  keys?: KeyHint[];
 }) {
   const framed = useMediaQuery(FRAMED_QUERY) === true;
-  const caps = useCapabilities();
   const vw = useViewportWidth();
   const vh = useViewportHeight();
   const heading = useRef<HTMLHeadingElement>(null);
-  const { experiment } = ctx;
+  const { experiment, mirrored, report } = ctx;
   const link = useLink();
-  // The visitor's phone is driving this screen: the laptop's own controls only mirror it.
-  const mirrored = link.role === "host" && link.linked;
 
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
   }, [experiment.id]);
 
-  // Sized by its own width, not the window: the column is narrow on a phone and on a tablet beside the drawn phone.
-  const header = (
-    <header className="@container">
-      <div className="flex items-center gap-5 @lg:gap-6">
-        <div className="size-[140px] shrink-0 rounded-xl bg-sunken @lg:size-40">
-          <SensorArt sensor={experiment.id} active={live} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-2">
-          <span className="type-label text-game">
-            Sensor {ctx.index + 1} of {ctx.total}
-          </span>
-          <h1 ref={heading} tabIndex={-1} className="type-title-2 text-fg outline-none @lg:type-title-1">
-            {experiment.name}
-          </h1>
-          <p className="type-body text-fg-muted @lg:type-body-lg">{experiment.question}</p>
-          {ctx.tested ? (
-            <Chip tone="success" icon={<Check />} className="self-start">
-              Tested
-            </Chip>
-          ) : null}
-        </div>
-      </div>
-    </header>
+  // The latest guess goes into the summary at the end, once the sensor has been tried.
+  // Readings change many times a second: the summary takes one every couple of seconds.
+  const label = ctx.tested ? (guess?.label ?? null) : null;
+  const reading = useThrottled(numbers, 2000);
+  useEffect(() => {
+    if (label && !mirrored) report(label, source === "live", reading);
+  }, [label, source, reading, mirrored, report]);
+
+  const needsStart = !mirrored && gateNeedsStart(gate);
+  const problem = !mirrored && gate != null && isProblem(gate.status);
+  const primaryIsNext = ctx.tested && !needsStart;
+
+  const tryArea = mirrored ? (
+    <div className="flex flex-col gap-4">
+      <p className="type-body inline-flex items-start gap-2 text-fg-muted">
+        <Smartphone aria-hidden className="mt-1 size-4 shrink-0 text-game" />
+        The visitor is doing this on their phone. Everything here follows it.
+      </p>
+      <Tasks tasks={tasks} readOnly />
+    </div>
+  ) : (
+    <div className="flex flex-col gap-5">
+      {problem && gate ? <GateIssue gate={gate} /> : null}
+      {needsStart && gate ? (framed ? <FramedStart gate={gate} /> : <GateNote gate={gate} />) : null}
+      {!needsStart && !problem ? <Tasks tasks={tasks} /> : null}
+      {controls}
+      {/* Switching to the simulation, or turning the sensor off, is for later: after the things to try. */}
+      {modeSwitch}
+      {!needsStart && gate?.status === "live" ? (
+        <Button variant="ghost" onClick={gate.onStop} className="-ml-3 self-start">
+          {gate.stopLabel}
+        </Button>
+      ) : null}
+    </div>
   );
 
-  const panel = (
+  const details = (
     <>
-      <section aria-labelledby="try-it" className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="try-it" className="type-title-3 text-fg">
-            Try it
-          </h2>
-          <SourceBadge source={source} />
-        </div>
-        {mirrored ? (
-          <p className="type-body text-fg-muted">
-            Controlled from the visitor&apos;s phone. Everything on this screen follows what they do on it.
-          </p>
-        ) : (
-          tryIt
-        )}
-      </section>
-
       <section aria-labelledby="readings" className="flex flex-col gap-4">
         <h2 id="readings" className="type-title-3 text-fg">
           What it measures
         </h2>
         <Readout rows={readout} />
-        <GuessCard guess={guess} waiting={guessWaiting} />
         {ctx.tested ? <p className="type-body max-w-[40rem] text-fg-muted">{experiment.answer}</p> : null}
         <LiveSummary text={summary} />
       </section>
@@ -180,44 +211,77 @@ export function ExperimentLayout({
         {extra}
       </section>
 
-      <nav aria-label="Experiments" className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <Button
-          variant={ctx.tested && !primaryTaken ? "game" : "secondary"}
-          size="lg"
-          arrow={ctx.tested && !primaryTaken}
-          onClick={ctx.onNext}
-          className="w-full sm:w-auto"
-        >
-          {ctx.nextLabel}
-        </Button>
-        <Button variant="ghost" size="lg" icon={<LayoutGrid />} onClick={ctx.onBack} className="w-full sm:w-auto">
-          Back to the lab
-        </Button>
-      </nav>
+      <SensorHow sensor={experiment.id} how={experiment.how} numbers={numbers} guess={guess?.label ?? null} />
     </>
   );
 
   if (!framed) {
     return (
-      <div className="mx-auto flex w-full max-w-[40rem] flex-col gap-10 px-4 pb-[calc(env(safe-area-inset-bottom)+40px)] pt-2 sm:px-6">
-        {header}
+      <div className="mx-auto flex w-full max-w-[40rem] flex-1 flex-col gap-4 px-4 pt-1 sm:px-6">
+        <header className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="type-label tabular-nums text-game">
+              Sensor {ctx.index + 1} of {ctx.total}
+            </span>
+            <StepDots total={ctx.total} current={ctx.index} label="Sensor" />
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 ref={heading} tabIndex={-1} className="type-title-2 min-w-0 text-fg outline-none">
+              {experiment.name}
+            </h1>
+            {ctx.tested ? (
+              <Chip tone="success" icon={<Check />} className="shrink-0">
+                Tried
+              </Chip>
+            ) : null}
+          </div>
+          <p className="type-small text-fg-muted">{experiment.question}</p>
+        </header>
+
         <div
           role="region"
           aria-label={stageLabel}
           {...surface}
-          className={cn(
-            "relative h-[min(66dvh,600px)] min-h-[400px] overflow-hidden rounded-xl bg-black shadow-ring",
-            surface?.className,
-          )}
+          className={cn("relative h-[clamp(17rem,44dvh,32rem)] shrink-0 overflow-hidden rounded-xl bg-black shadow-ring", surface?.className)}
         >
           {stage}
         </div>
-        {panel}
+
+        <GuessCard guess={guess} waiting={guessWaiting} size="sm" />
+        {tryArea}
+
+        <div className="mt-6 flex flex-col gap-10 pb-8">{details}</div>
+
+        {/* The next step, always within reach of a thumb. */}
+        <div className="sticky bottom-0 z-20 -mx-4 mt-auto flex items-center gap-3 bg-linear-to-t from-canvas via-canvas/95 to-canvas/0 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-6 sm:-mx-6 sm:px-6">
+          <IconButton label="All sensors" icon={<LayoutGrid />} size="lg" variant="secondary" onClick={ctx.onBack} />
+          {needsStart && gate ? (
+            <Button variant="game" size="lg" icon={gate.startIcon} loading={gate.status === "starting"} onClick={gate.onStart} className="min-w-0 flex-1">
+              {gate.startLabel}
+            </Button>
+          ) : (
+            <Button
+              variant={primaryIsNext ? "game" : "secondary"}
+              size="lg"
+              arrow={primaryIsNext}
+              icon={primaryIsNext ? undefined : <ArrowRight />}
+              onClick={ctx.onNext}
+              className="min-w-0 flex-1"
+            >
+              {ctx.nextLabel}
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
 
   const width = phoneWidthFor(vw, vh);
+  const frame = (
+    <PhoneFrame width={width} island={island} interactive>
+      {stage}
+    </PhoneFrame>
+  );
   return (
     <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[auto_minmax(0,1fr)] items-start gap-8 px-6 pb-16 pt-4 lg:gap-14 lg:px-8">
       <div
@@ -230,18 +294,80 @@ export function ExperimentLayout({
           {...(mirrored ? {} : surface)}
           inert={mirrored}
           className={cn("rounded-[3rem]", !mirrored && surface?.className)}
-          style={frameStyle}
         >
-          <PhoneFrame width={width} island={island}>
-            {stage}
-          </PhoneFrame>
+          {wrapFrame ? wrapFrame(frame, width) : frame}
         </div>
       </div>
-      <div className="flex min-w-0 flex-col gap-10 py-2">
-        {header}
-        {panel}
-        {caps.touch ? null : <LinkHandoff size={88} className="self-start" />}
+
+      <div className="flex min-w-0 flex-col gap-8 py-2">
+        <header className="@container flex items-center gap-5">
+          <div className="hidden size-28 shrink-0 rounded-xl bg-sunken @md:block">
+            <SensorArt sensor={experiment.id} active={live} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="type-label tabular-nums text-game">
+                Sensor {ctx.index + 1} of {ctx.total}
+              </span>
+              <StepDots total={ctx.total} current={ctx.index} label="Sensor" />
+            </div>
+            <h1 ref={heading} tabIndex={-1} className="type-title-1 text-fg outline-none">
+              {experiment.name}
+            </h1>
+            <p className="type-body-lg text-fg-muted">{experiment.question}</p>
+          </div>
+        </header>
+
+        <GuessCard guess={guess} waiting={guessWaiting} size="lg" />
+
+        <section aria-labelledby="try-it" className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="try-it" className="type-title-3 text-fg">
+              {mirrored ? "On the visitor's phone" : "Try this"}
+            </h2>
+            <SourceBadge source={source} />
+          </div>
+          {tryArea}
+        </section>
+
+        {mirrored ? null : (
+          <nav aria-label="Experiments" className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-3">
+              <Button variant={primaryIsNext ? "game" : "secondary"} size="lg" arrow={primaryIsNext} onClick={ctx.onNext}>
+                {ctx.nextLabel}
+              </Button>
+              <Button variant="ghost" size="lg" icon={<LayoutGrid />} onClick={ctx.onBack}>
+                All sensors
+              </Button>
+            </div>
+            <div className="hidden pointer-fine:block">
+              <KeyHints
+                items={[
+                  ...(keys ?? []),
+                  { keys: ["N"], label: ctx.nextLabel },
+                  { keys: ["Esc"], label: "All sensors" },
+                ]}
+              />
+            </div>
+          </nav>
+        )}
+
+        <div className="mt-4 flex flex-col gap-10">{details}</div>
+
+        {link.role === "host" && !link.following ? <LinkCard compact className="self-start" /> : null}
       </div>
+    </div>
+  );
+}
+
+/** On the laptop the start button sits with the things to try. */
+function FramedStart({ gate }: { gate: SensorGate }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <Button variant="game" size="lg" icon={gate.startIcon} loading={gate.status === "starting"} onClick={gate.onStart} className="self-start">
+        {gate.startLabel}
+      </Button>
+      <GateNote gate={gate} />
     </div>
   );
 }

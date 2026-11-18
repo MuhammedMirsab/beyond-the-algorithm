@@ -27,6 +27,8 @@ export interface ControlSnapshot {
   roll: number;
   yaw: number;
   mouth: number;
+  /** The same eye-line angle before the 1€ filter, straight from this frame's points (for the reveal). */
+  rollRaw: number;
   /** Head tilt relative to the calibrated neutral, degrees, + = player's right. */
   tilt: number;
   /** Final steering value after range, sensitivity, dead zone and curve: -1 (left) .. 1 (right). */
@@ -370,6 +372,7 @@ export class FaceController {
       roll,
       yaw,
       mouth,
+      rollRaw: face.m.roll,
       tilt,
       steer,
       steerRaw: n,
@@ -432,6 +435,7 @@ export class FaceController {
       roll: 0,
       yaw: 0,
       mouth: 0,
+      rollRaw: 0,
       tilt: 0,
       steer: 0,
       steerRaw: 0,

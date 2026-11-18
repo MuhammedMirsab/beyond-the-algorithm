@@ -1,14 +1,18 @@
 "use client";
 
 import { Circle, Play, Repeat, Square } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Score } from "@/components/ui/score";
 import { fmtTime } from "../engine/music";
 import { INSTRUMENT_NAMES } from "../engine/settings";
-import type { StudioSession, StudioView } from "../play/session";
+import type { StudioSession, StudioView, TakeInfo } from "../play/session";
+import { cn } from "@/lib/cn";
 import { Metric, OffsetChart, offsetWords, Recommendations } from "./report-bits";
+
+const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 /** "piano", "piano and drums", "piano, drums and guitar". */
 export function listWords(items: string[]): string {
@@ -16,28 +20,65 @@ export function listWords(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** How far the take has played, drawn straight from the audio clock. */
-function TakeProgress({ session, duration }: { session: StudioSession; duration: number }) {
-  const bar = useRef<HTMLDivElement>(null);
+/** The take's loudness as bars, a mark for every note, and a playhead from the audio clock. */
+function TakeWave({ session, take }: { session: StudioSession; take: TakeInfo }) {
+  const lit = useRef<HTMLDivElement>(null);
+  const head = useRef<HTMLDivElement>(null);
   const time = useRef<HTMLSpanElement>(null);
+  const duration = take.duration;
   useEffect(() => {
     let raf = 0;
+    let shown = -1;
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const pos = session.takePosition();
       const p = pos === null || duration <= 0 ? 0 : Math.min(1, pos / duration);
-      if (bar.current) bar.current.style.transform = `scaleX(${p})`;
+      if (Math.abs(p - shown) < 0.001) return;
+      shown = p;
+      if (lit.current) lit.current.style.clipPath = `inset(0 ${(1 - p) * 100}% 0 0)`;
+      if (head.current) {
+        head.current.style.transform = `translateX(${p * 100}%)`;
+        head.current.style.opacity = pos === null || p === 0 ? "0" : "1";
+      }
       if (time.current) time.current.textContent = `${fmtTime(pos ?? 0)} / ${fmtTime(duration)}`;
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, [session, duration]);
+
+  const n = take.peaks.length || 1;
+  const bars = (className: string) => (
+    <svg viewBox={`0 0 ${n * 4} 60`} preserveAspectRatio="none" className={cn("absolute inset-0 size-full", className)} aria-hidden>
+      {take.peaks.map((v, i) => {
+        const h = Math.max(2, v * 56);
+        return <rect key={i} x={i * 4 + 0.6} y={30 - h / 2} width={2.8} height={h} rx={1.2} />;
+      })}
+    </svg>
+  );
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-2">
-      <div aria-hidden className="relative h-1.5 w-full overflow-hidden rounded-full bg-fg/10">
-        <div ref={bar} className="absolute inset-0 origin-left rounded-full bg-game" style={{ transform: "scaleX(0)" }} />
-      </div>
-      <span ref={time} className="type-label tabular-nums text-fg-subtle" />
+      <motion.div
+        initial={{ clipPath: "inset(0 100% 0 0)" }}
+        animate={{ clipPath: "inset(0 0% 0 0)", transition: { duration: 0.7, ease: EASE_OUT } }}
+        className="relative h-16 w-full"
+      >
+        {bars("fill-fg/25")}
+        <div ref={lit} className="absolute inset-0" style={{ clipPath: "inset(0 100% 0 0)" }}>
+          {bars("fill-game")}
+        </div>
+        {/* A tick under the wave for every note, hit or strum. */}
+        <div aria-hidden className="absolute inset-x-0 -bottom-2 h-1.5">
+          {take.marks.map((m, i) => (
+            <span key={i} className="absolute top-0 h-1.5 w-[3px] -translate-x-1/2 rounded-full bg-game/70" style={{ left: `${Math.min(100, (m.t / Math.max(0.01, duration)) * 100)}%` }} />
+          ))}
+        </div>
+        <div ref={head} aria-hidden className="pointer-events-none absolute inset-y-[-6px] left-0 w-full opacity-0" style={{ transform: "translateX(0%)" }}>
+          <span className="absolute inset-y-0 left-0 w-0.5 -translate-x-1/2 rounded-full bg-fg" />
+        </div>
+      </motion.div>
+      <span ref={time} className="type-label pt-1.5 tabular-nums text-fg-subtle">
+        {`0:00 / ${fmtTime(duration)}`}
+      </span>
     </div>
   );
 }
@@ -96,7 +137,7 @@ export function TakeModal({ session, view, open, onOpenChange }: { session: Stud
           >
             {listening ? "Stop" : "Listen"}
           </Button>
-          <TakeProgress session={session} duration={take.duration} />
+          <TakeWave session={session} take={take} />
         </div>
         {loop?.bars ? (
           <p className="type-small -mt-4 text-fg-subtle">

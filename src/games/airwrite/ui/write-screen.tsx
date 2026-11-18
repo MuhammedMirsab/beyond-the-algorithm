@@ -7,10 +7,10 @@ import { CameraProblem, CameraWaiting, ModelLoading } from "@/components/game/ca
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
-import { DEFAULT_SETTINGS, type PenSettings } from "../engine/airPen";
+import { DEFAULT_SETTINGS, pinchThresholds, type PenSettings } from "../engine/airPen";
 import { cssColor } from "../engine/canvasColor";
 import { exportInk } from "../engine/exportImage";
-import { firstLetterClouds, segmentLetters } from "../engine/letters";
+import { letterAnatomy, segmentLetters } from "../engine/letters";
 import { recognizeStrokes } from "../engine/recognition/recognize";
 import { StrokeStore } from "../engine/strokes";
 import { useHandTracking } from "../engine/useHandTracking";
@@ -20,7 +20,7 @@ import { CameraDock } from "./camera-dock";
 import { HowItWorksModal, type ReadingStory } from "./how-it-works";
 import { ResultPanel, type ReadPhase, type ReadRequest } from "./result-panel";
 import { SettingsModal } from "./settings-modal";
-import { CentringCountdown, Delayed, EmptyState, TargetPill } from "./stage-overlays";
+import { CentringCountdown, Delayed, EmptyState, FIRST_WORD, TargetPill, type Target } from "./stage-overlays";
 import { StatusChip } from "./status-chip";
 import { Toast, type ToastMessage } from "./toast";
 import { Toolbar } from "./toolbar";
@@ -34,15 +34,24 @@ const IDLE_RESET_MS = 90_000;
 const COUNTDOWN_FROM = 3;
 const COUNTDOWN_STEP_MS = 900;
 const TOAST_MS = 1900;
-/** Reading takes a few milliseconds; hold the reading state this long so the moment registers. */
-const READ_HOLD_MS = 700;
+/** Reading takes a few milliseconds; hold the reading state this long so the split into letters can be seen. */
+const READ_HOLD_MS = 900;
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 /** Just under the floating header, clear of the notch. */
 const BELOW_HEADER = "top-[calc(4.5rem+env(safe-area-inset-top))]";
-/** Camera dock and camera switch: top-left on phones and tablets, bottom-left on laptops. */
-const DOCK_SPOT = cn("absolute left-4 z-20 sm:left-6 lg:bottom-8 lg:left-8 lg:top-auto", BELOW_HEADER);
+/**
+ * The writing board: everything between the status row and the toolbar, so
+ * no ink ever lands under a control. On laptops, with the camera on, the
+ * camera gets its own column on the left and the board starts after it.
+ */
+const BOARD = "absolute inset-x-3 top-[calc(7.5rem+env(safe-area-inset-top))] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:inset-x-6 lg:right-8 lg:left-8 lg:top-[7.75rem] lg:bottom-[7.25rem]";
+const BOARD_BESIDE_DOCK = "lg:left-[18.5rem]";
+/** Camera dock: top-left under the header on phones and tablets; its own column beside the board on laptops. */
+const DOCK_SPOT = cn("absolute left-4 z-20 sm:left-6 lg:left-8 lg:top-[7.75rem]", BELOW_HEADER);
+/** The camera switch when the camera is off: in the status row, left. */
+const CAMERA_SWITCH = cn("absolute left-4 z-20 sm:left-6 lg:left-8", BELOW_HEADER);
 
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -57,7 +66,8 @@ function toggleFullscreen() {
 export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputMode; onNextPlayer: () => void }) {
   const [store] = useState(() => new StrokeStore());
   const [settings, setSettings] = useState<PenSettings>(DEFAULT_SETTINGS);
-  const [target, setTarget] = useState<string | null>(null);
+  // Every visitor starts with one small, concrete task; the chips offer other words.
+  const [target, setTarget] = useState<Target | null>({ word: FIRST_WORD, chosen: false });
   const [phase, setPhase] = useState<ReadPhase | null>(null);
   const [story, setStory] = useState<(ReadingStory & { usedCamera: boolean; fps: number | null }) | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -129,29 +139,34 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
     abortRef.current = controller;
     readCount.current += 1;
     const req: ReadRequest = { ...request, id: readCount.current };
-    setPhase({ kind: "reading", ...req });
-    await new Promise((resolve) => window.setTimeout(resolve, READ_HOLD_MS));
-    if (controller.signal.aborted) return;
+    // Reading takes milliseconds, so it happens first; the hold that follows
+    // shows the ink being split into letters before the answer appears.
+    let story: ReadingStory;
     try {
       const { result, hidden } = forTheScreen(recognizeStrokes(req.strokes));
       const readable = result.kind === "text" && !hidden;
       const { boxes, words } = segmentLetters(req.strokes, readable ? result.text : null, req.ink);
-      const story: ReadingStory = {
+      story = {
         ink: req.ink,
         result,
         hidden,
         boxes,
         words,
-        clouds: readable ? firstLetterClouds(req.strokes, result.text) : null,
+        strokes: req.strokes,
+        anatomy: readable ? letterAnatomy(req.strokes, result.text) : null,
       };
-      const first = resultCount.current === 0;
-      resultCount.current += 1;
-      setStory({ ...story, usedCamera: req.usedCamera, fps: req.fps });
-      setPhase({ kind: "result", story, first, ...req });
     } catch (error) {
       console.error("[airwrite] recognition failed", error);
       setPhase({ kind: "error", ...req });
+      return;
     }
+    setPhase({ kind: "reading", boxes: story.boxes.map((b) => ({ ...b, char: null })), ...req });
+    await new Promise((resolve) => window.setTimeout(resolve, READ_HOLD_MS));
+    if (controller.signal.aborted) return;
+    const first = resultCount.current === 0;
+    resultCount.current += 1;
+    setStory({ ...story, usedCamera: req.usedCamera, fps: req.fps });
+    setPhase({ kind: "result", story, first, ...req });
   }, []);
 
   const onRead = useCallback(() => {
@@ -169,7 +184,14 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
     // The recogniser wants points in one consistent unit with equal x and y scale: surface pixels.
     const strokes = store.strokes.map((s) => s.points.map((p): [number, number] => [p.x * surface.width, p.y * surface.height]));
     const usedCamera = store.strokes.some((s) => s.source === "air");
-    void read({ ink: image, strokes, target, usedCamera, fps: usedCamera && statsRef.current.fps ? statsRef.current.fps : null });
+    void read({
+      ink: image,
+      strokes,
+      target: target?.word ?? null,
+      targetChosen: target?.chosen ?? false,
+      usedCamera,
+      fps: usedCamera && statsRef.current.fps ? statsRef.current.fps : null,
+    });
   }, [phase, countdown, touch, store, showToast, read, target, statsRef]);
 
   const closePanel = useCallback(() => {
@@ -187,8 +209,8 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
 
   const onRetry = useCallback(() => {
     if (phase?.kind !== "error") return;
-    const { ink: image, strokes, target: word, usedCamera, fps } = phase;
-    void read({ ink: image, strokes, target: word, usedCamera, fps });
+    const { ink: image, strokes, target: word, targetChosen, usedCamera, fps } = phase;
+    void read({ ink: image, strokes, target: word, targetChosen, usedCamera, fps });
   }, [phase, read]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -311,7 +333,7 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
   } else if (ink.empty) {
     centre = {
       key: ready ? "empty-camera" : "empty-pointer",
-      node: <EmptyState camera={ready} target={target} onTarget={setTarget} />,
+      node: <EmptyState camera={ready} handVisible={tracking.indicator.handVisible} target={target} onTarget={setTarget} />,
       interactive: false,
     };
   }
@@ -334,20 +356,23 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
       }
     >
       <div className="relative flex-1 overflow-hidden" onPointerDown={touch}>
-        <WritingSurface
-          store={store}
-          frameRef={frameRef}
-          sizeRef={sizeRef}
-          pointerEnabled={!panelOpen && countdown === null}
-          onActivity={touch}
-        />
+        <div className={cn(BOARD, live && BOARD_BESIDE_DOCK, "overflow-hidden rounded-xl bg-sunken shadow-ring")}>
+          <WritingSurface
+            store={store}
+            frameRef={frameRef}
+            sizeRef={sizeRef}
+            pointerEnabled={!panelOpen && countdown === null}
+            onActivity={touch}
+          />
+        </div>
 
         {/* Everything under the result panel and the countdown goes inert while they are open. */}
         <div inert={panelOpen || countdown !== null} className="contents">
           <div
             className={cn(
-              "absolute inset-0 z-10 grid place-items-center px-4 pb-28 pt-32 sm:px-6 lg:pt-24",
-              centre?.interactive ? "pointer-events-auto bg-canvas/80" : "pointer-events-none",
+              centre?.interactive ? "absolute inset-0 z-10 bg-canvas/80 pt-16" : cn(BOARD, live && BOARD_BESIDE_DOCK, "z-10"),
+              "grid place-items-center px-4 sm:px-6",
+              centre?.interactive ? "pointer-events-auto" : "pointer-events-none",
             )}
           >
             <AnimatePresence mode="wait" initial={false}>
@@ -367,12 +392,13 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
 
           <div
             className={cn(
-              "pointer-events-none absolute inset-x-0 z-20 flex flex-col items-end gap-2 px-4 sm:px-6 md:flex-row md:items-center md:justify-center",
+              "pointer-events-none absolute inset-x-0 z-20 flex flex-col items-end gap-2 px-4 sm:px-6 md:flex-row md:items-center md:justify-center lg:right-8 lg:px-0",
+              live ? "lg:left-[18.5rem]" : "lg:left-8",
               BELOW_HEADER,
             )}
           >
             {ready && countdown === null ? <StatusChip indicator={tracking.indicator} /> : null}
-            {target && !ink.empty ? <TargetPill target={target} onClear={() => setTarget(null)} /> : null}
+            {target && !ink.empty ? <TargetPill target={target.word} onClear={() => setTarget(null)} /> : null}
           </div>
 
           {/* Mounted always (the video element must exist before the camera starts); shown while the camera is live. */}
@@ -380,6 +406,8 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
             <CameraDock
               videoRef={videoRef}
               previewRef={previewRef}
+              frameRef={frameRef}
+              pinchEnter={pinchThresholds(settings.pinch).enter}
               status={status}
               indicator={tracking.indicator}
               small={dockSmall}
@@ -387,12 +415,17 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
             />
           </div>
           {!cameraOn ? (
-            <div className={DOCK_SPOT}>
+            <div className={CAMERA_SWITCH}>
               <AdaptiveButton icon={<Camera />} label="Turn on camera" variant="secondary" onClick={startCamera} />
             </div>
           ) : null}
 
-          <div className="absolute inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-20 flex justify-center sm:inset-x-6 lg:bottom-8">
+          <div
+            className={cn(
+              "absolute inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-20 flex justify-center sm:inset-x-6 lg:bottom-6 lg:right-8",
+              live ? "lg:left-[18.5rem]" : "lg:left-8",
+            )}
+          >
             <Toolbar
               canUndo={ink.canUndo}
               canClear={!ink.empty}
@@ -406,7 +439,7 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
           </div>
         </div>
 
-        <Toast toast={toast} className="absolute inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[26] sm:bottom-28 lg:bottom-32" />
+        <Toast toast={toast} className="absolute inset-x-0 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-[26] lg:bottom-[8.25rem]" />
 
         <AnimatePresence>
           {countdown !== null ? (

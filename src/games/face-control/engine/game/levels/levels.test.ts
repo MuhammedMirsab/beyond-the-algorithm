@@ -14,8 +14,25 @@ describe("keyboardSign", () => {
   });
 
   test("the face controls become their keys; every other sign stays as it is", () => {
-    expect(keyboardSign({ x: 0, y: 0, icon: "tilt", text: "TILT TO ROLL" })).toEqual({ x: 0, y: 0, icon: "arrows", text: "ARROWS TO ROLL" });
-    expect(keyboardSign({ x: 0, y: 0, icon: "mouth", text: "OPEN MOUTH · JUMP" })).toEqual({ x: 0, y: 0, icon: "space", text: "SPACE · JUMP" });
+    expect(keyboardSign({ x: 0, y: 0, icon: "tilt", text: "Tilt to roll" })).toEqual({ x: 0, y: 0, icon: "arrows", text: "Arrow keys to roll" });
+    expect(keyboardSign({ x: 0, y: 0, icon: "mouth", text: "Open your mouth to jump" })).toEqual({ x: 0, y: 0, icon: "space", text: "Space to jump" });
     for (const sign of signs.filter((s) => s.icon !== "tilt" && s.icon !== "mouth")) expect(keyboardSign(sign)).toBe(sign);
+  });
+});
+
+describe("sign copy", () => {
+  const texts = [PRACTICE, ...LEVELS].flatMap((level) => (level.signs ?? []).flatMap((sign) => [sign.text, keyboardSign(sign).text]));
+
+  test("sentence case: a capital first letter, never a whole word in capitals", () => {
+    for (const text of texts) {
+      expect(text[0]).toBe(text[0].toUpperCase());
+      for (const word of text.split(/\s+/)) {
+        if (word.length > 1) expect(word).not.toBe(word.toUpperCase());
+      }
+    }
+  });
+
+  test("no dashes or dots as separators", () => {
+    for (const text of texts) expect(text).not.toMatch(/[·–—]/);
   });
 });

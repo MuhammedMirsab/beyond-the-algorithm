@@ -64,18 +64,26 @@ const NEUTRAL_HOLD = 1.2;
 const TILT_HOLD = 0.6;
 const MOUTH_HOLD = 0.45;
 
-const median = (xs: number[]) => {
+/** Which held tilt counts as "how far you tilt": the 70th percentile of the frames past TILT_TARGET. */
+export const TILT_PERCENTILE = 0.7;
+/** Which wide-open mouth counts as "how wide you open": the 80th percentile. */
+export const MOUTH_PERCENTILE = 0.8;
+
+export const median = (xs: number[]) => {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-const percentile = (xs: number[], p: number) => {
+export const percentile = (xs: number[], p: number) => {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.max(0, Math.round(p * (s.length - 1))))];
 };
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** The tilt that gives full steering, from the tilt a player comfortably holds: a little less, within 8 to 24 degrees. */
+export const reachFor = (held: number) => clamp(held * 0.85, 8, 24);
 
 export class Calibrator {
   step: CalibStep = "neutral";
@@ -201,8 +209,8 @@ export class Calibrator {
     }
 
     if (this.progress >= 1) {
-      const held = percentile(this.extremes, 0.7);
-      const reach = clamp(held * 0.85, 8, 24);
+      const held = percentile(this.extremes, TILT_PERCENTILE);
+      const reach = reachFor(held);
       this.measured[dir] = held;
       if (dir === "left") this.profile.rangeLeft = reach;
       else this.profile.rangeRight = reach;
@@ -232,7 +240,7 @@ export class Calibrator {
     }
 
     if (this.progress >= 1) {
-      this.measured.mouthOpen = percentile(this.extremes, 0.8);
+      this.measured.mouthOpen = percentile(this.extremes, MOUTH_PERCENTILE);
       this.profile.mouthOpen = Math.max(closed + 0.14, this.measured.mouthOpen);
       this.advance();
       return "mouth";

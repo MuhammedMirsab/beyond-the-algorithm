@@ -1,21 +1,23 @@
 "use client";
 
+import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
-import { CirclePlus, FileSearch, RotateCcw, Sun, UserRoundPlus, ZoomIn, type LucideIcon } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { HowItWorks, ResultPanel } from "@/components/game/panels";
+import { ResultPanel } from "@/components/game/panels";
+import { NextPlayerIcon } from "@/components/game/next-player";
 import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
 import { Score, Stat } from "@/components/ui/score";
 import { useLocalBoard } from "@/lib/leaderboard";
 import { boardDetail, rankTier, ROUNDS, summarize, tallyByLevel, verdict, type LevelTally } from "../engine/scoring";
 import type { ActiveQuestion, PlayerAnswer } from "../engine/types";
-import { formatSeconds, LEVEL_CHANGE, LEVEL_NAME, LEVELS } from "./labels";
+import { EASE_OUT, formatSeconds, LEVEL_CHANGE, LEVEL_NAME, LEVELS, OutcomeDot, outcomeOf, SPRING_POP } from "./labels";
+import { ModelSteps } from "./model-steps";
 import { PhotoCredits } from "./photo-credits";
-import { RoundReview, Thumb } from "./round-review";
+import { RoundReview } from "./round-review";
+import { Tells } from "./tells";
 import { cn } from "@/lib/cn";
-
-const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 /** Confetti is for a near-perfect game only: 5 of 6 or better. */
 const CONFETTI_MIN_CORRECT = ROUNDS - 1;
@@ -74,9 +76,6 @@ export function ResultsScreen({
     setStep("board");
   };
 
-  const aiLabelled = questions.filter((q) => q.pair.aiItem.contentCredentials).length;
-  const example = questions[0]?.pair;
-
   return (
     <ResultPanel
       label={`${tier.name} · ${answers.length} rounds`}
@@ -84,6 +83,7 @@ export function ResultsScreen({
       score={<Score value={summary.score} label="Points" tone="game" />}
       stats={
         <>
+          <RoundStrip questions={questions} answers={answers} />
           <Stat value={`${summary.correct} of ${summary.total}`} label="Correct" />
           <Stat value={formatSeconds(summary.averageSeconds)} label="Average per round" />
           {rankIndex >= 0 ? <Stat value={`#${rankIndex + 1}`} label="Rank today" /> : null}
@@ -94,7 +94,7 @@ export function ResultsScreen({
           <Button variant="secondary" size="lg" icon={<RotateCcw />} onClick={onPlayAgain}>
             Play again
           </Button>
-          <Button variant="secondary" size="lg" icon={<UserRoundPlus />} onClick={onNextPlayer}>
+          <Button variant="secondary" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
             Next player
           </Button>
         </>
@@ -128,36 +128,51 @@ export function ResultsScreen({
         <LevelCard tally={tally} />
       </div>
 
-      <HowItWorks
-        intro={`You caught ${tally.easy.correct} of ${tally.easy.total} easy pairs, ${tally.medium.correct} of ${tally.medium.total} medium and ${tally.hard.correct} of ${tally.hard.total} hard. Here is how the AI made its photos, and why the hard ones are hard.`}
-        steps={[
-          {
-            title: "It started from a real photo",
-            text: "Every AI photo you saw began as the real photo next to it. An image model drew each one again from that photo.",
-            visual: example ? (
-              <div className="grid grid-cols-2 gap-2 p-2">
-                <Thumb photo={example.realItem} alt={`The real photo: ${example.subject}`} className="ring-offset-sunken" />
-                <Thumb photo={example.aiItem} alt={`The AI version: ${example.subject}`} className="ring-offset-sunken" />
-              </div>
-            ) : undefined,
-          },
-          {
-            title: "It predicts pixels",
-            text: "The model learned from a huge number of photos what usually goes together: sky above trees, curry next to rice. It fills every small patch with its best guess, so the whole picture looks right.",
-          },
-          {
-            title: "It slips on details",
-            text: "It copies patterns without knowing what things are. So it adds things that were never there, lights them from the wrong side, and smooths away tiny textures. Those slips are your clues.",
-          },
-        ]}
-      />
+      <ModelSteps questions={questions} answers={answers} tally={tally} />
 
-      <SpotChecklist aiLabelled={aiLabelled} total={questions.length} />
+      <Tells questions={questions} answers={answers} />
 
       <RoundReview questions={questions} answers={answers} />
 
       <PhotoCredits questions={questions} />
     </ResultPanel>
+  );
+}
+
+/**
+ * The six AI photos in play order, each with how the round went: the game
+ * at a glance, landing one after another.
+ */
+function RoundStrip({ questions, answers }: { questions: readonly ActiveQuestion[]; answers: readonly PlayerAnswer[] }) {
+  return (
+    <ol aria-label="Your rounds" className="flex w-full items-center gap-2">
+      {answers.map((answer, i) => {
+        const question = questions[answer.questionIndex];
+        if (!question) return null;
+        const outcome = outcomeOf(answer);
+        return (
+          <motion.li
+            key={answer.pairId}
+            initial={{ opacity: 0, y: 10, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...SPRING_POP, delay: 0.15 + Math.min(i, 5) * 0.06 }}
+            className="relative"
+          >
+            <span className="relative block h-12 w-16 overflow-hidden rounded-sm bg-sunken shadow-ring sm:h-14 sm:w-20">
+              <Image
+                src={question.pair.aiItem.src}
+                alt={`Round ${answer.questionIndex + 1}, ${LEVEL_NAME[question.pair.difficulty].toLowerCase()}: ${outcome === "found" ? "you found it" : outcome === "fooled" ? "it fooled you" : "time ran out"}`}
+                fill
+                sizes="80px"
+                draggable={false}
+                className="select-none object-cover"
+              />
+            </span>
+            <OutcomeDot outcome={outcome} className="absolute -bottom-1.5 -right-1.5 ring-[3px] ring-surface" />
+          </motion.li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -169,7 +184,7 @@ function LevelCard({ tally }: { tally: LevelTally }) {
         Level by level
       </h2>
       <ul className="flex flex-col gap-4">
-        {LEVELS.map((level) => {
+        {LEVELS.map((level, row) => {
           const t = tally[level];
           return (
             <li key={level} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1">
@@ -180,65 +195,15 @@ function LevelCard({ tally }: { tally: LevelTally }) {
               <span className="type-small text-fg-subtle">{LEVEL_CHANGE[level]}</span>
               <span aria-hidden className="flex justify-end gap-1">
                 {Array.from({ length: t.total }, (_, i) => (
-                  <span key={i} className={cn("size-2 rounded-full", i < t.correct ? "bg-game" : "bg-fg/15")} />
+                  <motion.span
+                    key={i}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ ...SPRING_POP, delay: 0.3 + (row * 2 + i) * 0.05 }}
+                    className={cn("size-2.5 rounded-full", i < t.correct ? "bg-game" : "bg-fg/15")}
+                  />
                 ))}
               </span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
-const CHECKS: { icon: LucideIcon; title: string; text: string }[] = [
-  { icon: CirclePlus, title: "Look for things that appeared", text: "Extra wires, objects or food that the scene doesn't need." },
-  {
-    icon: Sun,
-    title: "Check the light",
-    text: "Shadows, bright sides and reflections should all agree with where the light comes from.",
-  },
-  {
-    icon: ZoomIn,
-    title: "Zoom in on small things",
-    text: "Text, hands, fur and tiny people often melt into smooth blobs or patterns that repeat.",
-  },
-  {
-    icon: FileSearch,
-    title: "Ask where it came from",
-    text: "Who took it, and where was it first posted? A real photo usually has a source you can check.",
-  },
-];
-
-/** Four checks for any photo, condensed from the original's detection guides. */
-function SpotChecklist({ aiLabelled, total }: { aiLabelled: number; total: number }) {
-  const labelled = aiLabelled === total ? `All ${total}` : `${aiLabelled} of the ${total}`;
-  return (
-    <section aria-labelledby="real-or-ai-checks" className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h2 id="real-or-ai-checks" className="type-title-1 text-fg">
-          How to spot an AI photo
-        </h2>
-        <p className="type-body-lg max-w-[40rem] text-fg-muted">Four checks that work on any photo, not only these.</p>
-      </div>
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {CHECKS.map((check, i) => {
-          const Icon = check.icon;
-          return (
-            <li key={check.title} className="flex gap-4 rounded-lg bg-surface p-5 shadow-ring">
-              <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-md bg-game-soft text-game">
-                <Icon className="size-5" />
-              </span>
-              <div className="flex min-w-0 flex-col gap-1">
-                <h3 className="type-title-3 text-fg">{check.title}</h3>
-                <p className="type-body text-fg-muted">{check.text}</p>
-                {i === CHECKS.length - 1 && aiLabelled > 0 ? (
-                  <p className="type-small mt-2 text-fg-subtle">
-                    {labelled} AI photos you saw came out of Google&apos;s AI with a signed label inside the file saying so. Labels
-                    like this are lost when a photo is cropped or re-saved, so no label doesn&apos;t prove a photo is real.
-                  </p>
-                ) : null}
-              </div>
             </li>
           );
         })}

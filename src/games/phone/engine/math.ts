@@ -31,12 +31,12 @@ export function pushLimited<T>(list: readonly T[], item: T, max: number): T[] {
   return next;
 }
 
-/** "7:30 AM" from minutes after midnight. */
+/** "7:30 am" from minutes after midnight. */
 export function clockLabel(minutes: number): string {
   const total = ((Math.round(minutes) % 1440) + 1440) % 1440;
   const h = Math.floor(total / 60);
   const m = total % 60;
-  const suffix = h < 12 ? "AM" : "PM";
+  const suffix = h < 12 ? "am" : "pm";
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${hour12}:${String(m).padStart(2, "0")} ${suffix}`;
 }

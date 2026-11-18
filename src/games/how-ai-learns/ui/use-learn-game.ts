@@ -12,6 +12,7 @@ import {
   type Example,
 } from "../engine/classifier";
 import { drawFromPool, photoUrl, type DatasetPhoto } from "../engine/dataset";
+import { buildMap } from "../engine/projection";
 import { loadFeatureExtractor, loadTf, modelStatusStore } from "../engine/vision";
 import { NONE_LABEL } from "../engine/rules";
 import { getSession } from "./session";
@@ -184,6 +185,7 @@ export function useLearnGame() {
     if (keepFirst) dispatch({ type: "keep-first", count: keepFirst });
     // The old model is not needed while a new one trains: free its tensors now.
     session.setClassifier(null);
+    session.clearLive();
     dispatch({ type: "train-start" });
     window.scrollTo({ top: 0 });
 
@@ -212,7 +214,10 @@ export function useLearnGame() {
       }
 
       const tf = await loadTf();
-      dispatch({ type: "train", train: { phase: "practising", history: [], total: TRAINING_DEFAULTS.epochs } });
+      // Every photo is now 1,280 numbers: lay them out on a flat map while the last layer practises.
+      const map = buildMap(items);
+      dispatch({ type: "train", train: { phase: "practising", history: [], total: TRAINING_DEFAULTS.epochs, map } });
+      await paint();
       const classifier = await trainClassifier(tf, items, {
         holdOut: { val: 0, test: 0 },
         onEpoch: async (log) => {
@@ -242,6 +247,8 @@ export function useLearnGame() {
             examples: items.length,
             seconds: (performance.now() - t0 - paused) / 1000,
             sample: first ? { photo: { ...first.photo, label: first.label }, embedding: items[firstIndex].embedding } : null,
+            map,
+            weights: classifier.head.countParams(),
           },
         },
       });
@@ -290,8 +297,9 @@ export function useLearnGame() {
 
   // Booth: intro and results reset after 90 s; mid-game after 3 minutes,
   // except while someone is testing with the camera (no input events then).
+  // Taking example photos always involves a press, so that screen still resets.
   const midGame = step === "pick" || step === "examples" || step === "train" || step === "test";
-  const cameraOnly = (step === "test" && (state.testMode === "camera" || testPhotos.length === 0)) || state.capture !== null;
+  const cameraOnly = step === "test" && (state.testMode === "camera" || testPhotos.length === 0);
   useIdle(nextPlayer, { enabled: step === "intro" || step === "results" });
   useIdle(nextPlayer, { ms: 180_000, enabled: midGame && !cameraOnly });
 

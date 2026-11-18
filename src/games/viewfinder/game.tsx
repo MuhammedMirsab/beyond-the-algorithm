@@ -22,7 +22,8 @@ import {
 } from "./engine/camera";
 import { ViewfinderEngine } from "./engine/engine";
 import { disposeFaceTracker } from "./engine/face";
-import { EngineStore } from "./engine/store";
+import type { LensPreview } from "./engine/preview";
+import { EngineStore, type EngineSnapshot } from "./engine/store";
 import {
   disposeHandTracker,
   isHandTrackerReady,
@@ -30,7 +31,7 @@ import {
   type Delegate,
   type LoadProgress,
 } from "./engine/tracker";
-import { INTRO_STEPS, averageRate, type SessionNumbers, type SessionSummary } from "./ui/copy";
+import { INTRO_STEPS, KEY_HINTS, averageRate, type SessionNumbers, type SessionSummary } from "./ui/copy";
 import { HowItWorksModal } from "./ui/how-it-works";
 import { LiveHud } from "./ui/live-hud";
 import { LoadingScreen } from "./ui/loading-screen";
@@ -77,8 +78,27 @@ function pinnedDelegate(): Delegate | undefined {
   return pinned === "GPU" || pinned === "CPU" ? pinned : undefined;
 }
 
+/** The live numbers How it works shows during play (the store has them twice a second). */
+function numbersFrom(snap: EngineSnapshot): SessionNumbers {
+  return {
+    framesTracked: snap.framesTracked,
+    handsFound: snap.handsFound,
+    facesFound: snap.facesFound,
+    perSecond: snap.fps > 0 ? snap.fps : null,
+    locks: snap.locks,
+    lensesTried: snap.lensesTried,
+    lockedSeconds: snap.lockedSeconds,
+    maxFramePixels: snap.maxFramePixels,
+    favouriteLens: snap.favouriteLens,
+    inferenceMs: snap.inferenceMs > 0 ? snap.inferenceMs : null,
+    delegate: snap.delegate,
+    videoWidth: snap.videoWidth,
+    videoHeight: snap.videoHeight,
+  };
+}
+
 /**
- * Viewfinder: frame the world with both hands.
+ * Finger frame (slug "viewfinder"): frame the world with both hands.
  *
  * intro → loading (model download in parallel with the camera prompt) → live
  * → ended (the reveal) → intro. Any failure lands on a problem screen that
@@ -110,7 +130,6 @@ export function ViewfinderGame() {
   /** New canvases for every session (see spentCanvasRef). */
   const [canvasKey, setCanvasKey] = useState(0);
   const [howOpen, setHowOpen] = useState(false);
-  const [showStats, setShowStats] = useState(false);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
 
   /** Tear down the engine (and its GL context), the camera and the video. */
@@ -267,15 +286,32 @@ export function ViewfinderGame() {
     setSummary(null);
     setIssue(null);
     setHowOpen(false);
-    setShowStats(false);
     setPhase("intro");
   }, [stop, store]);
 
   /** End session: keep this visitor's numbers for the reveal, release the camera, reset the hints. */
   const endSession = useCallback(() => {
-    const counts = engineRef.current?.sessionCounts() ?? { framesTracked: 0, handsFound: 0, locks: 0, lensesTried: 0 };
+    const engine = engineRef.current;
+    const live = store.getSnapshot();
     const seconds = (performance.now() - liveSinceRef.current) / 1000;
-    setSummary({ ...counts, seconds, perSecond: averageRate(counts.framesTracked, seconds) });
+    const counts = engine?.sessionCounts();
+    setSummary({
+      framesTracked: counts?.framesTracked ?? 0,
+      handsFound: counts?.handsFound ?? 0,
+      facesFound: counts?.facesFound ?? 0,
+      perSecond: averageRate(counts?.framesTracked ?? 0, seconds),
+      locks: counts?.locks ?? 0,
+      lensesTried: counts?.lensesTried ?? 0,
+      lockedSeconds: counts?.lockedSeconds ?? 0,
+      maxFramePixels: counts?.maxFramePixels ?? 0,
+      favouriteLens: counts?.favouriteLens ?? -1,
+      triedLenses: counts?.triedLenses ?? [],
+      inferenceMs: counts?.inferenceMs ?? null,
+      delegate: live.delegate,
+      videoWidth: live.videoWidth,
+      videoHeight: live.videoHeight,
+      seconds,
+    });
     stop();
     store.resetSession();
     setHowOpen(false);
@@ -292,6 +328,13 @@ export function ViewfinderGame() {
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     else void document.documentElement.requestFullscreen?.().catch(() => {});
+  }, []);
+
+  /** The filter picker hands its thumbnail renderer to whichever engine is running. */
+  const connectPreview = useCallback((preview: LensPreview) => {
+    const engine = engineRef.current;
+    engine?.setPreview(preview);
+    return () => engine?.setPreview(null);
   }, []);
 
   // Release the camera, the GL context and the tracker when the game leaves the screen.
@@ -312,7 +355,8 @@ export function ViewfinderGame() {
     window.scrollTo(0, 0);
   }, [phase]);
 
-  // Keyboard: 1 to 0 and - lenses, ← → cycle, M mirror, H what the AI sees, F full screen.
+  // Keyboard: ← → filters, H AI view, F full screen (shown with KeyHints);
+  // 1 to 0 and - pick a filter directly and M mirrors (unlisted, for booth staff).
   useEffect(() => {
     if (phase !== "live" || howOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -370,13 +414,6 @@ export function ViewfinderGame() {
 
   const live = phase === "live";
   const waitingForPermission = cameraPending && (permission === "prompt" || permission === "unknown");
-  const liveNumbers: SessionNumbers = {
-    framesTracked: snap.framesTracked,
-    handsFound: snap.handsFound,
-    perSecond: snap.fps > 0 ? snap.fps : null,
-    locks: snap.locks,
-    lensesTried: snap.lensesTried,
-  };
 
   return (
     <GameShell
@@ -401,24 +438,22 @@ export function ViewfinderGame() {
       {live ? (
         <LiveHud
           snap={snap}
-          showStats={showStats}
           canFlip={canFlip}
           onLens={(i) => engineRef.current?.setLens(i)}
-          onStep={(d) => engineRef.current?.stepLens(d)}
-          onMirror={() => engineRef.current?.setMirror(!store.getSnapshot().mirror)}
           onSkeleton={() => engineRef.current?.setSkeleton(!store.getSnapshot().skeleton)}
-          onStats={() => setShowStats((on) => !on)}
           onFlip={() => void start(facingRef.current === "user" ? "environment" : "user")}
+          connectPreview={connectPreview}
         />
       ) : (
         <div className="relative z-10 flex flex-1 flex-col">
           {phase === "intro" ? (
             <GameIntro
               slug="viewfinder"
-              art={<GameArt slug="viewfinder" />}
+              art={<GameArt slug="viewfinder" mode="intro" />}
               steps={INTRO_STEPS}
               primary={{ label: "Turn on camera", onClick: () => void start("user") }}
               footnote={PRIVACY_LINE}
+              keys={KEY_HINTS}
             />
           ) : null}
           {phase === "loading" ? (
@@ -431,7 +466,7 @@ export function ViewfinderGame() {
         </div>
       )}
 
-      <HowItWorksModal open={live && howOpen} onOpenChange={setHowOpen} numbers={liveNumbers} />
+      <HowItWorksModal open={live && howOpen} onOpenChange={setHowOpen} numbers={numbersFrom(snap)} />
     </GameShell>
   );
 }

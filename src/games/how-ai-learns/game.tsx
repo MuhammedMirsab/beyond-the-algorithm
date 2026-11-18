@@ -51,13 +51,15 @@ export function HowAiLearnsGame() {
         {state.step === "intro" ? (
           <GameIntro
             slug="how-ai-learns"
-            art={<GameArt slug="how-ai-learns" />}
+            art={<GameArt slug="how-ai-learns" mode="intro" />}
+            lead="Teach it two things you have with you, like a phone and a bottle. It learns to tell them apart in seconds, then tells you what it sees."
             steps={[
-              { title: "Pick two things to teach it" },
-              { title: "Give it example photos" },
-              { title: "Train it, then test it on photos it has never seen" },
+              { title: "Name two things", text: "Nothing on you? Use the photo library." },
+              { title: "Show each one to the camera", text: "Five photos each, then five with nothing in view." },
+              { title: "Train it, then test it live" },
             ]}
-            primary={{ label: "Start", onClick: actions.start }}
+            primary={{ label: "Choose what to teach", onClick: actions.start }}
+            keys={[{ keys: ["Space"], label: "Take photos, then test" }]}
             footnote="Everything runs in this browser. Photos you take stay on this device and are deleted for the next player."
           />
         ) : null}

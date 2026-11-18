@@ -4,8 +4,16 @@ import { useAnimate, useReducedMotion } from "motion/react";
 import { SlidersHorizontal, Trash2, Undo2 } from "lucide-react";
 import { useEffect, type ReactNode, type Ref } from "react";
 import { Button, IconButton } from "@/components/ui/button";
+import type { KeyHint } from "@/components/ui/key-hints";
 import { Kbd } from "@/components/ui/surface";
 import { cn } from "@/lib/cn";
+
+/** The writing screen's keys, shown on the intro and in Settings. The handlers live in write-screen.tsx. */
+export const WRITE_KEYS: KeyHint[] = [
+  { keys: ["Enter"], label: "Read my writing" },
+  { keys: ["Z"], label: "Undo" },
+  { keys: ["C"], label: "Clear" },
+];
 
 /** 44px on phones, 56px (booth size) from 640px. */
 const ICON = "sm:size-14 sm:[&_svg]:size-6";

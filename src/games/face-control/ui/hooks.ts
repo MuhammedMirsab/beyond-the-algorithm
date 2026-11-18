@@ -63,14 +63,28 @@ export function useRunValues(session: FaceControlSession): RunValues {
   return values;
 }
 
-const COARSE = "(pointer: coarse)";
-const subscribeCoarse = (onChange: () => void) => {
-  const query = window.matchMedia(COARSE);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
-};
+function useMedia(query: string, server: boolean) {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia(query);
+      list.addEventListener("change", onChange);
+      return () => list.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => server,
+  );
+}
 
 /** True on touch-first devices (phones, tablets), where keys are replaced by on-screen buttons. */
 export function useCoarsePointer() {
-  return useSyncExternalStore(subscribeCoarse, () => window.matchMedia(COARSE).matches, () => false);
+  return useMedia("(pointer: coarse)", false);
+}
+
+/**
+ * Tablet width and up (Tailwind's md). The camera dock sits top right there and
+ * bottom right on phones; it is rendered once, in one place, because the live
+ * camera moves into whichever camera slot mounted last.
+ */
+export function useWide() {
+  return useMedia("(min-width: 768px)", true);
 }

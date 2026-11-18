@@ -18,7 +18,7 @@ export type Session =
 
 export type SessionAction =
   | { type: "set-range"; range: RangeId }
-  | { type: "start-machine" }
+  | { type: "start-machine"; range?: RangeId }
   | { type: "start-human"; secret: number; now: number }
   | { type: "to-intro" }
   | { type: "machine"; action: MachineAction }
@@ -32,9 +32,16 @@ export function initialSession(): Session {
 export function sessionReducer(session: Session, action: SessionAction): Session {
   switch (action.type) {
     case "set-range":
-      return session.screen === "intro" ? { ...session, range: action.range } : session;
-    case "start-machine":
-      return { screen: "machine", range: session.range, round: session.round + 1, machine: createMachineState(session.range) };
+      if (session.screen === "intro") return { ...session, range: action.range };
+      // Before the first question the visitor can still pick a bigger or smaller field.
+      if (session.screen === "machine" && session.machine.phase === "think" && session.range !== action.range) {
+        return { ...session, range: action.range, machine: createMachineState(action.range) };
+      }
+      return session;
+    case "start-machine": {
+      const range = action.range ?? session.range;
+      return { screen: "machine", range, round: session.round + 1, machine: createMachineState(range) };
+    }
     case "start-human":
       return {
         screen: "human",

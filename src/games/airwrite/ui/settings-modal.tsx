@@ -5,9 +5,11 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SliderRow } from "@/components/ui/controls";
 import { Modal } from "@/components/ui/dialog";
+import { KeyHints } from "@/components/ui/key-hints";
 import { MachineLabel } from "@/components/ui/surface";
 import { DEFAULT_SETTINGS, type PenSettings } from "../engine/airPen";
 import type { TrackingStats } from "../engine/useHandTracking";
+import { WRITE_KEYS } from "./toolbar";
 
 const level = (value: number) => (value < 0.34 ? "Low" : value < 0.67 ? "Medium" : "High");
 
@@ -114,6 +116,17 @@ export function SettingsModal({
           <Button variant="secondary" icon={<Crosshair />} disabled={!cameraReady} onClick={onCentre} className="mt-1">
             Centre on my hand
           </Button>
+        </div>
+        <div className="flex flex-col gap-3 border-t border-line pt-5">
+          <span className="type-body font-semibold text-fg">Keyboard</span>
+          <KeyHints
+            layout="list"
+            items={[
+              { keys: ["Enter", "Space"], label: "Read my writing" },
+              ...WRITE_KEYS.filter((k) => k.label !== "Read my writing"),
+              { keys: ["F"], label: "Full screen" },
+            ]}
+          />
         </div>
         <MachineLabel>{readout}</MachineLabel>
       </div>

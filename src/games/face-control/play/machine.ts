@@ -54,6 +54,12 @@ export const ABSENT_RESET_MS = 90_000;
 /** Countdowns: from 3 when a level starts, from 2 when play resumes. */
 export const COUNT_BEGIN = 3;
 export const COUNT_RESUME = 2;
+/**
+ * A loaded level shows its title card this long, then starts by itself: one
+ * less thing to press between practice (or the last level) and play. An open
+ * mouth, Space or the button still starts it sooner.
+ */
+export const LEVEL_CARD_MS = 1300;
 
 export const LEVEL_COUNT = LEVELS.length;
 
@@ -66,6 +72,8 @@ export interface LevelOutcome {
 
 export interface RunSummary {
   outcome: "game-over" | "victory";
+  /** How far through the last level played the ball got, 0 to 1 (1 for a win). */
+  furthest: number;
   score: number;
   /** Best score before this run (0 when there is none) and whether this run beat it. */
   previousBest: number;
@@ -157,6 +165,7 @@ export type Effect =
   | { type: "clear-input" }
   | { type: "countdown"; from: number }
   | { type: "cancel-countdown" }
+  | { type: "auto-start"; ms: number }
   | { type: "practice-finish-soon" }
   | { type: "record-level"; result: LevelResult }
   | { type: "finish-run"; outcome: RunSummary["outcome"] }
@@ -504,7 +513,11 @@ export function transition(state: MachineState, event: MachineEvent, now: number
 
     case "level-loaded":
       if (phase !== "level-intro" || event.index !== state.levelIndex) return step(state);
-      return step({ ...state, levelReady: true, continueAt: now + CONTINUE_GUARD_MS }, [{ type: "clear-input" }, { type: "rearm" }]);
+      return step({ ...state, levelReady: true, continueAt: now + CONTINUE_GUARD_MS }, [
+        { type: "clear-input" },
+        { type: "rearm" },
+        { type: "auto-start", ms: LEVEL_CARD_MS },
+      ]);
 
     case "start-level":
       if (phase !== "level-intro" || !state.levelReady) return step(state);

@@ -3,177 +3,158 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { audio } from "../engine/audio/audio";
 import { formatDegrees, formatRatio } from "../engine/format";
-import { Calibrator, type CalibHint, type CalibStep } from "../engine/vision/calibration";
-import type { ControlSnapshot, Guidance } from "../engine/vision/face-controller";
+import { Calibrator, type CalibHint } from "../engine/vision/calibration";
+import type { Guidance } from "../engine/vision/face-controller";
 import type { FaceControlSession } from "../play/session";
 
-export type CalibPhase = "position" | CalibStep;
-
-/** Seconds in one step before "Skip this step" appears. */
-export const SKIP_AFTER = 10;
-/** Seconds the face must sit well inside the guide before step 1 starts. */
-const POSITION_HOLD = 1;
-/** Pause on "All set" before the game moves on. */
-const DONE_MS = 900;
+/** Seconds before "Start anyway" appears, for a face that won't sit still (or isn't there). */
+export const SKIP_AFTER = 6;
+/** Pause on "Got you" before the world opens. */
+const DONE_MS = 800;
+/** Live readouts change at most this often, so they can be read. */
+const READOUT_MS = 120;
 
 /** Positioning help, in plain words. */
 export const GUIDANCE: Record<Guidance, string> = {
   ok: "Good. Hold that position",
-  "no-face": "Can't see your face. Look at the screen",
-  "too-far": "Move a little closer",
+  "no-face": "Can’t see your face. Look at the screen",
+  "too-far": "Come a little closer",
   "too-close": "Move back a little",
   "move-left": "Move a little to your left",
   "move-right": "Move a little to your right",
   "move-up": "Raise your head a little",
   "move-down": "Lower your head a little",
-  dark: "Find more light",
+  dark: "Find more light if you can",
 };
 
 export const HINTS: Record<Exclude<CalibHint, null>, string> = {
-  "no-face": "Can't see your face",
-  "hold-still": "Hold still",
-  "close-mouth": "Close your mouth for this step",
+  "no-face": "Can’t see your face",
+  "hold-still": "Hold still for a moment",
+  "close-mouth": "Close your mouth for this",
   "other-way": "Other way: tilt toward your other shoulder",
   "a-bit-more": "A little more",
   hold: "Good, hold it",
 };
 
-export interface CalibrationView {
-  phase: CalibPhase;
-  /** Progress through the current step, 0..1, in 5% steps (keeps re-renders low). */
+export interface FaceCheckView {
+  done: boolean;
+  /** 0..1 in 5% steps (keeps re-renders low). */
   progress: number;
   hint: { text: string; ok: boolean } | null;
-  canSkip: boolean;
-  /** The face is inside the guide (positioning) or tracked (steps). */
+  /** The face is inside the guide. */
   faceOk: boolean;
+  canSkip: boolean;
 }
 
-const INITIAL: CalibrationView = { phase: "position", progress: 0, hint: null, canSkip: false, faceOk: false };
-
-const same = (a: CalibrationView, b: CalibrationView) =>
-  a.phase === b.phase &&
-  a.progress === b.progress &&
-  a.canSkip === b.canSkip &&
-  a.faceOk === b.faceOk &&
-  a.hint?.text === b.hint?.text &&
-  a.hint?.ok === b.hint?.ok;
-
-/** A live number for the readout, in the machine voice: what the camera measures right now. */
-function readout(phase: CalibPhase, s: ControlSnapshot, calibrator: Calibrator) {
-  if (!s.hasFace) return "No face";
-  if (phase === "left" || phase === "right") {
-    const tilt = calibrator.liveTilt;
-    const side = tilt > 0.5 ? "right" : tilt < -0.5 ? "left" : "";
-    return `Tilt ${formatDegrees(tilt)} ${side}`.trim();
-  }
-  if (phase === "mouth") return `Mouth ${formatRatio(s.mouth)}`;
-  return `Eye line ${formatDegrees(s.roll)} · Mouth ${formatRatio(s.mouth)}`;
+export interface FaceCheckReadouts {
+  points: RefObject<HTMLElement | null>;
+  eyeLine: RefObject<HTMLElement | null>;
+  mouth: RefObject<HTMLElement | null>;
 }
+
+const INITIAL: FaceCheckView = { done: false, progress: 0, hint: null, faceOk: false, canSkip: false };
+
+const same = (a: FaceCheckView, b: FaceCheckView) =>
+  a.done === b.done && a.progress === b.progress && a.canSkip === b.canSkip && a.faceOk === b.faceOk && a.hint?.text === b.hint?.text && a.hint?.ok === b.hint?.ok;
+
+const setText = (ref: RefObject<HTMLElement | null>, text: string) => {
+  if (ref.current && ref.current.textContent !== text) ref.current.textContent = text;
+};
 
 /**
- * Runs one calibration (the original CalibrationView): positioning, then four
- * steps that advance by themselves as the visitor does each movement.
- * Hands the result to the session when done.
+ * The face check: about a second of looking straight at the screen. It runs
+ * the calibrator's neutral step (where your head and mouth rest), which is the
+ * one measurement play can't do without. How far you tilt is learnt in
+ * practice instead, and the jump line starts from the default, so the old
+ * four-pose calibration is gone from the way in.
  */
-export function useCalibration(session: FaceControlSession, readoutRef: RefObject<HTMLElement | null>) {
-  const [view, setView] = useState<CalibrationView>(INITIAL);
+export function useFaceCheck(session: FaceControlSession, readouts: FaceCheckReadouts) {
+  const [view, setView] = useState<FaceCheckView>(INITIAL);
   const skipRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const calibrator = new Calibrator();
-    let phase: CalibPhase = "position";
-    let positionHold = 0;
-    let lastT = performance.now();
+    const startedAt = performance.now();
+    let lastT = startedAt;
+    let lastReadout = 0;
     let finished = false;
     let points: { x: number; y: number }[] | null = null;
     let doneTimer = 0;
     let last = INITIAL;
-    let lastReadout = "";
 
-    const publish = (next: CalibrationView) => {
+    const publish = (next: FaceCheckView) => {
       if (same(next, last)) return;
       last = next;
       setView(next);
     };
 
-    const advanceTo = (next: CalibStep) => {
-      phase = next;
-      if (next === "done") {
-        finished = true;
-        audio.play("calibrated");
-        publish({ phase: "done", progress: 1, hint: { text: "Calibration complete", ok: true }, canSkip: false, faceOk: true });
-        const profile = calibrator.result();
-        const measured = { ...calibrator.measured };
-        doneTimer = window.setTimeout(() => session.finishCalibration({ profile, measured, points }), DONE_MS);
-        return;
-      }
-      audio.play("step");
-      publish({ phase: next, progress: 0, hint: null, canSkip: false, faceOk: last.faceOk });
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      audio.play("calibrated");
+      publish({ done: true, progress: 1, hint: { text: "Got you", ok: true }, faceOk: true, canSkip: false });
+      const profile = calibrator.result();
+      const measured = { ...calibrator.measured };
+      doneTimer = window.setTimeout(() => session.finishCalibration({ profile, measured, points }), DONE_MS);
     };
 
+    // Start anyway: keep whatever neutral pose was collected (or the defaults).
     skipRef.current = () => {
-      if (finished || phase === "position") return;
-      const skipped = calibrator.skip();
-      if (skipped) advanceTo(calibrator.step);
+      if (finished) return;
+      if (calibrator.step === "neutral") calibrator.skip();
+      finish();
     };
+    // The way out appears on time even if tracking frames stall.
+    const skipTimer = window.setTimeout(() => {
+      if (!finished) publish({ ...last, canSkip: true });
+    }, SKIP_AFTER * 1000);
 
     const off = session.onFrame((s) => {
       if (finished) return;
       const dt = Math.min(0.1, Math.max(0, (s.t - lastT) / 1000));
       lastT = s.t;
+      // Wall-clock seconds on this screen: slow tracking must not delay the way out.
+      const elapsed = (s.t - startedAt) / 1000;
 
-      const text = readout(phase, s, calibrator);
-      if (text !== lastReadout && readoutRef.current) {
-        readoutRef.current.textContent = text;
-        lastReadout = text;
+      if (s.t - lastReadout >= READOUT_MS) {
+        lastReadout = s.t;
+        setText(readouts.points, s.landmarks ? String(s.landmarks.length) : "None yet");
+        // The eye line against the camera's horizontal, and the lip gap over the eye distance.
+        setText(readouts.eyeLine, s.hasFace ? formatDegrees(s.roll) : "None yet");
+        setText(readouts.mouth, s.hasFace ? formatRatio(s.mouth) : "None yet");
       }
 
-      if (phase === "position") {
-        const ok = s.hasFace && (s.guidance === "ok" || s.guidance === "dark");
-        positionHold = ok ? positionHold + dt : Math.max(0, positionHold - dt * 2);
-        if (positionHold >= POSITION_HOLD) {
-          advanceTo("neutral");
-          return;
-        }
-        publish({
-          phase,
-          progress: Math.round((positionHold / POSITION_HOLD) * 20) / 20,
-          hint: { text: GUIDANCE[s.hasFace ? s.guidance : "no-face"], ok },
-          canSkip: false,
-          faceOk: ok,
-        });
+      const inGuide = s.hasFace && (s.guidance === "ok" || s.guidance === "dark");
+      const completed = calibrator.feed(inGuide ? { roll: s.roll, yaw: s.yaw, mouth: s.mouth } : null, dt);
+      if (completed === "neutral") {
+        // Keep this visitor's 478 points at their neutral pose for the reveal (memory only).
+        if (s.landmarks) points = s.landmarks.map((p) => ({ x: p.x, y: p.y }));
+        finish();
         return;
       }
 
-      const sample = s.hasFace ? { roll: s.roll, yaw: s.yaw, mouth: s.mouth } : null;
-      const completed = calibrator.feed(sample, dt);
-      // Keep this visitor's 478 points at their neutral pose for the reveal (memory only).
-      if (completed === "neutral" && s.landmarks) points = s.landmarks.map((p) => ({ x: p.x, y: p.y }));
+      let hint: FaceCheckView["hint"];
+      if (!s.hasFace) hint = { text: GUIDANCE["no-face"], ok: false };
+      else if (!inGuide) hint = { text: GUIDANCE[s.guidance], ok: false };
+      else if (calibrator.hint === "hold") hint = { text: s.guidance === "dark" ? GUIDANCE.dark : HINTS.hold, ok: true };
+      else hint = calibrator.hint ? { text: HINTS[calibrator.hint], ok: false } : null;
 
-      const hint = calibrator.hint;
-      let shown: CalibrationView["hint"];
-      if (s.hasFace && s.guidance !== "ok" && hint !== "hold") shown = { text: GUIDANCE[s.guidance], ok: false };
-      else shown = hint ? { text: HINTS[hint], ok: hint === "hold" } : null;
-
-      if (completed) {
-        advanceTo(calibrator.step);
-        return;
-      }
       publish({
-        phase,
+        done: false,
         progress: Math.round(calibrator.progress * 20) / 20,
-        hint: shown,
-        canSkip: calibrator.stepTime > SKIP_AFTER,
-        faceOk: s.hasFace,
+        hint,
+        faceOk: inGuide,
+        canSkip: elapsed > SKIP_AFTER,
       });
     });
 
     return () => {
       off();
       window.clearTimeout(doneTimer);
+      window.clearTimeout(skipTimer);
       skipRef.current = null;
     };
-  }, [session, readoutRef]);
+  }, [session, readouts.points, readouts.eyeLine, readouts.mouth]);
 
   const skip = useCallback(() => skipRef.current?.(), []);
   return { view, skip };

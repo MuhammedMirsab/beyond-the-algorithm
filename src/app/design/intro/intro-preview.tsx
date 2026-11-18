@@ -9,7 +9,7 @@ import { GameShell } from "@/components/game/game-shell";
 import { Button, IconButton } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/chip";
 
-/** Design QA: the shared intro screen for any game, with its real art. */
+/** Design QA: the shared intro screen for any game, with its real intro loop. */
 export function IntroPreview() {
   const [slug, setSlug] = useState<GameSlug>("face-control");
   return (
@@ -34,7 +34,7 @@ export function IntroPreview() {
       </div>
       <GameIntro
         slug={slug}
-        art={<GameArt slug={slug} />}
+        art={<GameArt slug={slug} mode="intro" />}
         steps={[
           { title: "Turn on your camera", text: "Video stays on this laptop." },
           { title: "Show it your face", text: "Look straight, tilt, then open your mouth." },

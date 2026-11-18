@@ -144,7 +144,7 @@ export function Stage({
     };
   }, [session, simulated, playArea]);
 
-  // Simulated hands: the pointer is the right hand's fingertip.
+  // Simulated hands: the pointer is the right hand (its fingertip or palm, whichever the instrument plays with).
   const toFrame = (clientX: number, clientY: number) => {
     const root = rootRef.current;
     if (!root) return null;
@@ -163,9 +163,10 @@ export function Stage({
         if (p) tracker.simPointer(p.x, p.y);
       }}
       onPointerDown={(e) => {
-        if (!simulated) return;
+        if (!simulated || (e.pointerType === "mouse" && e.button !== 0)) return;
+        // A click or tap plays like a quick strike of the pretend hand.
         const p = toFrame(e.clientX, e.clientY);
-        if (p) tracker.simPointer(p.x, p.y);
+        if (p) tracker.simStrike(p.x, p.y);
       }}
       onPointerLeave={() => {
         if (simulated) tracker.simHide();

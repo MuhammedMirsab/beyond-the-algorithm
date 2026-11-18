@@ -1,27 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { GameArt } from "@/components/art/game-art";
 import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
+import { NextPlayerButton } from "@/components/game/next-player";
+import { entrance } from "@/lib/entrance";
 import { useIdle } from "@/lib/idle";
 import { SoundSynthesizer } from "./engine/audio";
 import { getGameQuestions, questionSources } from "./engine/pairs";
 import { warmUp } from "./engine/preload";
 import { ROUNDS, SECONDS_PER_ROUND } from "./engine/scoring";
 import type { ActiveQuestion, PlayerAnswer } from "./engine/types";
+import { PlayScreen, type Run } from "./ui/play-screen";
 import { ResultsScreen } from "./ui/results-screen";
-import { RoundScreen } from "./ui/round-screen";
+import { isControl } from "./ui/round-screen";
 
 type Phase = "intro" | "playing" | "results";
 
-interface Run {
-  /** New for every game, so rounds and results always mount fresh. */
-  id: number;
-  questions: ActiveQuestion[];
-  index: number;
-  answers: PlayerAnswer[];
-}
+/** Screens cross-fade: out quickly, in a little slower. */
+const SCREEN = {
+  animate: { opacity: 1, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
+  exit: { opacity: 0, transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] } },
+} as const;
 
 /**
  * Real or AI? Six pairs of photos, one AI-made in each. Intro, six timed
@@ -63,12 +65,12 @@ export function RealOrAiGame() {
   const advance = (fromIndex: number) => {
     if (!run || run.index !== fromIndex) return;
     if (fromIndex + 1 < run.questions.length) {
-      setRun({ ...run, index: fromIndex + 1 });
+      setRun((r) => (r && r.index === fromIndex ? { ...r, index: fromIndex + 1 } : r));
     } else {
       setPhase("results");
       sound.playFanfare();
+      toTop();
     }
-    toTop();
   };
 
   /** Booth reset: back to the intro with nothing of this visitor left in memory. */
@@ -87,41 +89,53 @@ export function RealOrAiGame() {
     { enabled: phase !== "playing" },
   );
 
+  // Enter starts the game from the intro (the laptop's quickest way in).
+  const onIntroKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== "Enter" || e.repeat || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || isControl(e.target)) return;
+    e.preventDefault();
+    start();
+  });
+  useEffect(() => {
+    if (phase !== "intro") return;
+    const listener = (e: KeyboardEvent) => onIntroKey(e);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, [phase]);
+
   return (
-    <GameShell slug="real-or-ai" sound>
-      {phase === "playing" && run ? (
-        <RoundScreen
-          key={`${run.id}-${run.index}`}
-          question={run.questions[run.index]}
-          index={run.index}
-          nextQuestion={run.questions[run.index + 1] ?? null}
-          isLast={run.index === run.questions.length - 1}
-          sound={sound}
-          onAnswer={recordAnswer}
-          onNext={() => advance(run.index)}
-          onIdle={nextPlayer}
-        />
-      ) : phase === "results" && run ? (
-        <ResultsScreen
-          key={run.id}
-          questions={run.questions}
-          answers={run.answers}
-          onPlayAgain={start}
-          onNextPlayer={nextPlayer}
-        />
-      ) : (
-        <GameIntro
-          slug="real-or-ai"
-          art={<GameArt slug="real-or-ai" />}
-          steps={[
-            { title: "Look at two photos of the same scene", text: "One is a real photo. AI redrew the other one." },
-            { title: "Pick the one AI made before the timer runs out", text: "Tap it, or press A or B. The magnifier gives you a closer look." },
-            { title: "See what gave it away", text: "After each pick, the clues show where AI slipped." },
-          ]}
-          primary={{ label: "Start game", onClick: start }}
-          footnote={`${ROUNDS} rounds, ${SECONDS_PER_ROUND} seconds each. The photos get harder as you go.`}
-        />
-      )}
+    <GameShell slug="real-or-ai" sound actions={phase === "intro" ? null : <NextPlayerButton onClick={nextPlayer} />}>
+      <AnimatePresence mode="wait" initial={false}>
+        {phase === "playing" && run ? (
+          <motion.div key={`play-${run.id}`} className="flex flex-1 flex-col" initial={{ opacity: 0 }} {...SCREEN}>
+            <PlayScreen run={run} sound={sound} onAnswer={recordAnswer} onAdvance={advance} onIdle={nextPlayer} />
+          </motion.div>
+        ) : phase === "results" && run ? (
+          <motion.div key={`results-${run.id}`} className="flex flex-1 flex-col" initial={{ opacity: 0 }} {...SCREEN}>
+            <ResultsScreen questions={run.questions} answers={run.answers} onPlayAgain={start} onNextPlayer={nextPlayer} />
+          </motion.div>
+        ) : (
+          <motion.div key="intro" className="flex flex-1 flex-col" initial={entrance({ opacity: 0 })} {...SCREEN}>
+            <GameIntro
+              slug="real-or-ai"
+              art={<GameArt slug="real-or-ai" mode="intro" />}
+              steps={[
+                { title: "Two photos, one scene", text: "One is a real photo. AI made the other one from it." },
+                {
+                  title: "Pick the one AI made",
+                  text: "Tap or click it before the timer runs out. The magnifier shows the fine detail where AI slips.",
+                },
+                { title: "See what gave it away", text: "Each round ends with the clues circled on the photo." },
+              ]}
+              primary={{ label: "Start game", onClick: start }}
+              footnote={`${ROUNDS} rounds, ${SECONDS_PER_ROUND} seconds each. The photos get harder as you go.`}
+              keys={[
+                { keys: ["Enter"], label: "Start game" },
+                { keys: ["A", "B"], label: "Pick a photo" },
+              ]}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GameShell>
   );
 }

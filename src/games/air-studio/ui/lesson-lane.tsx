@@ -97,7 +97,7 @@ export function LessonLane({ session, className }: { session: StudioSession; cla
       g.font = font(500, 11, "mono");
       g.fillStyle = rgba(C.game);
       g.textAlign = "right";
-      g.fillText("NOW", nowX - 6, 14);
+      g.fillText("Now", nowX - 6, 14);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);

@@ -1,98 +1,195 @@
 "use client";
 
-import { motion } from "motion/react";
-import { ArrowDown, ArrowUp, Info } from "lucide-react";
-import { useId, useMemo, useRef, useState, type FormEvent } from "react";
+import NumberFlow from "@number-flow/react";
+import { AnimatePresence, motion } from "motion/react";
+import { ArrowLeft, ArrowRight, Check, Info, MessageCircleQuestionMark, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
-import { StepDots } from "@/components/ui/progress";
-import { Kbd } from "@/components/ui/surface";
+import { KeyHints } from "@/components/ui/key-hints";
 import { cn } from "@/lib/cn";
 import { parseCustomClue } from "../engine/custom-clue-parser";
 import { numberRange } from "../engine/game-engine";
-import { cluesLeft, guessesLeft, humanCards, possibleNumbers, type AskedClue, type ClueCardView, type HumanAction, type HumanState } from "../engine/human";
+import { cluesLeft, humanCards, possibleNumbers, type AskedClue, type ClueCardView, type HumanAction, type HumanState } from "../engine/human";
 import { formatNumber } from "../engine/ranges";
-import { AnswerChip, GuessTrail } from "./bits";
-import { useScreenFocus } from "./hooks";
-import { PossibleBar } from "./possible-bar";
-
-const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+import { AnswerChip } from "./bits";
+import { useKeys, useScreenFocus } from "./hooks";
+import { EASE_OUT } from "./motion";
+import { RangeLine, type LineFocus } from "./range-line";
 
 const INPUT =
   "h-14 min-w-0 flex-1 rounded-full bg-sunken px-6 text-fg shadow-ring outline-none placeholder:text-fg-faint " +
   "transition-shadow duration-150 focus:shadow-[0_0_0_2px_var(--color-fg)]";
 
-/** "Find its number": guess with higher or lower, narrow it down with clues. */
-export function HumanPlay({ human, dispatch }: { human: HumanState; dispatch: (action: HumanAction) => void }) {
+const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+/** How long the end of a round stays on the line before the results. */
+export const HUMAN_END_MS = { won: 1500, lost: 2200 } as const;
+
+/**
+ * "Find its number": guess, read higher or lower on the line, narrow it down.
+ * Clues are there for when you're stuck, and cost points.
+ */
+export function HumanPlay({
+  human,
+  dispatch,
+  onFinished,
+}: {
+  human: HumanState;
+  dispatch: (action: HumanAction) => void;
+  /** Called a beat after the round ends, once the line has shown the number. */
+  onFinished: () => void;
+}) {
   const heading = useScreenFocus<HTMLHeadingElement>();
   const range = numberRange(human.range);
-  const possible = useMemo(() => possibleNumbers(human), [human]);
-  const used = human.guesses.length;
-  const left = guessesLeft(human);
+  const { guesses, clues } = human;
+  const possible = useMemo(() => possibleNumbers({ range: human.range, guesses, clues }), [human.range, guesses, clues]);
+  const finished = human.status !== "playing";
+  const [draft, setDraft] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (human.status === "playing") return;
+    const id = window.setTimeout(onFinished, HUMAN_END_MS[human.status]);
+    return () => window.clearTimeout(id);
+  }, [human.status, onFinished]);
+
+  const event = human.event;
+  const focus: LineFocus =
+    event?.kind === "guess" ? { kind: "guess", value: guesses[event.index].value } : event?.kind === "clue" ? { kind: "clue" } : null;
+
+  const pick = (n: number) => {
+    if (finished) return;
+    setDraft(String(n));
+    input.current?.focus();
+  };
 
   return (
-    <section className="mx-auto grid w-full max-w-[69rem] items-start gap-8 px-4 pb-12 pt-4 sm:px-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12 lg:px-8 lg:pb-16 lg:pt-8">
-      <div className="flex min-w-0 flex-col gap-7">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="type-label tabular-nums text-game" aria-hidden>
-              Guess {Math.min(used + 1, range.maxGuesses)} of {range.maxGuesses}
-            </span>
-            <StepDots total={range.maxGuesses} current={used} label="Guess" />
-          </div>
-          <h1 ref={heading} tabIndex={-1} className="type-title-1 text-fg outline-none">
-            I&apos;m thinking of a number from {range.label}.
-          </h1>
-          <p className="type-body-lg text-fg-muted">
-            {used === 0 ? `You have ${range.maxGuesses} guesses.` : `${left} ${left === 1 ? "guess" : "guesses"} left.`}
-          </p>
-        </div>
-
-        <PossibleBar max={range.max} possible={possible} />
-        <GuessForm max={range.max} possible={possible} dispatch={dispatch} />
-        <GuessFeedback human={human} />
-
-        {used > 0 ? (
-          <div className="flex flex-col gap-2.5">
-            <h2 className="type-label text-fg-subtle">Your guesses</h2>
-            <GuessTrail guesses={human.guesses} />
-          </div>
-        ) : null}
+    <section className="mx-auto flex w-full max-w-[72rem] flex-col gap-5 px-4 pb-10 pt-1 sm:gap-6 sm:px-6 lg:px-8 lg:pb-14">
+      <div className="flex flex-col gap-2">
+        <span className="type-label text-game" aria-hidden>
+          Find its number
+        </span>
+        <h1 ref={heading} tabIndex={-1} className="type-title-1 text-fg outline-none">
+          I&apos;m thinking of a number from {range.label}.
+        </h1>
       </div>
 
-      <CluePanel human={human} dispatch={dispatch} />
+      <figure className="flex flex-col gap-3 rounded-xl bg-surface p-4 shadow-ring sm:p-5">
+        <figcaption className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-1">
+          <span className="flex items-baseline gap-2.5">
+            <NumberFlow
+              value={finished && human.status === "won" ? 1 : possible.length}
+              className="font-dots text-[2.75rem] leading-[0.9] font-extrabold tabular-nums text-fg [font-variation-settings:'ROND'_70]"
+            />
+            <span className="type-small text-fg-muted">{possible.length === 1 ? "number could be it" : "numbers could be it"}</span>
+          </span>
+          <GuessPips used={guesses.length} total={range.maxGuesses} won={human.status === "won"} />
+        </figcaption>
+        <RangeLine
+          max={range.max}
+          possible={possible}
+          guesses={guesses}
+          focus={focus}
+          reveal={finished ? human.secret : null}
+          onPick={finished ? undefined : pick}
+        />
+      </figure>
+
+      <div className="grid items-start gap-5 sm:gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-8">
+        <div className="flex min-w-0 flex-col gap-5">
+          <GuessForm
+            max={range.max}
+            possible={possible}
+            draft={draft}
+            setDraft={setDraft}
+            input={input}
+            disabled={finished}
+            onGuess={(value) => dispatch({ type: "guess", value, now: Date.now() })}
+          />
+          <Feedback human={human} />
+        </div>
+        <CluePanel human={human} dispatch={dispatch} />
+      </div>
     </section>
+  );
+}
+
+function GuessPips({ used, total, won }: { used: number; total: number; won: boolean }) {
+  const left = Math.max(0, total - used);
+  return (
+    <span className="flex flex-col items-end gap-2">
+      <span role="img" aria-label={`Guess ${Math.min(used + 1, total)} of ${total}`} className="flex gap-1">
+        {Array.from({ length: total }, (_, i) => (
+          <span
+            key={i}
+            className={cn(
+              "h-2 w-3 rounded-full transition-colors duration-300 ease-out sm:w-4",
+              i < used ? (won && i === used - 1 ? "bg-game" : "bg-fg-muted") : "bg-fg/15",
+            )}
+          />
+        ))}
+      </span>
+      <span className="type-caption tabular-nums text-fg-subtle">
+        {won ? `Found in ${used}` : `${left} ${left === 1 ? "guess" : "guesses"} left`}
+      </span>
+    </span>
   );
 }
 
 function GuessForm({
   max,
   possible,
-  dispatch,
+  draft,
+  setDraft,
+  input,
+  disabled,
+  onGuess,
 }: {
   max: number;
   possible: readonly number[];
-  dispatch: (action: HumanAction) => void;
+  draft: string;
+  setDraft: (value: string | ((old: string) => string)) => void;
+  input: RefObject<HTMLInputElement | null>;
+  disabled: boolean;
+  onGuess: (value: number) => void;
 }) {
   const id = useId();
-  const input = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const n = value === "" ? null : Number(value);
-  const valid = n != null && Number.isInteger(n) && n >= 1 && n <= max;
+  const n = draft === "" ? null : Number(draft);
+  const valid = n !== null && Number.isInteger(n) && n >= 1 && n <= max;
   const crossedOut = valid && !possible.includes(n);
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
+  const submit = (e?: FormEvent) => {
+    e?.preventDefault();
+    if (disabled) return;
     if (!valid) {
       setError(`Type a whole number from 1 to ${formatNumber(max)}.`);
       return;
     }
     setError(null);
-    dispatch({ type: "guess", value: n, now: Date.now() });
-    setValue("");
+    onGuess(n);
+    setDraft("");
     input.current?.focus();
   };
+
+  // Type anywhere: digits go straight into the guess box.
+  useKeys(
+    {
+      ...Object.fromEntries(
+        DIGITS.map((d) => [
+          d,
+          () => {
+            input.current?.focus();
+            setDraft((old) => (old + d).replace(/^0+/, "").slice(0, 4));
+            setError(null);
+          },
+        ]),
+      ),
+      Enter: () => submit(),
+    },
+    !disabled,
+  );
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-3">
@@ -103,9 +200,10 @@ function GuessForm({
         <input
           ref={input}
           id={`${id}-guess`}
-          value={value}
+          value={draft}
+          disabled={disabled}
           onChange={(e) => {
-            setValue(e.target.value.replace(/\D/g, "").slice(0, 4));
+            setDraft(e.target.value.replace(/\D/g, "").slice(0, 4));
             if (error) setError(null);
           }}
           inputMode="numeric"
@@ -115,63 +213,101 @@ function GuessForm({
           placeholder={`1 to ${formatNumber(max)}`}
           aria-invalid={error ? true : undefined}
           aria-describedby={`${id}-help`}
-          className={cn(INPUT, "type-title-3 tabular-nums", error && "shadow-[0_0_0_2px_var(--color-danger)]")}
+          className={cn(INPUT, "type-title-3 tabular-nums disabled:opacity-60", error && "shadow-[0_0_0_2px_var(--color-danger)]")}
         />
-        <Button type="submit" variant="game" size="lg" arrow>
+        <Button type="submit" variant="game" size="lg" arrow aria-disabled={disabled || undefined}>
           Guess
         </Button>
       </div>
-      <p id={`${id}-help`} className={cn("type-small min-h-[1lh] pl-6", error ? "text-danger" : "text-fg-subtle")}>
+      <div id={`${id}-help`} className={cn("type-small min-h-6 pl-6", error ? "text-danger" : "text-fg-subtle")}>
         {error ? (
           error
         ) : crossedOut ? (
           `${formatNumber(n)} is already crossed out.`
         ) : (
-          <span className="hidden items-center gap-2 lg:inline-flex">
-            Press <Kbd>Enter</Kbd> to guess
-          </span>
+          <>
+            <span className="pointer-fine:hidden">Or tap a number on the line.</span>
+            <KeyHints
+              className="hidden pointer-fine:flex"
+              items={[
+                { keys: ["0", "9"], join: "to", label: "Type a guess" },
+                { keys: ["Enter"], label: "Guess" },
+              ]}
+            />
+          </>
         )}
-      </p>
+      </div>
     </form>
   );
 }
 
-function GuessFeedback({ human }: { human: HumanState }) {
+/** Higher or lower, big and immediate. Replays even when the same answer repeats. */
+function Feedback({ human }: { human: HumanState }) {
   const event = human.event;
-  const repeat = event?.kind === "repeat-guess" ? human.guesses[event.index] : null;
-  const shown = repeat ?? human.guesses[human.guesses.length - 1];
-  if (!shown || shown.result === "correct") return null;
+  let content: { key: string; icon: ReactNode; title: string; text: string; tone: "neutral" | "game" } | null = null;
 
-  const higher = shown.result === "higher";
-  const value = formatNumber(shown.value);
+  if (human.status === "won") {
+    content = { key: "won", icon: <Check />, title: "That's it", text: `You found ${formatNumber(human.secret)}.`, tone: "game" };
+  } else if (human.status === "lost") {
+    content = { key: "lost", icon: <X />, title: "Out of guesses", text: `Its number was ${formatNumber(human.secret)}.`, tone: "neutral" };
+  } else if (event?.kind === "guess" || event?.kind === "repeat-guess") {
+    const g = human.guesses[event.index];
+    const higher = g.result === "higher";
+    const value = formatNumber(g.value);
+    content = {
+      key: `${event.kind}-${human.turn}`,
+      icon: higher ? <ArrowRight /> : <ArrowLeft />,
+      title: higher ? "Higher" : "Lower",
+      text: `${event.kind === "repeat-guess" ? `You already guessed ${value}. ` : ""}It's ${higher ? "more" : "less"} than ${value}.`,
+      tone: "neutral",
+    };
+  }
+
   return (
-    <motion.div
-      key={repeat ? `repeat-${human.turn}` : `guess-${human.guesses.length}`}
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: EASE_OUT }}
-      className="flex items-center gap-4 rounded-lg bg-surface p-4 shadow-ring sm:p-5"
-    >
-      <span aria-hidden className="grid size-14 shrink-0 place-items-center rounded-full bg-game-soft text-game [&_svg]:size-7">
-        {higher ? <ArrowUp strokeWidth={2.5} /> : <ArrowDown strokeWidth={2.5} />}
-      </span>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <p className="type-title-1 text-fg">{higher ? "Higher" : "Lower"}</p>
-        <p className="type-body text-fg-muted">
-          {repeat ? `You already guessed ${value}. ` : ""}
-          It&apos;s {higher ? "more" : "less"} than {value}.
-        </p>
-      </div>
-    </motion.div>
+    <div className="min-h-24" aria-hidden={content ? undefined : true}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        {content ? (
+          <motion.div
+            key={content.key}
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.12 } }}
+            transition={content.tone === "game" ? { type: "spring", duration: 0.45, bounce: 0.25 } : { duration: 0.22, ease: EASE_OUT }}
+            className={cn(
+              "flex items-center gap-4 rounded-lg p-4 sm:p-5",
+              content.tone === "game" ? "tile-surface grain" : "bg-surface shadow-ring",
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "relative z-[2] grid size-14 shrink-0 place-items-center rounded-full [&_svg]:size-7 [&_svg]:stroke-[2.5]",
+                content.tone === "game" ? "bg-game-ink text-game" : "bg-game-soft text-game",
+              )}
+            >
+              {content.icon}
+            </span>
+            <div className="relative z-[2] flex min-w-0 flex-col gap-0.5">
+              <p className={cn("type-title-1", content.tone === "game" ? "text-game-ink" : "text-fg")}>{content.title}</p>
+              <p className={cn("type-body", content.tone === "game" ? "text-game-ink" : "text-fg-muted")}>{content.text}</p>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
   );
 }
+
+/* ── Clues ──────────────────────────────────────────────────────── */
 
 function CluePanel({ human, dispatch }: { human: HumanState; dispatch: (action: HumanAction) => void }) {
   const id = useId();
   const { maxSuggestions } = numberRange(human.range);
   const cards = humanCards(human);
   const left = cluesLeft(human);
+  const finished = human.status !== "playing";
   const typed = human.clues.filter((c) => c.source === "typed").reverse();
+  const [own, setOwn] = useState(false);
   const [text, setText] = useState("");
 
   const event = human.event;
@@ -193,57 +329,64 @@ function CluePanel({ human, dispatch }: { human: HumanState; dispatch: (action: 
   };
 
   return (
-    <section aria-labelledby={`${id}-title`} className="flex min-w-0 flex-col gap-6 rounded-xl bg-surface p-5 shadow-ring sm:p-6">
-      <div className="flex flex-col gap-1.5">
+    <section aria-labelledby={`${id}-title`} className="flex min-w-0 flex-col gap-4 rounded-xl bg-surface p-4 shadow-ring sm:p-5">
+      <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id={`${id}-title`} className="type-title-2 text-fg">
-            Clues
+          <h2 id={`${id}-title`} className="type-title-3 text-fg">
+            Stuck? Ask a clue
           </h2>
           <span className="type-label tabular-nums text-fg-subtle">
             {left} of {maxSuggestions} left
           </span>
         </div>
-        <p className="type-body text-fg-muted">
-          Ask yes or no questions about its number. You get {maxSuggestions} {maxSuggestions === 1 ? "clue" : "clues"}, and the answer only shows once you ask.
-        </p>
+        <p className="type-small text-fg-subtle">A yes or no answer about its number. Each clue lowers your score.</p>
       </div>
 
-      <ul className="grid gap-2.5 sm:grid-cols-2">
+      <ul className="grid gap-2 sm:grid-cols-2">
         {cards.map((card) => (
           <li key={card.id} className="min-w-0">
-            <ClueCard card={card} noneLeft={left === 0} onAsk={() => dispatch({ type: "ask-card", id: card.id })} />
+            <ClueCard card={card} noneLeft={left === 0 || finished} onAsk={() => dispatch({ type: "ask-card", id: card.id })} />
           </li>
         ))}
       </ul>
 
-      <form onSubmit={submit} noValidate className="flex flex-col gap-3">
-        <label htmlFor={`${id}-ask`} className="type-body font-semibold text-fg">
-          Or ask your own
-        </label>
-        <div className="flex gap-3">
-          <input
-            id={`${id}-ask`}
-            value={text}
-            onChange={(e) => setText(e.target.value.slice(0, 80))}
-            autoComplete="off"
-            autoCapitalize="sentences"
-            spellCheck={false}
-            enterKeyHint="send"
-            placeholder="Is it between 20 and 40?"
-            aria-describedby={message ? `${id}-message` : undefined}
-            className={cn(INPUT, "type-body")}
-          />
-          <Button type="submit" variant="secondary" size="lg">
-            Ask
-          </Button>
-        </div>
-        {message ? (
-          <p id={`${id}-message`} className="type-small flex items-start gap-2 pl-6 text-fg-muted">
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {message}
-          </p>
-        ) : null}
-      </form>
+      {own ? (
+        <form onSubmit={submit} noValidate className="flex flex-col gap-2">
+          <label htmlFor={`${id}-ask`} className="type-small font-semibold text-fg">
+            Your own question
+          </label>
+          <div className="flex gap-2">
+            <input
+              id={`${id}-ask`}
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value.slice(0, 80))}
+              autoComplete="off"
+              autoCapitalize="sentences"
+              spellCheck={false}
+              enterKeyHint="send"
+              placeholder="Is it between 20 and 40?"
+              disabled={finished}
+              aria-describedby={message ? `${id}-message` : undefined}
+              className={cn(INPUT, "type-body h-12")}
+            />
+            <Button type="submit" variant="secondary" size="md" className="h-12">
+              Ask
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button variant="ghost" size="md" icon={<MessageCircleQuestionMark />} onClick={() => setOwn(true)} className="-ml-2 self-start" aria-disabled={finished || undefined}>
+          Ask your own question
+        </Button>
+      )}
+
+      {message ? (
+        <p id={`${id}-message`} className="type-small flex items-start gap-2 text-fg-muted">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {message}
+        </p>
+      ) : null}
 
       {typed.length > 0 ? (
         <ol className="flex flex-col gap-2" aria-label="Your questions">
@@ -271,42 +414,43 @@ function Narrowed({ clue }: { clue: AskedClue }) {
 
 function ClueCard({ card, noneLeft, onAsk }: { card: ClueCardView; noneLeft: boolean; onAsk: () => void }) {
   const asked = card.asked;
-  const inactive = asked != null || noneLeft;
-  return (
-    <button
-      type="button"
-      onClick={onAsk}
-      aria-disabled={inactive || undefined}
-      className={cn(
-        "flex h-full min-h-24 w-full flex-col items-start justify-between gap-3 rounded-lg p-4 text-left",
-        "transition-[background-color,transform,opacity] duration-150 ease-out",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
-        asked ? "pointer-events-none bg-sunken" : "bg-raised shadow-ring hover:bg-overlay active:scale-[0.97]",
-        !asked && noneLeft && "pointer-events-none opacity-45",
-      )}
-    >
-      <span className="type-body font-semibold text-fg">{card.question}</span>
-      {asked ? (
+  if (asked) {
+    return (
+      <div className="flex h-full min-h-14 flex-col justify-center gap-1.5 rounded-md bg-sunken px-4 py-3">
+        <span className="type-small font-semibold text-fg">{card.question}</span>
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <AnswerChip yes={asked.answer} />
           <Narrowed clue={asked} />
         </span>
-      ) : (
-        <span className="type-label text-game">{noneLeft ? "No clues left" : "Ask this"}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onAsk}
+      aria-disabled={noneLeft || undefined}
+      className={cn(
+        "flex h-full min-h-14 w-full items-center rounded-md bg-raised px-4 py-3 text-left shadow-ring",
+        "transition-[background-color,scale,opacity] duration-150 ease-out hover:bg-overlay active:scale-[0.97]",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
+        noneLeft && "pointer-events-none opacity-45",
       )}
+    >
+      <span className="type-small font-semibold text-fg">{card.question}</span>
     </button>
   );
 }
 
 function TypedAnswer({ clue }: { clue: AskedClue }) {
   return (
-    <li className="flex flex-col gap-2 rounded-md bg-fg/[0.03] px-4 py-3">
-      <span className="type-body text-fg">{clue.question}</span>
+    <li className="flex flex-col gap-1.5 rounded-md bg-sunken px-4 py-3">
+      <span className="type-small font-semibold text-fg">{clue.question}</span>
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <AnswerChip yes={clue.answer} />
         <Narrowed clue={clue} />
       </span>
-      {clue.typoNote ? <span className="type-small text-fg-subtle">{clue.typoNote}</span> : null}
+      {clue.typoNote ? <span className="type-caption text-fg-subtle">{clue.typoNote}</span> : null}
     </li>
   );
 }

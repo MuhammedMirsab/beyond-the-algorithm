@@ -41,7 +41,7 @@ describe("simulated day", () => {
     expect(DAY[DAY.length - 1].to).toBe(24 * 60);
   });
 
-  test("the phone is home at 6 AM, at school at 10, at sport at 6 PM", () => {
+  test("the phone is home at 6 am, at school at 10, at sport at 6 pm", () => {
     expect(positionAt(DAY_START).place).toBe("home");
     expect(positionAt(10 * 60).place).toBe("school");
     expect(positionAt(18 * 60).place).toBe("sports");
@@ -105,8 +105,8 @@ describe("battery drain", () => {
     const sleep = sleepWindow(CHARGING_WEEK);
     expect(sleep).not.toBeNull();
     if (!sleep) return;
-    expect(roughClock(sleep.bedtime)).toBe("11:15 PM");
-    expect(roughClock(sleep.wake)).toBe("7:15 AM");
+    expect(roughClock(sleep.bedtime)).toBe("11:15 pm");
+    expect(roughClock(sleep.wake)).toBe("7:15 am");
   });
 
   test("afternoon top-ups are ignored", () => {
@@ -190,11 +190,11 @@ describe("touch", () => {
 
 describe("helpers and data", () => {
   test("clock labels", () => {
-    expect(clockLabel(0)).toBe("12:00 AM");
-    expect(clockLabel(7 * 60 + 30)).toBe("7:30 AM");
-    expect(clockLabel(12 * 60)).toBe("12:00 PM");
-    expect(clockLabel(23 * 60 + 15)).toBe("11:15 PM");
-    expect(clockLabel(25 * 60)).toBe("1:00 AM");
+    expect(clockLabel(0)).toBe("12:00 am");
+    expect(clockLabel(7 * 60 + 30)).toBe("7:30 am");
+    expect(clockLabel(12 * 60)).toBe("12:00 pm");
+    expect(clockLabel(23 * 60 + 15)).toBe("11:15 pm");
+    expect(clockLabel(25 * 60)).toBe("1:00 am");
   });
 
   test("signed numbers use a real minus sign", () => {
@@ -207,8 +207,8 @@ describe("helpers and data", () => {
     expect(pushLimited([], 1, 3)).toEqual([1]);
   });
 
-  test("eight experiments, each with 2 or 3 inferences", () => {
-    expect(EXPERIMENTS.map((e) => e.id)).toEqual(["motion", "gps", "camera", "microphone", "light", "touch", "battery", "connection"]);
+  test("eight experiments, the ones you can see and feel first, each with 2 or 3 inferences", () => {
+    expect(EXPERIMENTS.map((e) => e.id)).toEqual(["motion", "camera", "microphone", "touch", "gps", "light", "battery", "connection"]);
     for (const e of EXPERIMENTS) {
       expect(e.inferences.length).toBeGreaterThanOrEqual(2);
       expect(e.inferences.length).toBeLessThanOrEqual(3);
@@ -224,9 +224,20 @@ describe("helpers and data", () => {
     expect(quizScore([null, null, null, null, null])).toBe(0);
   });
 
-  test("copy has no exclamation marks, dashes or emoji", () => {
+  test("copy has no exclamation marks, dashes, emoji or words in capitals", () => {
     const text = JSON.stringify([EXPERIMENTS, QUIZ_QUESTIONS]);
     expect(text).not.toMatch(/[!–—]/);
     expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
+    // Acronyms that are names (GPS, MEMS, IISJ) are fine; shouted words are not.
+    const shouted = (text.match(/[A-Z]{2,}/g) ?? []).filter((w) => !["GPS", "MEMS", "IISJ"].includes(w));
+    expect(shouted).toEqual([]);
+  });
+
+  test("every experiment explains how it works in three steps", () => {
+    for (const e of EXPERIMENTS) {
+      expect(e.how.measures.length).toBeGreaterThan(20);
+      expect(e.how.numbers.length).toBeGreaterThan(20);
+      expect(e.how.infers.length).toBeGreaterThan(20);
+    }
   });
 });

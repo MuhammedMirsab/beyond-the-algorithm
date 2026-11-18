@@ -1,95 +1,164 @@
 "use client";
 
-import { Check, RotateCcw, X } from "lucide-react";
+import { ArrowRight, Check, RotateCcw } from "lucide-react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { NextPlayerIcon } from "@/components/game/next-player";
-import { useId, useState, type FormEvent } from "react";
 import { HowItWorks, ResultPanel } from "@/components/game/panels";
 import { Button } from "@/components/ui/button";
+import { KeyHints } from "@/components/ui/key-hints";
 import { Score, Stat } from "@/components/ui/score";
 import { cn } from "@/lib/cn";
-import { evaluateClue } from "../engine/clues";
 import { machineGuess, type MachineAction, type MachineState } from "../engine/machine";
 import { binaryFact, binaryQuestionText, findContradiction } from "../engine/prediction-engine";
-import { doublingSum, formatNumber, halvingsFor, RANGE_MAX, rangeLabel } from "../engine/ranges";
-import { AnswerChip } from "./bits";
-import { useHeadingFocus } from "./hooks";
-import { PathBars } from "./path-bars";
+import { doublingSum, formatNumber, halvingsFor, RANGE_MAX, rangeLabel, type RangeId } from "../engine/ranges";
+import { useHeadingFocus, useKeys } from "./hooks";
+import { CapacityGrid, ParityComb, RaceBars, SlipRows } from "./how-visuals";
+import { SearchReplay } from "./search-replay";
 
 interface ResultProps {
   machine: MachineState;
   dispatch: (action: MachineAction) => void;
   onPlayAgain: () => void;
+  /** Play again on another range ("Try 1 to 1,000"). */
+  onPlayRange: (range: RangeId) => void;
   onSwitchMode: () => void;
   onNextPlayer: () => void;
 }
 
 const count = (n: number, one: string, many: string) => `${formatNumber(n)} ${n === 1 ? one : many}`;
 
-const SPLIT_STEP = {
-  title: "Each answer crossed out about half",
-  text: "Every question splits the list into two halves. Your yes or no told it which half to cross out.",
-};
+/** 100, 50, 25, 13, 7, 4, 2, 1: the list after each halving, worst case. */
+function halvingChain(start: number): string {
+  const chain = [start];
+  while (chain[chain.length - 1] > 1) chain.push(Math.ceil(chain[chain.length - 1] / 2));
+  return chain.map(formatNumber).join(", ");
+}
 
-/** It guessed right: the verdict, the visitor's own path, and the reveal. */
-export function MachineRight({ machine, onPlayAgain, onSwitchMode, onNextPlayer }: ResultProps) {
+const NEXT_RANGE: Partial<Record<RangeId, RangeId>> = { "10": "100", "100": "1000" };
+
+function Actions({ onPlayAgain, second, onNextPlayer }: { onPlayAgain: () => void; second?: ReactNode; onNextPlayer: () => void }) {
+  useKeys({ r: onPlayAgain });
+  return (
+    <>
+      <Button variant="game" size="lg" arrow onClick={onPlayAgain}>
+        Play again
+      </Button>
+      {second}
+      <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
+        Next player
+      </Button>
+      <KeyHints className="hidden basis-full pt-1 pointer-fine:flex" items={[{ keys: ["R"], label: "Play again" }]} />
+    </>
+  );
+}
+
+/** The cards under every machine result. `slipFirst` leads with what one wrong answer does. */
+function WhyItWorks({ machine, pin, slipFirst, onPlayRange }: { machine: MachineState; pin: number; slipFirst: boolean; onPlayRange: (range: RangeId) => void }) {
+  const max = RANGE_MAX[machine.range];
+  const enough = halvingsFor(max);
+  const next = NEXT_RANGE[machine.range];
+  const parityAt = machine.steps.findIndex((s) => s.question.kind === "even");
+  const parity = parityAt > 0 ? machine.steps[parityAt] : null;
+  const parityBefore = parityAt > 0 ? machine.steps[parityAt - 1].candidates : null;
+
+  const capacity = {
+    title: `${enough} questions are always enough`,
+    visual: <CapacityGrid max={max} pin={pin} />,
+    text: (
+      <span className="flex flex-col items-start gap-3">
+        <span>
+          Halving {formatNumber(max)} goes {halvingChain(max)}. That&apos;s {enough} cuts, whatever your number: {doublingSum(enough)}, more than {formatNumber(max)}.
+        </span>
+        {next ? (
+          <Button variant="secondary" size="sm" icon={<ArrowRight />} onClick={() => onPlayRange(next)}>
+            Try {rangeLabel(next)}
+          </Button>
+        ) : null}
+      </span>
+    ),
+  };
+  const race = {
+    title: "Halving beats one at a time",
+    visual: <RaceBars max={max} />,
+    text: `Asking “Is it 1? Is it 2?” could take ${formatNumber(max - 1)} questions. Halving needs ${enough}, and it barely grows: ${halvingsFor(10)} questions for 10 numbers, ${halvingsFor(100)} for 100, ${halvingsFor(1000)} for 1,000, ${halvingsFor(1_000_000)} for a million.`,
+  };
+  const even =
+    parity && parityBefore
+      ? {
+          title: "Even or odd is a half too",
+          visual: <ParityComb before={parityBefore} keepEven={parity.answer} />,
+          text: `Question ${parityAt + 1} didn't ask bigger or smaller, yet it still crossed out half the list. Any question that splits the numbers in half works.`,
+        }
+      : null;
+  const slip = {
+    title: "It believes every answer",
+    visual: <SlipRows />,
+    text: "It never hears your number, only your answers, and one wrong answer crosses your number out for good. That's why it checks at the end: say no, type your number, and it tests every answer against it to find the one that didn't fit.",
+  };
+
+  const steps = slipFirst ? [slip, capacity, ...(even ? [even] : []), race] : [capacity, race, ...(even ? [even] : []), slip];
+  return (
+    <HowItWorks
+      title="Why it always works"
+      intro="This is binary search, the way a computer finds one word in a sorted list of millions."
+      steps={steps}
+    />
+  );
+}
+
+/** It guessed right: the verdict, the visitor's own search replayed, and why it works. */
+export function MachineRight({ machine, onPlayAgain, onPlayRange, onSwitchMode, onNextPlayer }: ResultProps) {
   const wrapper = useHeadingFocus<HTMLDivElement>();
   const start = RANGE_MAX[machine.range];
   const found = machineGuess(machine);
   const asked = machine.steps.length;
-  const enough = halvingsFor(start);
 
   return (
     <div ref={wrapper} className="contents [&_h1]:outline-none">
       <ResultPanel
         label={`${rangeLabel(machine.range)} · binary search`}
-        title={`It found your number in ${count(asked, "question", "questions")}.`}
+        title={`It found ${formatNumber(found)} in ${count(asked, "question", "questions")}.`}
         score={<Score value={found} label="Your number" tone="game" />}
         stats={
           <>
             <Stat value={asked} label="Yes or no answers" />
-            <Stat value={`${formatNumber(start)} to 1`} label="Possible numbers" />
+            <Stat value={formatNumber(start - 1)} label="Numbers crossed out" />
           </>
         }
         actions={
-          <>
-            <Button variant="game" size="lg" arrow onClick={onPlayAgain}>
-              Play again
-            </Button>
-            <Button variant="secondary" size="lg" onClick={onSwitchMode}>
-              Find its number
-            </Button>
-            <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
-              Next player
-            </Button>
-          </>
+          <Actions
+            onPlayAgain={onPlayAgain}
+            onNextPlayer={onNextPlayer}
+            second={
+              <Button variant="secondary" size="lg" onClick={onSwitchMode}>
+                Find its number
+              </Button>
+            }
+          />
         }
       >
-        <PathBars start={start} steps={machine.steps} found={found} />
-        <HowItWorks
-          title="How it found your number"
-          intro={`You answered ${count(asked, "question", "questions")}. Each one cut the possible numbers roughly in half. That's binary search, the same trick a computer uses to find one name among millions.`}
-          steps={[
-            {
-              title: `It started with ${formatNumber(start)} numbers`,
-              text: "Your number could have been any of them, so it kept every one of them on a list.",
-            },
-            SPLIT_STEP,
-            {
-              title: `${enough} questions are always enough`,
-              text: `${doublingSum(enough)}, more than ${formatNumber(start)}. So ${enough} yes or no answers can pick out any number from ${rangeLabel(machine.range)}.`,
-            },
-          ]}
-        />
+        <section aria-labelledby="mind-reader-replay" className="flex flex-col gap-6 rounded-xl bg-surface p-5 shadow-ring sm:p-6">
+          <div className="flex flex-col gap-1.5">
+            <h2 id="mind-reader-replay" className="type-title-2 text-fg">
+              How it found {formatNumber(found)}
+            </h2>
+            <p className="type-body max-w-[42rem] text-fg-muted">
+              Each row is the list it still had. Your answer kept one half and crossed out the other, and {formatNumber(found)} stayed in every time.
+            </p>
+          </div>
+          <SearchReplay range={machine.range} steps={machine.steps} pin={found} />
+        </section>
+        <WhyItWorks machine={machine} pin={found} slipFirst={false} onPlayRange={onPlayRange} />
       </ResultPanel>
     </div>
   );
 }
 
 /** It guessed wrong: find the answer that didn't fit, then explain why one slip is enough. */
-export function MachineWrong({ machine, dispatch, onPlayAgain, onNextPlayer }: ResultProps) {
+export function MachineWrong({ machine, dispatch, onPlayAgain, onPlayRange, onNextPlayer }: ResultProps) {
   const wrapper = useHeadingFocus<HTMLDivElement>();
-  const start = RANGE_MAX[machine.range];
   const guess = machineGuess(machine);
+  const [checked, setChecked] = useState<number | null>(null);
 
   return (
     <div ref={wrapper} className="contents [&_h1]:outline-none">
@@ -97,46 +166,32 @@ export function MachineWrong({ machine, dispatch, onPlayAgain, onNextPlayer }: R
         label={`It guessed ${formatNumber(guess)}`}
         title="One of your answers didn't match your number."
         score={<Score value={guess} label="Its guess" />}
-        actions={
-          <>
-            <Button variant="game" size="lg" arrow onClick={onPlayAgain}>
-              Play again
-            </Button>
-            <Button variant="ghost" size="lg" icon={<NextPlayerIcon />} onClick={onNextPlayer}>
-              Next player
-            </Button>
-          </>
-        }
+        actions={<Actions onPlayAgain={onPlayAgain} onNextPlayer={onNextPlayer} />}
       >
         <AnswerChecker
           machine={machine}
+          checked={checked}
+          onCheck={setChecked}
           onPlayAgain={onPlayAgain}
           onItWasRight={() => dispatch({ type: "confirm", correct: true })}
         />
-        <HowItWorks
-          title={`How it picked ${formatNumber(guess)}`}
-          intro={`It never saw your number. It only had your ${count(machine.steps.length, "answer", "answers")}, and ${formatNumber(guess)} was the one number that fit all of them.`}
-          steps={[
-            { title: "It kept a list", text: `At the start, all ${formatNumber(start)} numbers were possible.` },
-            SPLIT_STEP,
-            {
-              title: "One slip sends it the wrong way",
-              text: "If one answer is wrong, your number gets crossed out, and every question after it searches the wrong half. A computer can only be as right as the answers it gets.",
-            },
-          ]}
-        />
+        <WhyItWorks machine={machine} pin={checked ?? guess} slipFirst onPlayRange={onPlayRange} />
       </ResultPanel>
     </div>
   );
 }
 
-/** Type your real number; the first answer that doesn't fit it is highlighted. */
+/** Type your real number: the replay marks it in every row, and the first answer that didn't fit is named. */
 function AnswerChecker({
   machine,
+  checked,
+  onCheck,
   onPlayAgain,
   onItWasRight,
 }: {
   machine: MachineState;
+  checked: number | null;
+  onCheck: (n: number | null) => void;
   onPlayAgain: () => void;
   onItWasRight: () => void;
 }) {
@@ -145,7 +200,6 @@ function AnswerChecker({
   const guess = machineGuess(machine);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [checked, setChecked] = useState<number | null>(null);
 
   const first = checked == null ? -1 : findContradiction(machine.steps, checked);
 
@@ -154,11 +208,11 @@ function AnswerChecker({
     const n = Number(value);
     if (value === "" || !Number.isInteger(n) || n < 1 || n > max) {
       setError(`Type a whole number from ${rangeLabel(machine.range)}.`);
-      setChecked(null);
+      onCheck(null);
       return;
     }
     setError(null);
-    setChecked(n);
+    onCheck(n);
   };
 
   let verdict: { title: string; text: string } | null = null;
@@ -247,45 +301,7 @@ function AnswerChecker({
         </div>
       ) : null}
 
-      <ol className="flex flex-col gap-2" aria-label="Your answers">
-        {machine.steps.map((step, i) => {
-          const fits = checked == null ? null : evaluateClue(step.question, checked) === step.answer;
-          const isFirst = i === first;
-          return (
-            <li
-              key={i}
-              className={cn(
-                "grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-md px-3 py-3 sm:grid-cols-[1.75rem_minmax(0,1fr)_auto_8.5rem]",
-                isFirst ? "bg-game-soft ring-2 ring-game" : "bg-fg/[0.03]",
-              )}
-            >
-              <span aria-hidden className="type-label tabular-nums text-fg-subtle">
-                {i + 1}
-              </span>
-              <span className="type-body min-w-0 text-fg">{binaryQuestionText(step.question)}</span>
-              <span className="col-start-2 flex items-center sm:col-start-auto">
-                <span className="sr-only">You said </span>
-                <AnswerChip yes={step.answer} />
-              </span>
-              {fits == null ? null : (
-                <span className="col-start-2 sm:col-start-auto sm:text-right">
-                  {fits ? (
-                    <span className="type-small inline-flex items-center gap-1.5 text-fg-subtle">
-                      <Check className="size-4" aria-hidden />
-                      Fits {formatNumber(checked ?? 0)}
-                    </span>
-                  ) : (
-                    <span className={cn("type-small inline-flex items-center gap-1.5 font-semibold", isFirst ? "text-game" : "text-fg")}>
-                      <X className="size-4" aria-hidden />
-                      Didn&apos;t fit
-                    </span>
-                  )}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+      <SearchReplay range={machine.range} steps={machine.steps} pin={checked} highlight={first >= 0 ? first : null} />
     </section>
   );
 }

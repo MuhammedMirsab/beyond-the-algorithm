@@ -9,6 +9,16 @@ export type CameraState =
   | { status: "live"; mirrored: boolean }
   | { status: "error"; issue: CameraIssue };
 
+/** Whether the browser will ask before opening the camera. "granted" means it won't (the booth after its first visitor). */
+export async function cameraPermission(): Promise<PermissionState | "unknown"> {
+  try {
+    const status = await navigator.permissions?.query({ name: "camera" });
+    return status?.state ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 /**
  * One camera stream, owned by the component that uses it. Phones ask for the
  * back camera (point it at a pen), laptops for the webcam. The user-facing

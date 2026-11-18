@@ -1,8 +1,9 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { KeyHints } from "@/components/ui/key-hints";
 import { FEATURE_COUNT, averageShape } from "../engine/features";
 import type { Sounds } from "../engine/sound";
 import { ExampleThumb, PoseFigure } from "./figures";
@@ -44,6 +45,21 @@ export function TrainStep({
     return () => clearTimeout(timer);
   }, [sounds]);
 
+  // Space tests it, like Space recorded on the screen before.
+  const testRef = useRef(onTest);
+  useEffect(() => {
+    testRef.current = onTest;
+  });
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.code !== "Space" && e.key !== " ") || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      e.preventDefault();
+      testRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const legs = moves.some((m) => examples[m.id].some((e) => e.shape?.slice(9).some((p) => p.visible)));
   const total = examples.a.length + examples.b.length;
   const ms = trainMs < 1 ? "under 1 ms" : `${Math.round(trainMs)} ms`;
@@ -67,13 +83,16 @@ export function TrainStep({
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Button variant="game" size="lg" arrow onClick={onTest}>
-          Test it
-        </Button>
-        <Button variant="secondary" size="lg" onClick={onAddMore}>
-          Add more examples
-        </Button>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-3">
+          <Button variant="game" size="lg" arrow onClick={onTest}>
+            Test it
+          </Button>
+          <Button variant="secondary" size="lg" onClick={onAddMore}>
+            Add more examples
+          </Button>
+        </div>
+        <KeyHints className="hidden lg:flex" items={[{ keys: ["Space"], label: "Test it" }]} />
       </div>
     </section>
   );

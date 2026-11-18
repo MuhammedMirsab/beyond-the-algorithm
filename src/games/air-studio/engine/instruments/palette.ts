@@ -100,12 +100,12 @@ export function rr(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 /** A small filled label pill (e.g. "Play" on a practice target). Returns its width. */
-export function pill(g: CanvasRenderingContext2D, text: string, cx: number, cy: number, px: number, fill: Rgb, ink: Rgb) {
+export function pill(g: CanvasRenderingContext2D, text: string, cx: number, cy: number, px: number, fill: Rgb, ink: Rgb, fillAlpha = 1) {
   g.font = font(650, px);
   const w = g.measureText(text).width + px * 1.2;
   const h = px * 1.8;
   rr(g, cx - w / 2, cy - h / 2, w, h, h / 2);
-  g.fillStyle = rgba(fill);
+  g.fillStyle = rgba(fill, fillAlpha);
   g.fill();
   g.fillStyle = rgba(ink);
   g.textAlign = "center";
@@ -113,6 +113,42 @@ export function pill(g: CanvasRenderingContext2D, text: string, cx: number, cy: 
   g.fillText(text, cx, cy + px * 0.05);
   g.textBaseline = "alphabetic";
   return w;
+}
+
+/**
+ * A pad's name on a dark pill, so it reads over any camera picture. It
+ * shrinks to fit `maxW`; when even the smallest size is too wide it falls
+ * back to fitLabel (two lines, no pill). `lit` swaps to the game colour.
+ */
+export function padLabel(g: CanvasRenderingContext2D, text: string, cx: number, cy: number, maxW: number, px: number, lit: boolean) {
+  let size = Math.round(px);
+  const minPx = 11;
+  g.font = font(650, size);
+  while (size > minPx && g.measureText(text).width + size * 1.2 > maxW) {
+    size -= 1;
+    g.font = font(650, size);
+  }
+  if (g.measureText(text).width + size * 1.2 > maxW) {
+    g.fillStyle = rgba(C.fg);
+    fitLabel(g, text, cx, cy, maxW, size);
+    return;
+  }
+  pill(g, text, cx, cy, size, lit ? C.game : C.canvas, lit ? C.gameInk : C.fg, lit ? 1 : 0.62);
+}
+
+/** An eighth note, `s` tall, with its head's centre at (x, y). */
+export function noteGlyph(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  const hr = s * 0.2;
+  g.beginPath();
+  g.ellipse(x, y, hr * 1.25, hr, -0.35, 0, Math.PI * 2);
+  g.fill();
+  g.lineWidth = Math.max(1.5, s * 0.09);
+  g.lineCap = "round";
+  g.beginPath();
+  g.moveTo(x + hr * 1.1, y - hr * 0.3);
+  g.lineTo(x + hr * 1.1, y - s * 0.85);
+  g.quadraticCurveTo(x + hr * 1.1 + s * 0.38, y - s * 0.62, x + hr * 1.1 + s * 0.3, y - s * 0.3);
+  g.stroke();
 }
 
 /**

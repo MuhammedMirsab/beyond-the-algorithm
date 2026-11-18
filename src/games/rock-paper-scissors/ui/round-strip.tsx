@@ -1,47 +1,71 @@
+"use client";
+
 import { Check, Equal, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { motion } from "motion/react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import type { RoundOutcome, RoundRecord } from "../engine/types";
-import { GESTURE_LABEL, GestureIcon } from "./gesture-icon";
+import { GESTURE_LABEL, HandGlyph } from "./gesture-icon";
 
-const OUTCOME: Record<RoundOutcome, { icon: ReactNode; className: string; text: string }> = {
-  player_win: { icon: <Check strokeWidth={2.5} />, className: "text-success", text: "You won" },
-  ai_win: { icon: <X strokeWidth={2.5} />, className: "text-danger", text: "The AI won" },
-  draw: { icon: <Equal strokeWidth={2.5} />, className: "text-fg-subtle", text: "Draw" },
+const OUTCOME: Record<RoundOutcome, { icon: ReactNode; className: string; bar: string; text: string }> = {
+  player_win: { icon: <Check strokeWidth={3} />, className: "text-success", bar: "bg-success", text: "You won" },
+  ai_win: { icon: <X strokeWidth={3} />, className: "text-danger", bar: "bg-danger", text: "The AI won" },
+  draw: { icon: <Equal strokeWidth={3} />, className: "text-fg-subtle", bar: "bg-fg/30", text: "Draw" },
 };
 
 /**
- * The last few rounds of this match, one column each: your move, the AI's
- * move, and who won (an icon as well as a colour).
+ * This match so far, newest on the right: your throw over the AI's, who won,
+ * and a dot where its locked guess matched your throw (the same dot as "Guessed
+ * right" on the AI's panel). When there's no room, the tape scrolls so the
+ * newest round stays in view.
  */
-export function RoundStrip({ rounds, max = 8, className }: { rounds: readonly RoundRecord[]; max?: number; className?: string }) {
+export function RoundStrip({ rounds, max = 14, className }: { rounds: readonly RoundRecord[]; max?: number; className?: string }) {
   const shown = rounds.slice(-max);
-  if (shown.length === 0) return null;
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    if (list) list.scrollTo({ left: list.scrollWidth });
+  }, [shown.length]);
   return (
-    <div className={cn("flex items-stretch gap-3", className)}>
-      <div aria-hidden className="type-label flex flex-col justify-between py-2 text-fg-subtle">
-        <span className="flex h-5 items-center">You</span>
-        <span className="flex h-5 items-center text-game">AI</span>
-        <span className="h-4" />
+    <section aria-label="This match" className={cn("flex min-w-0 items-stretch gap-2.5", className)}>
+      <div aria-hidden className="type-label flex flex-col justify-around py-1 text-fg-subtle">
+        <span>You</span>
+        <span className="text-game">AI</span>
       </div>
-      <ol aria-label="Last rounds" className="no-scrollbar flex min-w-0 gap-1.5 overflow-x-auto">
-        {shown.map((round) => {
-          const outcome = OUTCOME[round.outcome];
-          return (
-            <li key={round.id} className="flex shrink-0 flex-col items-center gap-1.5 rounded-md bg-surface px-1.5 py-2 shadow-ring">
-              <GestureIcon gesture={round.playerMove} className="size-5 text-fg" />
-              <GestureIcon gesture={round.aiCounterMove} className="size-5 text-game" />
-              <span aria-hidden className={cn("grid size-4 place-items-center [&_svg]:size-4", outcome.className)}>
-                {outcome.icon}
-              </span>
-              <span className="sr-only">
-                Round {round.roundNumber}: you played {GESTURE_LABEL[round.playerMove]}, the AI played{" "}
-                {GESTURE_LABEL[round.aiCounterMove]}. {outcome.text}.
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+      {shown.length === 0 ? (
+        <p className="type-small flex min-h-[4.25rem] items-center text-fg-subtle">Your rounds show up here.</p>
+      ) : (
+        <ol ref={listRef} aria-label="Rounds this match" className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+          {shown.map((round) => {
+            const outcome = OUTCOME[round.outcome];
+            return (
+              <motion.li
+                key={round.id}
+                layout="position"
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1], delay: 0.5 }}
+                className="relative flex w-10 shrink-0 flex-col items-center gap-0.5 overflow-hidden rounded-md bg-surface px-1 pb-2 pt-1.5 shadow-ring"
+              >
+                <HandGlyph gesture={round.playerMove} ink="var(--color-surface)" className="size-[1.375rem] text-fg" />
+                <HandGlyph gesture={round.aiCounterMove} ink="var(--color-surface)" flip className="size-[1.375rem] text-game" />
+                <span aria-hidden className={cn("grid size-4 place-items-center [&_svg]:size-3.5", outcome.className)}>
+                  {outcome.icon}
+                </span>
+                <span aria-hidden className={cn("absolute inset-x-0 bottom-0 h-[3px]", outcome.bar)} />
+                {round.wasPredictionCorrect ? (
+                  <span aria-hidden className="absolute right-1 top-1 size-1.5 rounded-full bg-game" />
+                ) : null}
+                <span className="sr-only">
+                  Round {round.roundNumber}: you threw {GESTURE_LABEL[round.playerMove]}, the AI threw{" "}
+                  {GESTURE_LABEL[round.aiCounterMove]}. {outcome.text}.{" "}
+                  {round.wasPredictionCorrect ? "It guessed your throw." : "It guessed wrong."}
+                </span>
+              </motion.li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }

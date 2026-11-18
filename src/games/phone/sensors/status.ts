@@ -54,7 +54,7 @@ export function issueCopy(sensor: Sensor, status: SensorStatus): IssueCopy {
       return sensor === "motion"
         ? {
             title: "Motion sensors are blocked",
-            text: "Reload the page and choose Allow when your phone asks. Or try the simulation.",
+            text: "Your phone remembers the answer until the browser closes. Close the browser completely, scan the code again and choose Allow. Or try the simulation.",
           }
         : {
             title: `The ${noun} is blocked`,

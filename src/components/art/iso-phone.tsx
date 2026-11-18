@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { circle, depth, projector, roundedRect, slab, type P2 } from "./iso";
+import { circle, depth, projector, roundedRect, slab, type P2, type Projector } from "./iso";
 import { cn } from "@/lib/cn";
 
 /**
@@ -115,7 +115,7 @@ export const ON_DARK: IsoPhoneColors = {
   litLine: "var(--game-ink)",
 };
 
-function ShapePaths({ s, z, project, colors, lit }: { s: Shape; z: number; project: ReturnType<typeof projector>; colors: IsoPhoneColors; lit: boolean }) {
+function ShapePaths({ s, z, project, colors, lit, litStroke = 1.1 }: { s: Shape; z: number; project: Projector; colors: IsoPhoneColors; lit: boolean; litStroke?: number }) {
   const { side, top } = slab(s.plan, z, s.h, project);
   let topFill = lit ? colors.litTop : colors.top;
   if (!lit && s.kind === "screen") topFill = colors.screen;
@@ -126,8 +126,8 @@ function ShapePaths({ s, z, project, colors, lit }: { s: Shape; z: number; proje
   const glassy = s.kind === "glass" || s.kind === "island";
   return (
     <g>
-      {glassy && !lit ? null : <path d={side} fill={lit ? colors.litSide : colors.side} stroke={line} strokeWidth={1.1} strokeLinejoin="round" />}
-      <path d={top} fill={topFill} stroke={line} strokeWidth={glassy ? 1.3 : 1.1} strokeLinejoin="round" />
+      {glassy && !lit ? null : <path d={side} fill={lit ? colors.litSide : colors.side} stroke={line} strokeWidth={lit ? litStroke : 1.1} strokeLinejoin="round" />}
+      <path d={top} fill={topFill} stroke={line} strokeWidth={lit ? litStroke : glassy ? 1.3 : 1.1} strokeLinejoin="round" />
     </g>
   );
 }
@@ -150,17 +150,7 @@ function enlarge(shapes: Shape[], f: number): Shape[] {
   }));
 }
 
-export function IsoPhone({
-  lit,
-  explode = 1,
-  lift = 0,
-  litScale = 1,
-  active = false,
-  colors = ON_TILE,
-  scale = 1,
-  hoverExplode = false,
-  className,
-}: {
+export interface IsoOptions {
   /** Part to light up. Drawn last, lifted by `lift`, so it is never hidden. */
   lit?: PhonePart | null;
   /** 0 = closed phone, 1 = fully exploded. */
@@ -169,30 +159,100 @@ export function IsoPhone({
   lift?: number;
   /** Enlarge the lifted part around its centre so small sensors read (a detail view). */
   litScale?: number;
-  /** Raise the lit part a little further (selected or hovered card). */
-  active?: boolean;
-  colors?: IsoPhoneColors;
   scale?: number;
-  /** Spread the layers a little further when a parent .group/tile is hovered. */
-  hoverExplode?: boolean;
-  className?: string;
-}) {
+  /** Fix the top of the picture (in mm), so the phone stays put while different parts are lit. */
+  topZ?: number;
+}
+
+/** Where everything lands on the page, shared by the drawing and by anything pointing at the lit part. */
+function geometry({ lit = null, explode = 1, lift = 0, litScale = 1, scale = 1, topZ }: IsoOptions) {
   const k = scale;
   const layerFloor = (layer: Layer) => CLOSED[layer] + GAP * layer * explode;
   const litOriginal = lit ? SHAPES.filter((s) => s.part === lit) : [];
   const litShapes = enlarge(litOriginal, litScale);
   const litTopZ = litShapes.length ? Math.max(...litShapes.map((s) => layerFloor(s.layer) + s.z + s.h)) + lift : 0;
-  const zTop = Math.max(layerFloor(3) + 2, litTopZ) + (lit ? 8 : 0);
-  const ox = L * COS30 * k;
-  const oy = (zTop + 4) * k;
-  const project = projector(k, ox, oy);
-  const width = (W + L) * COS30 * k;
-  const height = ((W + L) / 2 + zTop + 8) * k;
+  const zTop = topZ ?? Math.max(layerFloor(3) + 2, litTopZ) + (lit ? 8 : 0);
+  const project = projector(k, L * COS30 * k, (zTop + 4) * k);
+  return {
+    k,
+    layerFloor,
+    litOriginal,
+    litShapes,
+    litTopZ,
+    project,
+    width: (W + L) * COS30 * k,
+    height: ((W + L) / 2 + zTop + 8) * k,
+  };
+}
+
+/** The highest point a lifted part reaches, in mm: for a fixed `topZ` that suits every part. */
+export function isoLitTop(options: IsoOptions): number {
+  return geometry(options).litTopZ;
+}
+
+/** How far to lift a part so it floats `clearance` mm above the cover glass. */
+export function isoLiftAboveGlass(part: PhonePart, explode: number, clearance: number): number {
+  const shapes = SHAPES.filter((s) => s.part === part);
+  if (!shapes.length) return 0;
+  const glassTop = CLOSED[3] + GAP * 3 * explode + 1.8;
+  const base = Math.min(...shapes.map((s) => CLOSED[s.layer] + GAP * s.layer * explode + s.z));
+  return Math.max(clearance, glassTop + clearance - base);
+}
+
+/**
+ * The centre of the lit part's top face, in the picture's own units, plus
+ * the picture's size: for a label or a line pointing at the part.
+ */
+export function isoLitAnchor(options: IsoOptions): { x: number; y: number; width: number; height: number } | null {
+  const g = geometry(options);
+  if (!g.litShapes.length) return null;
+  const lift = options.lift ?? 0;
+  let x = 0;
+  let y = 0;
+  let n = 0;
+  for (const s of g.litShapes) {
+    const z = g.layerFloor(s.layer) + s.z + s.h + lift;
+    for (const [px, py] of s.plan) {
+      const p = g.project(px, py, z);
+      x += p[0];
+      y += p[1];
+      n += 1;
+    }
+  }
+  return { x: x / n, y: y / n, width: g.width, height: g.height };
+}
+
+export function IsoPhone({
+  lit,
+  explode = 1,
+  lift = 0,
+  litScale = 1,
+  active = false,
+  colors = ON_TILE,
+  scale = 1,
+  topZ,
+  hoverExplode = false,
+  litClassName,
+  litStroke,
+  className,
+}: IsoOptions & {
+  /** Raise the lit part a little further (selected or hovered card). */
+  active?: boolean;
+  colors?: IsoPhoneColors;
+  /** Spread the layers a little further when a parent .group/tile is hovered. */
+  hoverExplode?: boolean;
+  /** A class on the lit part's group (it is re-created whenever a different part is lit, so an entrance replays). */
+  litClassName?: string;
+  /** Outline width of the lit part. */
+  litStroke?: number;
+  className?: string;
+}) {
+  const g = geometry({ lit, explode, lift, litScale, scale, topZ });
   const layers: Layer[] = [0, 1, 2, 3];
   const sortShapes = (list: Shape[]) => [...list].sort((a, b) => depth(a.cx, a.cy, a.z) - depth(b.cx, b.cy, b.z));
 
   return (
-    <svg viewBox={`0 0 ${width.toFixed(1)} ${height.toFixed(1)}`} className={className} aria-hidden>
+    <svg viewBox={`0 0 ${g.width.toFixed(1)} ${g.height.toFixed(1)}`} className={className} aria-hidden>
       {layers.map((layer) => (
         <g
           key={layer}
@@ -200,18 +260,18 @@ export function IsoPhone({
           style={hoverExplode ? ({ "--lift": `${-layer * 6}px` } as CSSProperties) : undefined}
         >
           {sortShapes(SHAPES.filter((s) => s.layer === layer && !(lit && s.part === lit))).map((s, i) => (
-            <ShapePaths key={`${s.part}-${i}`} s={s} z={layerFloor(layer) + s.z} project={project} colors={colors} lit={false} />
+            <ShapePaths key={`${s.part}-${i}`} s={s} z={g.layerFloor(layer) + s.z} project={g.project} colors={colors} lit={false} />
           ))}
         </g>
       ))}
-      {litShapes.length ? (
-        <g className={cn("art-move", active && "-translate-y-[10px]")}>
+      {g.litShapes.length ? (
+        <g key={lit ?? "none"} className={cn("art-move", active && "-translate-y-[10px]", litClassName)}>
           {/* Where the part sits in the phone: a dashed shadow on its floor. */}
-          {sortShapes(litOriginal).map((s, i) =>
+          {sortShapes(g.litOriginal).map((s, i) =>
             s.kind === "lens" ? null : (
               <path
                 key={`ghost-${i}`}
-                d={slab(s.plan, layerFloor(s.layer) + s.z, 0.01, project).top}
+                d={slab(s.plan, g.layerFloor(s.layer) + s.z, 0.01, g.project).top}
                 fill="none"
                 stroke={colors.litTop}
                 strokeOpacity={0.7}
@@ -220,8 +280,8 @@ export function IsoPhone({
               />
             ),
           )}
-          {sortShapes(litShapes).map((s, i) => (
-            <ShapePaths key={`lit-${i}`} s={s} z={layerFloor(s.layer) + s.z + lift} project={project} colors={colors} lit />
+          {sortShapes(g.litShapes).map((s, i) => (
+            <ShapePaths key={`lit-${i}`} s={s} z={g.layerFloor(s.layer) + s.z + lift} project={g.project} colors={colors} lit litStroke={litStroke} />
           ))}
         </g>
       ) : null}

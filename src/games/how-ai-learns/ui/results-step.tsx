@@ -1,20 +1,17 @@
 "use client";
 
-import Image from "next/image";
 import { FlaskConical } from "lucide-react";
 import { NextPlayerIcon } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
 import { Score, Stat } from "@/components/ui/score";
-import { HowItWorks, ResultPanel } from "@/components/game/panels";
-import { ConfidenceBars } from "@/components/ui/meter";
-import { decide, NONE_LABEL } from "../engine/rules";
-import { EMBEDDING_SIZE, MODEL_NAME } from "../engine/vision";
-import { joinWords, withArticle } from "./copy";
-import { EmbeddingDots } from "./embedding-dots";
-import { EXPERIMENT_EXAMPLES, tallyResults, type PreviousRun, type TestResult } from "./state";
+import { ResultPanel } from "@/components/game/panels";
+import { NONE_LABEL } from "../engine/rules";
+import { MODEL_NAME } from "../engine/vision";
+import { joinWords } from "./copy";
+import { LearnsHowItWorks } from "./how-it-works";
+import { getSession } from "./session";
+import { EXPERIMENT_EXAMPLES, NONE_GROUP, tallyResults, trainingGroups, type PreviousRun, type TestResult } from "./state";
 import type { LearnGame } from "./use-learn-game";
-
-const NUMBERS = EMBEDDING_SIZE.toLocaleString("en");
 
 /** "10 pens and 10 cups" from per-label counts. */
 function describeCounts(perGroup: Record<string, number>, plurals: Record<string, string>) {
@@ -39,39 +36,36 @@ export function ResultsStep({ game }: { game: LearnGame }) {
   const tally = tallyResults(results, threshold, run.similarityCutoff);
   const plurals = Object.fromEntries(dataset.manifest.categories.map((c) => [c.label, c.plural]));
   const fewest = Math.min(...Object.values(run.perGroup));
-  const rounds = run.history.length;
-  // In the order the visitor picked them.
-  const picked = Object.keys(run.perGroup);
-  const words = picked.map((l) => l.toLowerCase());
-  const meaning =
-    words.length === 2
-      ? `which numbers mean ${words[0]} and which mean ${words[1]}`
-      : `which numbers mean ${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
-  const groups = run.labels.length;
+  const labels = trainingGroups(state.groups).map((g) => g.label);
+  const things = labels.filter((l) => l !== NONE_LABEL);
   // Every group was taught with the camera: there are no library test photos to score.
   const cameraOnly = testPhotos.length === 0;
-  const things = picked.filter((l) => l !== NONE_LABEL);
+  // Library test photos exist only for groups that used the library: say which, when it's not all of them.
+  const tested = state.groups.filter((g) => g.library);
+  const testedWords =
+    tested.length < state.groups.length
+      ? ` of ${joinWords(tested.map((g) => dataset.manifest.categories.find((c) => c.id === g.library)?.plural ?? g.name))}`
+      : "";
+  const live = getSession().liveCounts();
+  const liveTotal = Object.values(live).reduce((a, b) => a + b, 0);
 
   const title = cameraOnly
     ? `It learned to tell ${joinWords(things)} apart`
     : tally.total === 0
       ? "The test photos didn’t load"
       : tally.right === tally.total
-        ? `It got all ${tally.total} new photos right`
-        : `It got ${tally.right} of ${tally.total} new photos right`;
-
-  // One real prediction for the "it answers or stays quiet" visual.
-  const example = Object.values(results)[0];
-  const exampleDecision = example ? decide(example.candidates, { threshold, similarityCutoff: run.similarityCutoff }) : null;
+        ? `It got all ${tally.total} new photos${testedWords} right`
+        : `It got ${tally.right} of ${tally.total} new photos${testedWords} right`;
 
   const comparable: PreviousRun | null = previous && sameTestSet(previous.results, results) ? previous : null;
   const previousTally = comparable ? tallyResults(comparable.results, threshold, comparable.similarityCutoff) : null;
+  const nonePhotos = state.examples[NONE_GROUP] ?? [];
 
   return (
     <ResultPanel
-      label={`${MODEL_NAME} · ${groups} groups · ${run.examples} examples`}
+      label={`${MODEL_NAME} · ${labels.length} groups · ${run.examples} examples`}
       title={title}
-      score={cameraOnly ? undefined : <Score value={tally.right} label={`of ${tally.total} right`} tone="game" />}
+      score={cameraOnly || tally.total === 0 ? undefined : <Score value={tally.right} label={`of ${tally.total} right`} tone="game" />}
       stats={
         <>
           {cameraOnly ? null : (
@@ -80,6 +74,7 @@ export function ResultsStep({ game }: { game: LearnGame }) {
               <Stat value={tally.unknown} label="Said “I don’t know”" />
             </>
           )}
+          {liveTotal > 0 ? <Stat value={liveTotal.toLocaleString("en")} label="Live answers" /> : null}
           <Stat value={run.examples} label="Examples" />
           <Stat value={`${run.seconds.toFixed(1)} s`} label="Training time" />
         </>
@@ -128,54 +123,7 @@ export function ResultsStep({ game }: { game: LearnGame }) {
         </section>
       ) : null}
 
-      <HowItWorks
-        intro={`Nobody told it what ${withArticle(picked[0] ?? run.labels[0])} looks like. It worked it out from your ${run.examples} examples.`}
-        steps={[
-          {
-            title: "Photos become numbers",
-            text: `MobileNet, an AI trained earlier on more than a million photos, turns each photo into ${NUMBERS} numbers. Similar things get similar numbers.`,
-            visual: run.sample ? (
-              <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-center gap-3 p-3">
-                <div className="relative aspect-square overflow-hidden rounded-sm bg-canvas">
-                  <Image src={run.sample.photo.url} alt={`One of your examples: ${run.sample.photo.label.toLowerCase()}`} fill unoptimized sizes="160px" className="object-cover" />
-                </div>
-                <EmbeddingDots values={run.sample.embedding} label={`The ${NUMBERS} numbers MobileNet made from that photo, drawn as dots.`} />
-              </div>
-            ) : undefined,
-          },
-          {
-            title: "Your examples teach the last layer",
-            text: `Your examples taught a small last layer ${meaning}. It practised for ${rounds} rounds, checking its answers each time.`,
-            visual: (
-              <figure className="flex flex-col gap-2 p-3">
-                <div className={`grid gap-2 ${groups === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
-                  {run.labels.map((label, i) => (
-                    <div key={label} className="flex min-w-0 flex-col gap-1.5">
-                      <EmbeddingDots values={run.centroids[i]} label={`Average numbers of the ${label.toLowerCase()} examples.`} />
-                      <span className="type-label truncate text-fg-subtle">{label}</span>
-                    </div>
-                  ))}
-                </div>
-                <figcaption className="type-caption text-fg-subtle">The average numbers of each group</figcaption>
-              </figure>
-            ),
-          },
-          {
-            title: "It answers, or stays quiet",
-            text: `On a new photo it says how sure it is. Below ${Math.round(threshold * 100)}% sure, or when a photo looks like none of its examples, it says “I don’t know”.`,
-            visual:
-              example && exampleDecision ? (
-                <div className="p-4">
-                  <ConfidenceBars
-                    size="sm"
-                    rows={example.candidates.map((c) => ({ id: c.label, label: c.label, value: c.probability }))}
-                    highlight={exampleDecision.answer ?? "none"}
-                  />
-                </div>
-              ) : undefined,
-          },
-        ]}
-      />
+      <LearnsHowItWorks run={run} labels={labels} threshold={threshold} results={results} live={live} nonePhotos={nonePhotos} />
 
       <section aria-labelledby="experiment" className="flex flex-col items-start gap-4 rounded-xl bg-surface p-6 shadow-ring sm:p-8">
         <span className="type-label text-game">Try this</span>

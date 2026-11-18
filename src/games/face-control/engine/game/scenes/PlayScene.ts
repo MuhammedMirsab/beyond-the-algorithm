@@ -396,6 +396,8 @@ export class PlayScene extends Phaser.Scene {
     this.ctx.run.sparksTotal = def.sparks.length;
     this.ctx.run.levelTime = 0;
     this.ctx.run.levelDeaths = 0;
+    this.ctx.run.furthest = 0;
+    this.ctx.view.progress = 0;
     this.ctx.events.emit("level-ready", { levelIndex: this.levelIndex, practice: this.practice });
   }
 
@@ -879,6 +881,16 @@ export class PlayScene extends Phaser.Scene {
 
     const fast = Math.abs(body.velocity.x) > this.def.maxSpeed * 0.92 || this.t < this.boostUntil;
     this.trail.emitting = fast && !this.dead && !this.finished && this.running;
+    this.trackProgress(x);
+  }
+
+  /** Where the ball is between the spawn point and the finish line (0..1), for the HUD's level track. */
+  private trackProgress(x: number) {
+    const finish = this.def.finish;
+    if (!finish) return;
+    const progress = this.finished ? 1 : clamp((x - this.def.spawn.x) / (finish.x - this.def.spawn.x), 0, 1);
+    this.ctx.view.progress = progress;
+    if (progress > this.ctx.run.furthest) this.ctx.run.furthest = progress;
   }
 
   private updateCamera(dt: number) {

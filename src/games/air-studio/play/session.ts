@@ -5,23 +5,25 @@ import { TAKE_CAP_S, TakeRecorder, type TakeResult } from "../engine/audio/recor
 import { TakePlayer } from "../engine/audio/take-player";
 import { MAX_BPM, MIN_BPM, transport } from "../engine/audio/transport";
 import { playBus, type PlayEvent } from "../engine/events";
-import { drawHands, type Controller } from "../engine/instruments/common";
+import { drawHands, PadController, uiScale, type Controller } from "../engine/instruments/common";
 import { createController, instrumentInfo } from "../engine/instruments/index";
-import { C, input, rgba, rr } from "../engine/instruments/palette";
+import { C, font, input, motion, noteGlyph, rgba, rr } from "../engine/instruments/palette";
 import { noteName } from "../engine/music";
 import { LessonJudge, type Feedback } from "../engine/practice/judge";
 import { LESSONS, type Lesson } from "../engine/practice/lessons";
 import { freeReport, practiceReport, WINDOWS, type PerformanceReport, type TimingLevel } from "../engine/practice/scoring";
-import { applyPatch, CAMERA_LATENCY_MS, settings, type InstrumentId, type Settings, type SettingsPatch } from "../engine/settings";
-import { REF_SIZE, type TraceSample, type TrackFrame } from "../engine/tracking/hands";
-import { resetViewport, strikeThreshold } from "../engine/tracking/reach";
+import { applyPatch, CAMERA_LATENCY_MS, DEFAULTS, settings, type InstrumentId, type Settings, type SettingsPatch } from "../engine/settings";
+import { REARM_FRACTION } from "../engine/tracking/gestures";
+import { REF_SIZE, type HandLabel, type TraceSample, type TrackFrame } from "../engine/tracking/hands";
+import { fromReach, resetViewport, strikeThreshold } from "../engine/tracking/reach";
 import { tracker, type TrackerState } from "../engine/tracking/tracker";
 import { HandCheck, type ReachState } from "./hand-check";
+import { nextReveal, type Reveal } from "./reveal";
 
 export type InputMode = "camera" | "mouse";
 
-/** Where the visitor is, after the intro. */
-export type View = "camera" | "check" | "pick" | "play" | "lessons" | "lesson" | "result";
+/** Where the visitor is. Play is home: the camera, the instrument, and the dock. */
+export type View = "play" | "lessons" | "lesson" | "result";
 
 /** "click" or a backing style id. */
 export type PlayAlongChoice = string;
@@ -34,6 +36,10 @@ export interface TakeInfo {
   /** Recorded to a beat: loops on whole bars, and has a timing score. */
   gridded: boolean;
   instruments: InstrumentId[];
+  /** Loudness over the take, 0 to 1, in equal slices (for drawing it). */
+  peaks: number[];
+  /** When each note, hit or strum happened, seconds from the start. */
+  marks: { t: number; inst: InstrumentId }[];
 }
 
 export interface LessonRun {
@@ -68,6 +74,22 @@ export interface SessionStats {
   hand: { x: number; y: number }[] | null;
 }
 
+/** A few seconds of one hand's downward speed around a real hit, for "How it works". */
+export interface StrikeStory {
+  /** Downward palm speed in hand lengths per second (what the strike detector reads), ms from the window's start. */
+  samples: { t: number; v: number }[];
+  /** The hits the detector fired in the window, with the speed it saw. */
+  hits: { t: number; v: number }[];
+  /** A hit needs this speed; after one, the hand must drop below `rearm` before the next counts. */
+  threshold: number;
+  rearm: number;
+  /** Window length, ms. */
+  span: number;
+  hand: HandLabel;
+  /** The mouse's pretend hand, not a camera hand. */
+  simulated: boolean;
+}
+
 /** What the visitor did, captured for "How the AI did it". */
 export interface Story {
   mode: InputMode | null;
@@ -78,6 +100,10 @@ export interface Story {
   trace: TraceSample[];
   /** Camera picture width / height, to draw the hand in its true shape. */
   aspect: number;
+  /** A real hit and the speeds around it (drums or percussion), or null before one. */
+  strike: StrikeStory | null;
+  /** The strike threshold now, in hand lengths per second. */
+  threshold: number;
 }
 
 export type Problem = { kind: "audio" } | { kind: "instrument"; id: InstrumentId } | null;
@@ -90,7 +116,12 @@ export interface StudioView {
   loading: { id: InstrumentId; progress: number } | null;
   /** Something failed to start: audio or an instrument. */
   problem: Problem;
-  check: { both: number; reach: ReachState };
+  /** The stage is playable: the instrument is loaded and hands are tracked (or the mouse is in). */
+  live: boolean;
+  /** How much of the studio has been shown so far (see reveal.ts). */
+  reveal: Reveal;
+  /** Measuring the visitor's reach, from Settings. */
+  reach: ReachState;
   playAlong: { choice: PlayAlongChoice; bpm: number; running: boolean; starting: boolean };
   rec: { state: "idle" | "waiting" | "recording" | "saving"; error: string | null };
   take: TakeInfo | null;
@@ -106,17 +137,22 @@ export interface StudioView {
   bests: Record<string, number>;
 }
 
+/** The first instrument: drums. Synthesised, so nothing to download, and any quick move down over a big pad plays. */
+export const DEFAULT_INSTRUMENT: InstrumentId = "drums";
+
 /** Play along starts on the pop band, at its own tempo. */
 const DEFAULT_PLAY_ALONG = "pop";
 
 const INITIAL: StudioView = {
   mode: null,
-  view: "camera",
+  view: "play",
   tracker: { status: "off" },
   instrument: null,
   loading: null,
   problem: null,
-  check: { both: 0, reach: { status: "idle" } },
+  live: false,
+  reveal: 0,
+  reach: { status: "idle" },
   playAlong: { choice: DEFAULT_PLAY_ALONG, bpm: styleById(DEFAULT_PLAY_ALONG).bpm, running: false, starting: false },
   rec: { state: "idle", error: null },
   take: null,
@@ -132,16 +168,49 @@ const INITIAL: StudioView = {
 
 const EMPTY_STATS: SessionStats = { events: 0, fastest: null, instruments: [], fps: null, lesson: null, hand: null };
 
+/** Seconds of downward speed kept per hand, and how much of it a strike story shows before and after its last hit. */
+const SPEED_KEEP_MS = 4000;
+const STRIKE_BEFORE_MS = 2200;
+const STRIKE_AFTER_MS = 900;
+/** A new instrument fades and settles in over this long. */
+const SWITCH_MS = 280;
+/** A note's name floats off the hand that played it for this long. */
+const FLOAT_MS = 900;
+
+interface Floater {
+  x: number;
+  y: number;
+  text: string;
+  t: number;
+  v: number;
+}
+
 /** While measuring: how far the hands have gone. Afterwards: the reach box that will be used. */
 function drawReach(g: CanvasRenderingContext2D, check: HandCheck, w: number, h: number) {
   const box = check.reach.status === "done" ? check.reach.box : check.reach.status === "measuring" ? check.extent : null;
   if (!box) return;
   g.strokeStyle = rgba(C.game, check.reach.status === "done" ? 1 : 0.85);
-  g.lineWidth = 2;
-  g.setLineDash(check.reach.status === "done" ? [] : [8, 6]);
-  rr(g, box.x0 * w, box.y0 * h, (box.x1 - box.x0) * w, (box.y1 - box.y0) * h, 14);
+  g.lineWidth = 2.5;
+  g.setLineDash(check.reach.status === "done" ? [] : [10, 7]);
+  rr(g, box.x0 * w, box.y0 * h, (box.x1 - box.x0) * w, (box.y1 - box.y0) * h, 16);
   g.stroke();
   g.setLineDash([]);
+}
+
+/** Loudness of the take in `n` equal slices, scaled so the loudest is 1. */
+function peaksOf(channels: Float32Array[], n = 96): number[] {
+  const len = channels[0]?.length ?? 0;
+  if (!len) return [];
+  const size = Math.max(1, Math.floor(len / n));
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let m = 0;
+    const end = Math.min(len, (i + 1) * size);
+    for (const ch of channels) for (let j = i * size; j < end; j += 4) m = Math.max(m, Math.abs(ch[j]));
+    out.push(m);
+  }
+  const top = Math.max(0.02, ...out);
+  return out.map((v) => Math.round((v / top) * 1000) / 1000);
 }
 
 const fallbackLabel = (k: string) => (k === "*" ? "Any pad" : (PIECE_LABEL[k] ?? (/^\d+$/.test(k) ? noteName(Number(k)) : k)));
@@ -151,6 +220,10 @@ const fallbackLabel = (k: string) => (k === "*" ? "Any pad" : (PIECE_LABEL[k] ??
  * engine, Play along, the one take and the lessons. It runs outside React
  * and publishes a snapshot (useSyncExternalStore); per-frame work (gestures,
  * drawing) never touches React state.
+ *
+ * The first tap goes straight to playing: the camera (or the mouse) and the
+ * drums start together, the kit plays a short fill when it's ready, and the
+ * rest of the studio is revealed as the visitor plays (reveal.ts).
  *
  * mount() and unmount() bracket the component's life and survive StrictMode.
  * reset() is Next player: camera off, audio closed, everything forgotten.
@@ -174,6 +247,24 @@ export class StudioSession {
   private fpsAvg: number | null = null;
   private lastFpsSample = 0;
   private lastHandCopy = 0;
+  // The first moments.
+  private greetTimers: number[] = [];
+  private liveSince = 0;
+  private switchedAt = -1e9;
+  // Progressive disclosure and the coach.
+  private instEvents = new Map<InstrumentId, number>();
+  private lastEventAt = 0;
+  private playMs = 0;
+  private lastTick = 0;
+  private lastRevealAt = 0;
+  private lastRevealCheck = 0;
+  // Feedback and the reveal's real numbers.
+  private floaters: Floater[] = [];
+  private speed: Record<HandLabel, { t: number; v: number }[]> = { Left: [], Right: [] };
+  private strikes: { t: number; v: number; hand: HandLabel }[] = [];
+  private captureAt = 0;
+  private captureHand: HandLabel = "Right";
+  private strikeStory: StrikeStory | null = null;
 
   /* ── React bindings ────────────────────────────────────────────── */
 
@@ -192,7 +283,7 @@ export class StudioSession {
     const was = this.view.view;
     this.view = { ...this.view, ...patch };
     const now = this.view.view;
-    // Leaving the instrument (picker, lessons, results): let go of held notes.
+    // Leaving the instrument (lessons, results): let go of held notes.
     if ((was === "play" || was === "lesson") && now !== "play" && now !== "lesson") this.controller?.panic();
     this.listeners.forEach((fn) => fn());
   }
@@ -210,17 +301,29 @@ export class StudioSession {
       delegate: state.status === "running" ? state.delegate : null,
       trace: this.view.mode === "camera" ? tracker.trace() : [],
       aspect: tracker.aspect,
+      strike: this.strikeStory,
+      threshold: strikeThreshold() / REF_SIZE,
     };
   }
 
-  /** Dismiss a problem notice; without an instrument, back to the picker. */
+  /** Dismiss a problem notice; the instrument that was playing keeps playing. */
   clearProblem = () => {
-    this.set({ problem: null, view: this.view.instrument ? this.view.view : "pick" });
+    this.set({ problem: null });
   };
 
   /** The current instrument's controller, for readouts. */
   get instrumentController() {
     return this.controller;
+  }
+
+  /** What the coach needs, sampled a few times a second (never per frame through React). */
+  coachState(now = performance.now()) {
+    const inst = this.view.instrument;
+    return {
+      events: inst ? (this.instEvents.get(inst) ?? 0) : 0,
+      sinceEvent: this.lastEventAt ? now - this.lastEventAt : Infinity,
+      sinceLive: this.view.live ? now - this.liveSince : 0,
+    };
   }
 
   /* ── Lifetime ──────────────────────────────────────────────────── */
@@ -245,6 +348,8 @@ export class StudioSession {
   reset() {
     this.loadToken++;
     this.lessonToken++;
+    this.greetTimers.forEach((t) => window.clearTimeout(t));
+    this.greetTimers = [];
     this.recorder?.cancel();
     this.recorder = null;
     this.recMeta = null;
@@ -257,6 +362,7 @@ export class StudioSession {
     this.controller = null;
     this.check = null;
     tracker.stop();
+    tracker.simAnchor = "tip";
     engine.close();
     settings.reset();
     backing.select(DEFAULT_PLAY_ALONG);
@@ -264,29 +370,43 @@ export class StudioSession {
     this.saved = {};
     this.statsValue = EMPTY_STATS;
     this.fpsAvg = null;
+    this.liveSince = 0;
+    this.switchedAt = -1e9;
+    this.instEvents = new Map();
+    this.lastEventAt = 0;
+    this.playMs = 0;
+    this.lastRevealAt = 0;
+    this.floaters = [];
+    this.speed = { Left: [], Right: [] };
+    this.strikes = [];
+    this.captureAt = 0;
+    this.strikeStory = null;
     this.view = INITIAL;
     this.listeners.forEach((fn) => fn());
   }
 
   /* ── Input ─────────────────────────────────────────────────────── */
 
-  /** From a click: start the audio (browsers allow it only after a click), then ask for the camera. */
+  /** From a click: start the audio (browsers allow it only after a click), the camera and the drums, together. */
   chooseCamera = () => {
     this.startAudio();
     this.check = null;
     input.mouse = false;
-    this.set({ mode: "camera", view: "camera", problem: null });
+    this.set({ mode: "camera", view: "play", problem: null, reach: { status: "idle" } });
     void tracker.start();
+    if (!this.controller && !this.view.loading) void this.pickInstrument(this.view.instrument ?? DEFAULT_INSTRUMENT);
   };
 
-  /** From a click: simulated hands (mouse is the right hand). */
+  /** From a click: a pretend hand that follows the mouse (or a finger). */
   chooseMouse = () => {
     this.startAudio();
     this.check = null;
     tracker.startSim();
     input.mouse = true;
     settings.update("tracking", { latencyMs: 0 });
-    this.set({ mode: "mouse", view: this.view.instrument ? "play" : "pick", problem: null });
+    this.set({ mode: "mouse", view: "play", problem: null, reach: { status: "idle" } });
+    if (!this.controller && !this.view.loading) void this.pickInstrument(this.view.instrument ?? DEFAULT_INSTRUMENT);
+    else this.maybeGreet();
   };
 
   private startAudio() {
@@ -299,43 +419,98 @@ export class StudioSession {
   private onTrackerState = () => {
     const state = tracker.state;
     const patch: Partial<StudioView> = { tracker: state };
-    if (state.status === "running" && this.view.view === "camera") {
-      settings.update("tracking", { latencyMs: CAMERA_LATENCY_MS });
-      patch.view = this.view.instrument ? "play" : "check";
-      if (!this.view.instrument) {
-        this.check = new HandCheck();
-        patch.check = { both: 0, reach: { status: "idle" } };
-      }
-    }
+    if (state.status === "running") settings.update("tracking", { latencyMs: CAMERA_LATENCY_MS });
     if (state.status === "error" && this.view.mode === "camera") {
-      // Back to the camera screen to say what happened; the instrument stays loaded.
-      if (this.view.lesson || this.view.view === "lessons" || this.view.view === "result") Object.assign(patch, this.endPractice());
-      patch.view = "camera";
+      // Play shows what happened; a lesson can't go on without hands. The instrument stays loaded.
+      this.check = null;
+      patch.reach = { status: "idle" };
+      if (this.view.lesson || this.view.view !== "play") Object.assign(patch, this.endPractice(), { view: "play" });
     }
     this.set(patch);
+    if (state.status === "running") this.maybeGreet();
   };
+
+  /**
+   * The stage goes live once the instrument is loaded and hands can be read.
+   * The first time, a pad kit plays a short fill across its pads: sound is on,
+   * and these are the things to hit. It is not the visitor's playing: nothing
+   * is counted or recorded.
+   */
+  private maybeGreet() {
+    if (this.view.live || !this.controller || this.view.mode === null) return;
+    if (this.view.mode === "camera" && tracker.state.status !== "running") return;
+    const now = performance.now();
+    this.liveSince = now;
+    this.lastTick = now;
+    this.set({ live: true });
+    const c = this.controller;
+    if (!(c instanceof PadController) || this.view.view !== "play") return;
+    const fill = c.demoFill();
+    fill.forEach((id, i) => {
+      const last = i === fill.length - 1;
+      const timer = window.setTimeout(
+        () => {
+          if (this.controller !== c) return;
+          c.demoHit(id, last ? 0.62 : 0.38 + i * 0.05, performance.now());
+          if (last && id !== "kick") c.demoHit("kick", 0.58, performance.now());
+        },
+        140 + i * 110,
+      );
+      this.greetTimers.push(timer);
+    });
+  }
 
   /* ── Frames ────────────────────────────────────────────────────── */
 
   private onFrame = (f: TrackFrame) => {
     const v = this.view.view;
-    if (v === "play" || v === "lesson") this.controller?.update(f, f.time);
+    const measuring = this.view.reach.status === "measuring";
+    const playing = v === "play" || v === "lesson";
+    if (playing && !measuring) this.controller?.update(f, f.time);
     // Keep a recent camera hand for the reveal: 21 pairs of numbers, never a picture.
     if (f.hands.length && tracker.state.status === "running" && f.time - this.lastHandCopy > 250) {
       this.lastHandCopy = f.time;
       const h = f.Right ?? f.hands[0];
       if (h.lm.length === 21) this.statsValue = { ...this.statsValue, hand: h.lm.map((p) => ({ x: p.x, y: p.y })) };
     }
+    if (playing) this.sampleSpeed(f);
+    if (this.captureAt && f.time >= this.captureAt) this.captureStrike();
     const check = this.check;
-    if (check && this.view.view === "check") {
+    if (check && measuring) {
       const box = check.onFrame(f);
       if (box) settings.update("tracking", { reach: box });
-      const both = Math.round(check.bothProgress * 20) / 20;
-      if (both !== this.view.check.both || check.reach !== this.view.check.reach) this.set({ check: { both, reach: check.reach } });
+      if (check.reach !== this.view.reach) this.set({ reach: check.reach });
     }
   };
 
+  /** The downward speed the strike detector reads, in hand lengths per second. */
+  private sampleSpeed(f: TrackFrame) {
+    for (const h of f.hands) {
+      const buf = this.speed[h.label];
+      buf.push({ t: f.time, v: h.fresh ? 0 : h.vel.y / REF_SIZE });
+      while (buf.length && f.time - buf[0].t > SPEED_KEEP_MS) buf.shift();
+    }
+  }
+
+  /** A hit just happened (and a moment after it): keep the speeds around it for the reveal. */
+  private captureStrike() {
+    const end = this.captureAt;
+    this.captureAt = 0;
+    const hand = this.captureHand;
+    const last = [...this.strikes].reverse().find((s) => s.hand === hand);
+    if (!last) return;
+    const from = last.t - STRIKE_BEFORE_MS;
+    const samples = this.speed[hand].filter((s) => s.t >= from && s.t <= end).map((s) => ({ t: s.t - from, v: s.v }));
+    if (samples.length < 12) return;
+    const hits = this.strikes.filter((s) => s.hand === hand && s.t >= from && s.t <= end).map((s) => ({ t: s.t - from, v: s.v }));
+    const s = settings.get();
+    const offset = this.view.instrument === "percussion" ? s.percussion.sensOffset : s.drums.sensOffset;
+    const threshold = strikeThreshold(offset) / REF_SIZE;
+    this.strikeStory = { samples, hits, threshold, rearm: threshold * REARM_FRACTION, span: end - from, hand, simulated: this.view.mode === "mouse" };
+  }
+
   private onPlay = (e: PlayEvent) => {
+    const now = performance.now();
     const s = this.statsValue;
     const handLengths = e.speed !== undefined ? e.speed / REF_SIZE : null;
     this.statsValue = {
@@ -344,6 +519,17 @@ export class StudioSession {
       fastest: handLengths !== null ? Math.max(s.fastest ?? 0, handLengths) : s.fastest,
       instruments: s.instruments.includes(e.inst) ? s.instruments : [...s.instruments, e.inst],
     };
+    this.lastEventAt = now;
+    this.instEvents.set(e.inst, (this.instEvents.get(e.inst) ?? 0) + 1);
+    // Pad hits (not the shaker, which is shaken sideways) feed the strike story.
+    if (e.kind === "hit" && e.piece !== "shaker" && e.speed !== undefined && (e.hand === "Left" || e.hand === "Right")) {
+      this.strikes.push({ t: now, v: e.speed / REF_SIZE, hand: e.hand });
+      if (this.strikes.length > 24) this.strikes.shift();
+      this.captureAt = now + STRIKE_AFTER_MS;
+      this.captureHand = e.hand;
+    }
+    this.addFloater(e, now);
+    this.checkReveal(now);
     const j = this.judge;
     const run = this.view.lesson;
     if (j && run && this.view.view === "lesson" && e.inst === run.lesson.inst) {
@@ -352,16 +538,80 @@ export class StudioSession {
     }
   };
 
-  /** Draws the instrument, the hands and any check overlay into the stage canvas (frame coordinates). */
+  /** The name of what was played floats up off the hand that played it. */
+  private addFloater(e: PlayEvent, now: number) {
+    // The synth glides through notes and marks its own pitch.
+    if (e.inst === "synth") return;
+    const f = tracker.frame;
+    const hand = e.hand === "Left" ? f.Left : e.hand === "Right" ? f.Right : (f.Right ?? f.Left);
+    if (!hand) return;
+    const p = instrumentInfo(e.inst).point === "tip" ? hand.tip : hand.palm;
+    const text =
+      e.kind === "strum" ? (e.muted ? "Muted" : (e.chord ?? "")) : e.kind === "hit" ? (PIECE_LABEL[e.piece ?? ""] ?? e.piece ?? "") : e.midi !== undefined ? noteName(e.midi) : "";
+    if (!text) return;
+    this.floaters.push({ x: p.x, y: p.y, text, t: now, v: e.vel });
+    if (this.floaters.length > 10) this.floaters.shift();
+  }
+
+  private drawFloaters(g: CanvasRenderingContext2D, w: number, h: number, now: number) {
+    this.floaters = this.floaters.filter((f) => now - f.t < FLOAT_MS);
+    const u = uiScale(h);
+    for (const fl of this.floaters) {
+      const k = (now - fl.t) / FLOAT_MS;
+      const rise = motion.reduced ? 0 : (1 - Math.pow(1 - k, 3)) * 70 * u;
+      const pop = motion.reduced ? 1 : 1 + 0.22 * Math.max(0, 1 - k / 0.14);
+      const px = 15 * u * pop * (0.92 + fl.v * 0.22);
+      g.globalAlpha = k < 0.5 ? 1 : Math.max(0, 1 - (k - 0.5) / 0.5);
+      g.font = font(720, px);
+      const tw = g.measureText(fl.text).width;
+      const ph = px * 1.95;
+      const pw = tw + px * 2.55;
+      let x = fl.x * w + 22 * u;
+      if (x + pw > w - 8) x = fl.x * w - 22 * u - pw;
+      const y = fl.y * h - 30 * u - rise;
+      rr(g, x, y - ph / 2, pw, ph, ph / 2);
+      g.fillStyle = rgba(C.game);
+      g.fill();
+      g.fillStyle = rgba(C.gameInk);
+      g.strokeStyle = rgba(C.gameInk);
+      noteGlyph(g, x + px * 0.82, y + px * 0.32, px * 1.05);
+      g.textAlign = "left";
+      g.textBaseline = "middle";
+      g.fillText(fl.text, x + px * 1.6, y + px * 0.06);
+      g.textBaseline = "alphabetic";
+    }
+    g.globalAlpha = 1;
+  }
+
+  /** Draws the instrument, the hands, the reach box and the floating notes into the stage canvas (frame coordinates). */
   draw(g: CanvasRenderingContext2D, w: number, h: number, now: number) {
     const v = this.view.view;
-    if (this.controller && (v === "play" || v === "lesson")) this.controller.draw(g, w, h, now);
-    if (v === "check" && this.check) drawReach(g, this.check, w, h);
+    const reach = this.view.reach.status;
+    const measuring = reach === "measuring";
+    if (this.controller && (v === "play" || v === "lesson") && !measuring) {
+      g.save();
+      // Dim until the stage is live, then up; a new instrument fades and settles in.
+      const live = this.view.live ? Math.min(1, 0.35 + (0.65 * (now - this.liveSince)) / 400) : 0.35;
+      const k = Math.min(1, Math.max(0, (now - this.switchedAt) / SWITCH_MS));
+      const ease = 1 - Math.pow(1 - k, 3);
+      g.globalAlpha = live * ease;
+      if (!motion.reduced && k < 1) {
+        const c = fromReach({ x: 0.5, y: 0.5 });
+        const s = 0.965 + 0.035 * ease;
+        g.translate(c.x * w, c.y * h);
+        g.scale(s, s);
+        g.translate(-c.x * w, -c.y * h);
+      }
+      this.controller.draw(g, w, h, now);
+      g.restore();
+    }
+    if (this.check && reach !== "idle") drawReach(g, this.check, w, h);
     const f = tracker.frame;
     if (now - f.time < 300) {
-      const point = this.view.instrument && v !== "check" ? instrumentInfo(this.view.instrument).point : "palm";
+      const point = this.view.instrument && !measuring ? instrumentInfo(this.view.instrument).point : "palm";
       drawHands(g, f, w, h, { point });
     }
+    if (this.floaters.length) this.drawFloaters(g, w, h, now);
   }
 
   /** Once per animation frame, from the stage. */
@@ -372,6 +622,13 @@ export class StudioSession {
       this.lastFpsSample = now;
       const fps = tracker.metrics.fps;
       if (fps > 0) this.fpsAvg = this.fpsAvg === null ? fps : this.fpsAvg * 0.8 + fps * 0.2;
+    }
+    // Seconds of live play, for the reveal (long gaps, like a hidden tab, don't count).
+    if (this.view.live && this.view.view === "play") this.playMs += Math.max(0, Math.min(250, now - this.lastTick));
+    this.lastTick = now;
+    if (this.view.live && now - this.lastRevealCheck > 500) {
+      this.lastRevealCheck = now;
+      this.checkReveal(now);
     }
     // Recording: the count-in, then the cap.
     const r = this.recorder;
@@ -404,6 +661,20 @@ export class StudioSession {
     }
   }
 
+  private checkReveal(now: number) {
+    if (!this.view.live) return;
+    const next = nextReveal(this.view.reveal, {
+      events: this.statsValue.events,
+      seconds: this.playMs / 1000,
+      hasTake: this.take !== null,
+      sinceLast: (now - this.lastRevealAt) / 1000,
+    });
+    if (next !== this.view.reveal) {
+      this.lastRevealAt = now;
+      this.set({ reveal: next });
+    }
+  }
+
   /** A target or event key by name ("C4", "Snare"). */
   labelOf = (k: string) => (k === "*" ? "Any pad" : (this.controller?.label(k) ?? fallbackLabel(k)));
 
@@ -423,26 +694,33 @@ export class StudioSession {
     return this.take?.player.position() ?? null;
   }
 
-  /* ── The hand check ────────────────────────────────────────────── */
+  /* ── Reach (from Settings) ─────────────────────────────────────── */
 
+  /** Six seconds of sweeping both hands to the edges; the instruments then fit inside. Camera only. */
   measureReach = () => {
-    if (!this.check) this.check = new HandCheck();
+    if (this.view.mode !== "camera" || tracker.state.status !== "running") return;
+    this.controller?.panic();
+    this.check = new HandCheck();
     this.check.startReach(performance.now());
-    this.set({ check: { both: this.view.check.both, reach: this.check.reach } });
+    this.set({ reach: this.check.reach });
   };
 
-  finishCheck = () => {
+  /** Close the measuring card (or stop measuring early, keeping the area as it was). */
+  closeReach = () => {
     this.check = null;
-    this.set({ view: this.view.instrument ? "play" : "pick" });
+    this.set({ reach: { status: "idle" } });
+  };
+
+  /** Back to the standard play area. */
+  resetReach = () => {
+    settings.update("tracking", { reach: DEFAULTS.tracking.reach });
   };
 
   /* ── Instruments ───────────────────────────────────────────────── */
 
   /** Resolves true once the instrument is playing. */
   pickInstrument = async (id: InstrumentId): Promise<boolean> => {
-    const ok = await this.loadInstrument(id);
-    if (ok && (this.view.view === "pick" || this.view.view === "play")) this.set({ view: "play" });
-    return ok;
+    return this.loadInstrument(id);
   };
 
   /** Resolves true when the instrument is ready to play. */
@@ -478,7 +756,11 @@ export class StudioSession {
     const s = settings.get()[id];
     engine.setInstrumentFx(s.fx);
     engine.setInstrumentVolume(s.volume);
+    // Pads and strums play where the palm is; keys and pitch follow the fingertip. The pretend hand matches.
+    tracker.simAnchor = instrumentInfo(id).point;
+    this.switchedAt = performance.now();
     this.set({ instrument: id, loading: null });
+    this.maybeGreet();
     return true;
   }
 
@@ -600,11 +882,21 @@ export class StudioSession {
       latencyMs: meta.latencyMs,
     });
     const instruments = [...new Set(result.events.map((e) => e.inst))];
-    const info: TakeInfo = { id: this.takeCount, duration: result.duration, events: result.events.length, report, gridded: meta.gridded, instruments };
+    const info: TakeInfo = {
+      id: this.takeCount,
+      duration: result.duration,
+      events: result.events.length,
+      report,
+      gridded: meta.gridded,
+      instruments,
+      peaks: peaksOf(result.channels),
+      marks: result.events.map((e) => ({ t: e.t, inst: e.inst })),
+    };
     const player = new TakePlayer(result, meta.barLength);
     player.onEnded = () => this.set({ takeMode: "off" });
     this.take = { info, result, player };
     this.set({ rec: { state: "idle", error: null }, take: info, takeMode: "off", takeShown: this.takeCount });
+    this.checkReveal(performance.now());
   };
 
   /** Listen to the take once, or loop it to play along with it. */
@@ -632,6 +924,7 @@ export class StudioSession {
 
   openLessons = () => {
     this.stopLessonRun();
+    this.closeReach();
     this.set({ view: "lessons", result: null, feedback: null, progress: null, countIn: null });
   };
 
@@ -723,7 +1016,7 @@ export class StudioSession {
 
   /** Back to free play: the visitor's own settings come back. */
   leavePractice = () => {
-    this.set({ ...this.endPractice(), view: this.controller ? "play" : "pick" });
+    this.set({ ...this.endPractice(), view: "play" });
   };
 
   /** Ends any lesson and puts the visitor's settings back. Returns the view changes. */

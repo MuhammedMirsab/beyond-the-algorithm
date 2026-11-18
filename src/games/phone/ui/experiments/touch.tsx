@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { localPoint, pushTap, tapRhythm, touchGuess, type TapPoint } from "../../engine/touch";
 import { sound } from "../../engine/sound";
-import { useLink, useShared } from "../../link/link";
+import { useShared } from "../../link/link";
 import { useCapabilities } from "../../sensors/use-device";
 import { ExperimentLayout, type ExperimentProps } from "../experiment-layout";
-import { STAGE_BOTTOM, StageShell } from "../parts";
+import { STAGE_BOTTOM, StageShell, type Task } from "../parts";
 
 /** A tap, in the phone's points (for readouts) and as a fraction of the glass (for drawing). */
 interface GlassTap extends TapPoint {
@@ -27,6 +27,8 @@ interface Finger {
 }
 
 const INPUT_LABEL: Record<string, string> = { touch: "Finger", mouse: "Mouse", pen: "Pen" };
+/** Taps closer together than this count as tapping fast. */
+const FAST_MS = 350;
 
 function readGlass(event: ReactPointerEvent<HTMLDivElement>) {
   const el = event.currentTarget;
@@ -42,6 +44,8 @@ function readGlass(event: ReactPointerEvent<HTMLDivElement>) {
   };
 }
 
+const list = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
 export function TouchExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
   const [taps, setTaps] = useState<GlassTap[]>([]);
@@ -53,9 +57,7 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
   const [input, setInput] = useState<string | null>(null);
   const down = useRef(new Set<number>());
   const nextId = useRef(0);
-  const { markTested } = ctx;
-  const link = useLink();
-  const remoteTouch = link.role === "host" && link.linked;
+  const { markTested, mirrored } = ctx;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const g = readGlass(event);
@@ -65,9 +67,9 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
     const size = event.width > 1 || event.height > 1 ? Math.max(event.width, event.height) : null;
     const fingersNow = down.current.size;
     nextId.current += 1;
-    const tap: GlassTap = { id: nextId.current, x: g.x, y: g.y, t: event.timeStamp, fx: g.fx, fy: g.fy };
-    setFingers((list) => [...list.filter((f) => f.id !== event.pointerId), { id: event.pointerId, fx: g.fx, fy: g.fy, x: g.x, y: g.y, size }]);
-    setTaps((list) => pushTap(list, tap));
+    const tap: GlassTap = { id: nextId.current, x: g.x, y: g.y, t: Math.round(event.timeStamp), fx: round3(g.fx), fy: round3(g.fy) };
+    setFingers((all) => [...all.filter((f) => f.id !== event.pointerId), { id: event.pointerId, fx: round3(g.fx), fy: round3(g.fy), x: g.x, y: g.y, size }]);
+    setTaps((all) => pushTap(all, tap));
     setCount((n) => n + 1);
     setMostFingers((n) => Math.max(n, fingersNow));
     setGlassWidth(g.width);
@@ -80,16 +82,16 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!down.current.has(event.pointerId)) return;
     const g = readGlass(event);
-    setFingers((list) =>
-      list.map((f) =>
-        f.id === event.pointerId ? { ...f, fx: Math.min(1, Math.max(0, g.fx)), fy: Math.min(1, Math.max(0, g.fy)), x: g.x, y: g.y } : f,
+    setFingers((all) =>
+      all.map((f) =>
+        f.id === event.pointerId ? { ...f, fx: round3(Math.min(1, Math.max(0, g.fx))), fy: round3(Math.min(1, Math.max(0, g.fy))), x: g.x, y: g.y } : f,
       ),
     );
   };
 
   const onPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!down.current.delete(event.pointerId)) return;
-    setFingers((list) => list.filter((f) => f.id !== event.pointerId));
+    setFingers((all) => all.filter((f) => f.id !== event.pointerId));
   };
 
   const clear = () => {
@@ -103,17 +105,32 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
   const shared = useShared("touch", { taps, fingers, count, mostFingers, glassWidth, contact, input });
   const prevCount = useRef(shared.count);
   useEffect(() => {
-    if (!remoteTouch || shared.count === prevCount.current) return;
+    if (!mirrored || shared.count === prevCount.current) return;
     prevCount.current = shared.count;
     if (shared.count > 0) {
       sound.tap();
       markTested();
     }
-  }, [remoteTouch, shared.count, markTested]);
-  const { taps: tapsShown, fingers: fingersShown } = shared;
+  }, [mirrored, shared.count, markTested]);
+  const tapsShown = list<GlassTap>(shared.taps);
+  const fingersShown = list<Finger>(shared.fingers);
   const last = tapsShown[tapsShown.length - 1];
   const rhythm = tapRhythm(tapsShown);
   const guess = shared.count > 0 ? touchGuess(tapsShown, shared.glassWidth, fingersShown.length) : null;
+
+  // A finger on a phone, or a mouse on the laptop: the things to try fit the hand that's there.
+  const fingerDevice = mirrored ? shared.input !== "mouse" : caps.touch;
+  const tasks: Task[] = fingerDevice
+    ? [
+        { id: "tap", label: "Tap the glass", done: shared.count >= 1 },
+        { id: "thumb", label: "Tap 3 more times with one thumb", done: shared.count >= 4 },
+        { id: "three", label: "Put 3 fingers down at once", done: shared.mostFingers >= 3 },
+      ]
+    : [
+        { id: "tap", label: "Click the glass", done: shared.count >= 1 },
+        { id: "side", label: "Click 3 more times on one side", done: shared.count >= 4 },
+        { id: "fast", label: "Click 5 times, as fast as you can", done: tapsShown.length >= 5 && rhythm != null && rhythm < FAST_MS },
+      ];
 
   const readout = [
     { label: "Last tap", value: last ? `x ${last.x}, y ${last.y}` : "Waiting" },
@@ -128,19 +145,10 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
     { label: "Touched with", value: shared.input ? (INPUT_LABEL[shared.input] ?? shared.input) : "Waiting" },
   ];
 
-  const tryIt = (
-    <div className="flex flex-col gap-4">
-      <p className="type-body text-fg-muted">
-        {caps.touch
-          ? "Tap the glass a few times with your thumb. Then put two or three fingers down at once."
-          : "Click anywhere on the phone's screen, a few times. On this laptop the mouse stands in for a finger."}
-      </p>
-      <div>
-        <Button variant="secondary" size="lg" onClick={clear} disabled={count === 0}>
-          Clear the taps
-        </Button>
-      </div>
-    </div>
+  const controls = mirrored ? null : (
+    <Button variant="ghost" onClick={clear} disabled={count === 0} className="-ml-3 self-start">
+      Clear the taps
+    </Button>
   );
 
   return (
@@ -148,7 +156,7 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
       ctx={ctx}
       live={fingersShown.length > 0}
       source="live"
-      stageLabel="The touchscreen. Tap or click anywhere on it."
+      stageLabel={fingerDevice ? "The touchscreen. Tap anywhere on it." : "The touchscreen. Click anywhere on it."}
       stage={
         <StageShell title="Touch" source="live">
           <div
@@ -167,7 +175,7 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
             {shared.count === 0 ? (
               <div className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center">
                 <div className="flex flex-col gap-2">
-                  <span className="type-title-3 text-fg">{caps.touch || remoteTouch ? "Tap the glass" : "Click the glass"}</span>
+                  <span className="type-title-3 text-fg">{fingerDevice ? "Tap the glass" : "Click the glass"}</span>
                   <span className="type-small text-fg-subtle">Every line is a wire carrying a tiny charge.</span>
                 </div>
               </div>
@@ -218,12 +226,15 @@ export function TouchExperiment({ ctx }: ExperimentProps) {
           </div>
         </StageShell>
       }
-      tryIt={tryIt}
+      controls={controls}
+      tasks={tasks}
       readout={readout}
       guess={guess}
-      guessWaiting="Tap the glass to see what it guesses."
-      primaryTaken={false}
+      guessWaiting={fingerDevice ? "Tap the glass to see what it guesses." : "Click the glass to see what it guesses."}
+      numbers={last ? `x ${last.x}   y ${last.y}${rhythm != null ? `   ${rhythm} ms apart` : ""}` : null}
       summary={last ? `${shared.count} taps. Last at x ${last.x}, y ${last.y}. Guess: ${guess?.label ?? ""}.` : "No taps yet."}
     />
   );
 }
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;

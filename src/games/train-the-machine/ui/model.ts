@@ -42,8 +42,19 @@ export const EXAMPLES_NEEDED = 5;
 /** Plenty: more only slows the visitor down. */
 export const MAX_EXAMPLES = 10;
 
+/**
+ * How many examples one press of Record takes in a row: enough to reach 5,
+ * then 5 more at a time, never past the maximum. One press, then the visitor
+ * stays in position instead of walking back to the keyboard after every shot.
+ */
+export function burstSize(have: number): number {
+  if (have >= MAX_EXAMPLES) return 0;
+  const want = have < EXAMPLES_NEEDED ? EXAMPLES_NEEDED - have : EXAMPLES_NEEDED;
+  return Math.min(want, MAX_EXAMPLES - have);
+}
+
 /** A small mirrored copy of the current frame, as the visitor saw it. */
-export function snapshot(video: HTMLVideoElement | null, width = 160): { url: string; ratio: number } | null {
+export function snapshot(video: HTMLVideoElement | null, width = 320): { url: string; ratio: number } | null {
   if (!video || !video.videoWidth || !video.videoHeight) return null;
   const ratio = video.videoWidth / video.videoHeight;
   const canvas = document.createElement("canvas");

@@ -34,6 +34,12 @@ export const LEVEL_CHANGE: Record<Difficulty, string> = {
 
 export const LEVELS: Difficulty[] = ["easy", "medium", "hard"];
 
+/** The rare moments (a reveal) earn a little bounce; everything else settles without one. */
+export const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+export const EASE_IN_OUT = [0.77, 0, 0.175, 1] as const;
+export const SPRING = { type: "spring", duration: 0.35, bounce: 0 } as const;
+export const SPRING_POP = { type: "spring", duration: 0.45, bounce: 0.3 } as const;
+
 /** The big A or B on a photo. Decorative: the button's label carries the letter for screen readers. */
 export function SideBadge({ side, size = "lg", className }: { side: Side; size?: "sm" | "lg"; className?: string }) {
   return (
@@ -50,29 +56,37 @@ export function SideBadge({ side, size = "lg", className }: { side: Side; size?:
   );
 }
 
-/** "AI-made" or "Real photo" on a photo once the round is over. */
+/**
+ * "AI-made" or "Real photo" on a photo once the round is over. On the reveal
+ * the AI label lands like a stamp; the real one just appears.
+ */
 export function TruthLabel({
   isReal,
   size = "lg",
   animate = true,
+  delay = 0,
   className,
 }: {
   isReal: boolean;
   size?: "sm" | "lg";
   animate?: boolean;
+  delay?: number;
   className?: string;
 }) {
   const Icon = isReal ? Camera : Bot;
   return (
     <motion.span
-      initial={animate ? { opacity: 0, scale: 0.9 } : false}
-      animate={{ opacity: 1, scale: 1 }}
-      // The reveal is one of the rare moments that earns a little bounce.
-      transition={{ type: "spring", duration: 0.35, bounce: isReal ? 0 : 0.25 }}
+      initial={animate ? (isReal ? { opacity: 0, y: 4 } : { opacity: 0, scale: 1.45, rotate: -8 }) : false}
+      animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+      transition={
+        isReal
+          ? { duration: 0.3, ease: EASE_OUT, delay }
+          : { ...SPRING_POP, delay, opacity: { duration: 0.12, delay } }
+      }
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full font-semibold",
         size === "lg" ? "h-10 px-4 text-[0.9375rem] [&_svg]:size-[18px]" : "h-6 px-2 text-[0.75rem] [&_svg]:size-3.5",
-        isReal ? "bg-canvas text-fg shadow-ring" : "bg-game text-game-ink",
+        isReal ? "bg-canvas text-fg shadow-ring" : "bg-game text-game-ink shadow-[0_6px_18px_-6px_oklch(0_0_0/0.6)]",
         className,
       )}
     >
@@ -113,6 +127,17 @@ export function OutcomeChip({ outcome, className }: { outcome: Outcome; classNam
     >
       <Icon aria-hidden strokeWidth={2.75} />
       {meta.short}
+    </span>
+  );
+}
+
+/** An outcome as a small round icon: the round tracker and thumbnails. */
+export function OutcomeDot({ outcome, className }: { outcome: Outcome; className?: string }) {
+  const meta = OUTCOME[outcome];
+  const Icon = meta.icon;
+  return (
+    <span className={cn("grid size-5 shrink-0 place-items-center rounded-full [&_svg]:size-3", TONE_WELL[meta.tone], className)}>
+      <Icon aria-hidden strokeWidth={3.25} />
     </span>
   );
 }

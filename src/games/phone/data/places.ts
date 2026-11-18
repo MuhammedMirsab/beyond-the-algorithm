@@ -65,7 +65,7 @@ export const DAY: DaySegment[] = [
   { kind: "stay", from: at(19, 30), to: at(24), place: "home" },
 ];
 
-/** The slider runs from 6 AM to 10 PM in 15-minute steps. */
+/** The slider runs from 6 am to 10 pm in 15-minute steps. */
 export const DAY_START = at(6);
 export const DAY_END = at(22);
 export const DAY_STEP = 15;

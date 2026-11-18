@@ -26,6 +26,26 @@ export class Sounds {
     this.tone({ type: "sine", from: 220, to: 160, gain: 0.07, duration: 0.14 });
   }
 
+  /** Two rising notes: a move has all its examples. */
+  done() {
+    const ctx = this.context();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [659.25, 987.77].forEach((freq, i) => {
+      const start = now + i * 0.09;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.08, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.23);
+    });
+  }
+
   /** Rising chord when the model is trained. */
   success() {
     const ctx = this.context();

@@ -1,12 +1,21 @@
 /**
- * The match flow the arena runs, with fake timers: lock before the countdown,
- * 3-2-1-Shoot, the camera's grace period, the 3 s miss and its replay, keys
- * pressed early, the end of a match, and what Rematch and Next player keep.
+ * The match flow the arena runs, with fake timers: the lock beat before the
+ * chant, rock-paper-scissors-shoot, the camera's grace period, the 3 s miss and
+ * its replay, keys pressed early, the end of a match, the guesses it keeps, and
+ * what Rematch and Next player keep.
  */
 import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test";
 import { getCounterMove } from "../engine/aiPredictor";
-import type { CVFrameResult, DetectedGesture, Gesture } from "../engine/types";
-import { isRoundLive, MatchController, SHOOT_GRACE_MS, SHOOT_TIMEOUT_MS, STEP_MS } from "../match-controller";
+import type { CVFrameResult, DetectedGesture, Gesture, PredictionBreakdown } from "../engine/types";
+import {
+  isRoundLive,
+  LEAD_IN_MS,
+  MatchController,
+  SHOOT_GRACE_MS,
+  SHOOT_TIMEOUT_MS,
+  STEP_MS,
+  TO_SHOOT_MS,
+} from "../match-controller";
 
 function frame(gesture: DetectedGesture, confidence = 0.9): CVFrameResult {
   return {
@@ -41,7 +50,7 @@ function feed(controller: MatchController, gesture: DetectedGesture, count: numb
 }
 
 function toShoot() {
-  jest.advanceTimersByTime(STEP_MS * 3);
+  jest.advanceTimersByTime(TO_SHOOT_MS);
 }
 
 beforeEach(() => {
@@ -53,21 +62,31 @@ afterEach(() => {
 });
 
 describe("A round in the arena", () => {
-  it("seals the AI's move before counting 3, 2, 1, Shoot", () => {
+  it("seals the AI's move on a beat of its own, then chants rock, paper, scissors, shoot", () => {
     const controller = new MatchController("normal");
+    expect(controller.getSnapshot().beat).toBeNull();
     expect(controller.startRound()).toBe(true);
     let view = controller.getSnapshot();
     expect(view.match.phase).toBe("locked");
+    expect(view.beat).toBe("lock");
     expect(view.match.countdownValue).toBe(3);
     const sealed = view.match.sealedCommitment;
     expect(sealed).not.toBeNull();
 
+    jest.advanceTimersByTime(LEAD_IN_MS);
+    view = controller.getSnapshot();
+    expect(view.beat).toBe("rock");
+    expect(view.match.phase).toBe("countdown");
+    expect(view.match.countdownValue).toBe(3);
     jest.advanceTimersByTime(STEP_MS);
+    expect(controller.getSnapshot().beat).toBe("paper");
     expect(controller.getSnapshot().match.countdownValue).toBe(2);
     jest.advanceTimersByTime(STEP_MS);
+    expect(controller.getSnapshot().beat).toBe("scissors");
     expect(controller.getSnapshot().match.countdownValue).toBe(1);
     jest.advanceTimersByTime(STEP_MS);
     view = controller.getSnapshot();
+    expect(view.beat).toBe("shoot");
     expect(view.match.phase).toBe("detecting");
     expect(view.match.countdownValue).toBe("SHOOT");
     expect(view.match.sealedCommitment).toBe(sealed);
@@ -78,10 +97,10 @@ describe("A round in the arena", () => {
   it("ignores a fist pumped during the countdown and the first moments after Shoot", () => {
     const controller = new MatchController("normal");
     controller.startRound();
-    const countdownFrames = Math.floor((STEP_MS * 3) / 55);
-    feed(controller, "rock", countdownFrames); // the whole countdown
+    const countdownFrames = Math.floor(TO_SHOOT_MS / 55);
+    feed(controller, "rock", countdownFrames); // the lock beat and the whole chant
     expect(controller.getSnapshot().match.phase).toBe("countdown");
-    jest.advanceTimersByTime(STEP_MS * 3 - countdownFrames * 55);
+    jest.advanceTimersByTime(TO_SHOOT_MS - countdownFrames * 55);
     expect(controller.getSnapshot().match.phase).toBe("detecting");
 
     // Still rock right after Shoot, inside the grace period: not a throw.
@@ -117,6 +136,7 @@ describe("A round in the arena", () => {
 
     let view = controller.getSnapshot();
     expect(view.missed).toBe(true);
+    expect(view.beat).toBeNull();
     expect(isRoundLive(view)).toBe(false);
     expect(view.match.phase).toBe("locked");
     expect(view.match.sealedCommitment).toBe(sealed);
@@ -129,6 +149,7 @@ describe("A round in the arena", () => {
     expect(controller.startRound()).toBe(true);
     view = controller.getSnapshot();
     expect(view.missed).toBe(false);
+    expect(view.beat).toBe("lock");
     expect(view.match.sealedCommitment).toBe(sealed);
     toShoot();
     jest.advanceTimersByTime(SHOOT_GRACE_MS);
@@ -146,12 +167,15 @@ describe("A round in the arena", () => {
     expect(controller.getSnapshot().pendingThrow).toBeNull();
 
     controller.startRound();
-    jest.advanceTimersByTime(STEP_MS);
-    controller.throwMove("scissors");
+    controller.throwMove("rock"); // during the lock beat: kept
+    expect(controller.getSnapshot().pendingThrow).toBe("rock");
+    jest.advanceTimersByTime(LEAD_IN_MS + STEP_MS);
+    controller.throwMove("scissors"); // a change of mind during the chant
     expect(controller.getSnapshot().pendingThrow).toBe("scissors");
     expect(controller.getSnapshot().history).toHaveLength(0);
-    jest.advanceTimersByTime(STEP_MS * 2);
+    jest.advanceTimersByTime(TO_SHOOT_MS - LEAD_IN_MS - STEP_MS);
     expect(controller.getSnapshot().history[0]?.playerMove).toBe("scissors");
+    expect(controller.getSnapshot().beat).toBeNull();
 
     controller.startRound();
     toShoot();
@@ -180,6 +204,27 @@ describe("A round in the arena", () => {
   });
 });
 
+describe("What it thought before each round", () => {
+  it("keeps the sealed guess for every finished round, in order", () => {
+    const controller = new MatchController("normal");
+    controller.setInputMode("keys");
+    const sealedGuesses: PredictionBreakdown[] = [];
+    for (const move of ["rock", "paper", "rock"] as const) {
+      controller.startRound();
+      sealedGuesses.push(controller.getSnapshot().match.sealedCommitment!.breakdown);
+      toShoot();
+      controller.throwMove(move);
+    }
+    const view = controller.getSnapshot();
+    expect(view.guesses).toHaveLength(view.history.length);
+    view.guesses.forEach((guess, i) => {
+      expect(guess).toBe(sealedGuesses[i]);
+      expect(guess.predictedPlayerMove).toBe(view.history[i].predictedPlayerMove);
+      expect(guess.aiCounterMove).toBe(view.history[i].aiCounterMove);
+    });
+  });
+});
+
 describe("Rematch and Next player", () => {
   function playRounds(controller: MatchController, moves: Gesture[]) {
     for (const move of moves) {
@@ -201,11 +246,13 @@ describe("Rematch and Next player", () => {
     expect(view.match.playerScore + view.match.aiScore + view.match.draws).toBe(0);
     expect(view.match.difficulty).toBe("hard");
     expect(view.history).toHaveLength(3);
+    expect(view.guesses).toHaveLength(3);
     expect(view.learning.totalObservations).toBe(3);
 
     controller.forget();
     view = controller.getSnapshot();
     expect(view.history).toHaveLength(0);
+    expect(view.guesses).toHaveLength(0);
     expect(view.learning.totalObservations).toBe(0);
     expect(view.match.difficulty).toBe("normal");
     expect(view.match.matchRounds).toHaveLength(0);

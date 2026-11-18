@@ -1,76 +1,91 @@
 "use client";
 
-import { Camera } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { motion } from "motion/react";
 import { Kbd } from "@/components/ui/surface";
 import { cn } from "@/lib/cn";
 import { GESTURES } from "../engine/aiPredictor";
 import type { Gesture } from "../engine/types";
-import { GESTURE_KEY, GESTURE_LABEL, GestureIcon } from "./gesture-icon";
+import { GESTURE_KEY, GESTURE_LABEL, HandGlyph } from "./gesture-icon";
 
 /**
- * Playing without a camera: three big buttons (and R, P, S). They work once
- * the AI has locked its move; a pick made during the countdown is thrown at
- * Shoot.
+ * Playing without a camera: three big hands (and R, P, S). They wake up once
+ * the AI has locked its move; a pick made before Shoot is thrown at Shoot,
+ * and can be changed until then.
+ *
+ * `row`: three tall buttons side by side (phones, thumbs at the bottom).
+ * `column`: three wide buttons stacked, next to your card (the laptop).
  */
 export function ThrowPad({
   enabled,
   shoot,
   selected,
+  thrown,
   onThrow,
-  onUseCamera,
-  canSwitch,
+  touch,
+  layout = "row",
+  className,
 }: {
   /** The AI has locked its move and a throw is expected. */
   enabled: boolean;
   /** It's Shoot right now. */
   shoot: boolean;
-  /** A pick made during the countdown, waiting for Shoot. */
+  /** A pick made before Shoot, waiting for it. */
   selected: Gesture | null;
+  /** The move just thrown, shown until the next round. */
+  thrown: Gesture | null;
   onThrow: (gesture: Gesture) => void;
-  onUseCamera: () => void;
-  /** Switching is only offered between rounds. */
-  canSwitch: boolean;
+  /** A touch screen: no key caps. */
+  touch: boolean;
+  layout?: "row" | "column";
+  className?: string;
 }) {
+  // The nudge at Shoot is a transform: the arcade's MotionConfig (reducedMotion="user") already skips it.
+  const column = layout === "column";
   return (
-    <section aria-label="Your move" className="flex min-w-0 flex-col gap-3">
-      <div className="flex w-full flex-col items-center justify-center gap-5 rounded-xl bg-sunken px-3 py-6 shadow-ring sm:px-6 md:aspect-[4/3] lg:py-8">
-        <p className="type-title-3 text-center text-fg">
-          {shoot ? "Pick your move now" : enabled ? "Pick now or on Shoot" : "Start the round, then pick"}
-        </p>
-        <div className="grid w-full max-w-[30rem] grid-cols-3 gap-2 sm:gap-3">
-          {GESTURES.map((gesture) => {
-            const pressed = selected === gesture;
-            return (
-              <button
-                key={gesture}
-                type="button"
-                disabled={!enabled}
-                aria-pressed={pressed}
-                aria-keyshortcuts={GESTURE_KEY[gesture]}
-                onClick={() => onThrow(gesture)}
-                className={cn(
-                  "flex min-h-28 select-none flex-col items-center justify-center gap-2 rounded-lg px-2 py-4 sm:min-h-32",
-                  "transition-[background-color,color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.97]",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
-                  "disabled:pointer-events-none disabled:opacity-45",
-                  pressed ? "bg-fg text-canvas" : "bg-surface text-fg shadow-ring hover:bg-raised",
-                )}
-              >
-                <GestureIcon gesture={gesture} className="size-10 sm:size-12" />
-                <span className="type-body font-semibold">{GESTURE_LABEL[gesture]}</span>
-                <Kbd className={cn("hidden lg:inline-grid", pressed && "bg-canvas/15 text-canvas")}>{GESTURE_KEY[gesture]}</Kbd>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <p className="type-small text-fg-subtle">Playing without the camera. The AI works the same way.</p>
-        <Button variant="ghost" size="sm" icon={<Camera />} onClick={onUseCamera} disabled={!canSwitch}>
-          Use the camera
-        </Button>
-      </div>
-    </section>
+    <div role="group" aria-label="Your move" className={cn(column ? "flex flex-col gap-2" : "grid grid-cols-3 gap-2 sm:gap-3", className)}>
+      {GESTURES.map((gesture, i) => {
+        const picked = selected === gesture || (!enabled && thrown === gesture);
+        const call = shoot && !selected;
+        return (
+          <motion.button
+            key={gesture}
+            type="button"
+            disabled={!enabled}
+            aria-pressed={selected === gesture}
+            aria-keyshortcuts={touch ? undefined : GESTURE_KEY[gesture]}
+            onClick={() => onThrow(gesture)}
+            animate={call ? (column ? { x: [0, 6, 0] } : { y: [0, -6, 0] }) : { x: 0, y: 0 }}
+            transition={call ? { duration: 0.36, ease: [0.22, 1, 0.36, 1], delay: i * 0.05 } : { duration: 0.15 }}
+            className={cn(
+              "group/throw relative flex select-none items-center rounded-lg",
+              column ? "min-h-16 flex-1 gap-3 py-2 pl-3 pr-4" : "min-h-[7.5rem] flex-col justify-center gap-1.5 px-2 pb-3 pt-4 sm:min-h-[8.5rem]",
+              "transition-[background-color,color,box-shadow,opacity,scale] duration-150 ease-out active:scale-[0.97]",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
+              "disabled:pointer-events-none",
+              picked ? "bg-fg text-canvas" : "bg-raised text-fg shadow-ring hover:bg-overlay",
+              !enabled && !picked && "opacity-45",
+              call && "shadow-[0_0_0_2px_var(--game)]",
+            )}
+          >
+            <HandGlyph
+              gesture={gesture}
+              paper={picked ? "white" : "var(--color-fg)"}
+              ink={picked ? "var(--color-canvas)" : "var(--color-raised)"}
+              weight={5.5}
+              className={cn(
+                "w-auto transition-transform duration-200 ease-out [@media(hover:hover)_and_(pointer:fine)]:group-hover/throw:-translate-y-0.5",
+                column ? "h-11" : "h-14 sm:h-16",
+              )}
+            />
+            <span className={cn("type-body font-semibold", column && "flex-1 text-left")}>{GESTURE_LABEL[gesture]}</span>
+            {touch ? null : (
+              <Kbd className={cn(!column && "absolute right-2 top-2", picked && "bg-canvas/10 text-canvas shadow-none")}>
+                {GESTURE_KEY[gesture]}
+              </Kbd>
+            )}
+          </motion.button>
+        );
+      })}
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { LENSES, LENS_COUNT, lensKey, wrapLens } from "./lenses";
-import { FRAGMENT_SHADER } from "./shaders";
+import { CARTOON_LENS, LENSES, LENS_COUNT, lensKey, wrapLens } from "./lenses";
+import { FRAGMENT_SHADER, PREVIEW_FRAGMENT_SHADER } from "./shaders";
 
 /** Hue in degrees of a #rrggbb colour. */
 function hue(hex: string) {
@@ -22,13 +22,20 @@ describe("lenses", () => {
     expect(new Set(LENSES.map((l) => l.id)).size).toBe(11);
   });
 
-  test("array index matches the shader's switch (index = lens id)", () => {
-    const cases = [...FRAGMENT_SHADER.matchAll(/case (\d+): return lens(\w+)\(p\);/g)].map(
-      ([, index, fn]) => [Number(index), fn.toLowerCase()] as const,
-    );
-    expect(cases).toHaveLength(LENS_COUNT);
-    // Shader functions are named after the ids: case 7 → lensPixel ↔ "pixel".
-    for (const [index, fn] of cases) expect<string>(LENSES[index].id).toBe(fn);
+  test("array index matches the shader's switch (index = lens id), in both programs", () => {
+    for (const shader of [FRAGMENT_SHADER, PREVIEW_FRAGMENT_SHADER]) {
+      const cases = [...shader.matchAll(/case (\d+): return lens(\w+)\(p\);/g)].map(
+        ([, index, fn]) => [Number(index), fn.toLowerCase()] as const,
+      );
+      expect(cases).toHaveLength(LENS_COUNT);
+      // Shader functions are named after the ids: case 0 → lensPixel ↔ "pixel".
+      for (const [index, fn] of cases) expect<string>(LENSES[index].id).toBe(fn);
+    }
+  });
+
+  test("the picker starts with the vivid, cheap ones; Cartoon (face model) is third", () => {
+    expect(LENSES.slice(0, 3).map((l) => l.name)).toEqual(["Pixel art", "Thermal", "Cartoon"]);
+    expect(CARTOON_LENS).toBe(2);
   });
 
   test("keys 1 to 9, 0 for the tenth, minus for the eleventh", () => {
@@ -49,13 +56,16 @@ describe("lenses", () => {
     }
   });
 
-  test("copy follows the writing rules", () => {
+  test("names are plain words in sentence case; recipes follow the writing rules", () => {
     for (const lens of LENSES) {
-      for (const text of [lens.name, lens.blurb]) {
+      expect(lens.name.slice(1)).toBe(lens.name.slice(1).toLowerCase());
+      for (const text of [lens.name, lens.recipe]) {
         expect(text).not.toMatch(/[—–!]/);
+        expect(text).not.toMatch(/\b[A-Z]{2,}\b/);
       }
-      // Sentence case: only the first letter (or an acronym) is a capital.
-      expect(lens.name.slice(1)).toBe(lens.name === "ASCII" ? "SCII" : lens.name.slice(1).toLowerCase());
     }
+    // Honest about what a filter can't do.
+    expect(LENSES.find((l) => l.id === "thermal")?.recipe).toContain("can't feel heat");
+    expect(LENSES.find((l) => l.id === "xray")?.recipe).toContain("can't see through you");
   });
 });

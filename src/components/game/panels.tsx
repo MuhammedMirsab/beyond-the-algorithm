@@ -45,7 +45,7 @@ export function HowItWorks({
           <li
             key={step.title}
             className={cn(
-              "grid grid-rows-subgrid content-start gap-3 rounded-lg bg-surface p-5 shadow-ring",
+              "reveal grid grid-rows-subgrid content-start gap-3 rounded-lg bg-surface p-5 shadow-ring",
               hasVisuals ? "row-span-4" : "row-span-3",
             )}
           >

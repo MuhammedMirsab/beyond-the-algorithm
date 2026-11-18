@@ -42,6 +42,7 @@
   --color-how-ai-learns: oklch(0.84 0.13 205);
   --color-airwrite: oklch(0.8 0.13 238);
   --color-phone: oklch(0.76 0.145 262);
+  --color-air-studio: oklch(0.86 0.16 80);
 
   /* Type families (variables come from next/font in app/layout.tsx). */
   --font-sans: var(--font-mona), ui-sans-serif, system-ui, sans-serif;
@@ -284,15 +285,15 @@
   line-height: 1.4;
   font-weight: 500;
 }
-/* The machine's voice: readouts, model names, coordinates. Never for headings. */
+/* The machine's voice: readouts, model names, coordinates. Never for headings.
+   Sentence case like everything else: all-caps labels read as generated filler. */
 @utility type-label {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.3;
-  letter-spacing: 0.06em;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
   font-weight: 500;
   font-stretch: 90%;
-  text-transform: uppercase;
 }
 /* Scoreboard numerals. 40px and up only. */
 @utility type-score {
@@ -368,13 +369,120 @@
   }
 }
 
+/* Tailwind 4's translate-*, rotate-* and scale-* set their own properties, not transform, so all four ease. */
 .art-move {
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 520ms var(--ease-in-out), opacity 320ms var(--ease-out);
+  transition:
+    transform 520ms var(--ease-in-out),
+    translate 520ms var(--ease-in-out),
+    rotate 520ms var(--ease-in-out),
+    scale 520ms var(--ease-in-out),
+    opacity 320ms var(--ease-out);
+}
+
+/*
+ * Page motion that never hides content from people without JavaScript:
+ * - .enter rises in once on load (pure CSS), staggered with --enter-delay.
+ * - .reveal eases in as it scrolls into view, only where the browser supports
+ *   scroll-driven animations; elsewhere it is simply there.
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+.enter {
+  animation: rise-in 720ms var(--ease-out) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+/* A large panel (a game's intro art) settles in rather than rising. */
+@keyframes settle-in {
+  from {
+    opacity: 0;
+    scale: 0.965;
+  }
+}
+.enter-art {
+  animation: settle-in 900ms var(--ease-out) both;
+}
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: rise-in linear both;
+    animation-timeline: view();
+    /* --reveal-shift staggers siblings in a row (e.g. 0%, 12%, 24%...). */
+    animation-range: entry var(--reveal-shift, 0%) entry calc(55% + var(--reveal-shift, 0%));
+  }
+}
+
+/*
+ * Hero globe: a "You are here" callout and a locating ping pinned to the
+ * visitor's dot. cobe places an anchor (--cobe-<marker id>) at each marker and
+ * defines --cobe-visible-<id> only while the marker faces the viewer, so the
+ * opacity falls back to 0 when the dot turns away. Browsers without anchor
+ * positioning simply don't show it.
+ */
+.globe-here {
+  display: none;
+}
+@supports (anchor-name: --a) {
+  .globe-here {
+    display: block;
+    position: absolute;
+    position-anchor: --cobe-jeddah;
+    left: anchor(center);
+    top: anchor(center);
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    opacity: var(--cobe-visible-jeddah, 0);
+    transition: opacity 260ms var(--ease-out);
+  }
+}
+@keyframes globe-ping {
+  from {
+    scale: 0.25;
+    opacity: 0.85;
+  }
+  to {
+    scale: 1;
+    opacity: 0;
+  }
+}
+.globe-ping {
+  position: absolute;
+  left: -1.5rem;
+  top: -1.5rem;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-fg);
+  animation: globe-ping 2.6s var(--ease-out) infinite;
+}
+
+/* Footer mark: the pupils open, one after another, when it first comes into view. */
+.watching-pupil {
+  scale: 0;
+  transition: scale 460ms var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 45ms);
+}
+.watching-mark[data-awake="true"] .watching-pupil {
+  scale: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .globe-ping {
+    display: none;
+  }
+  .watching-pupil {
+    transition: none;
+  }
+  .enter,
+  .enter-art,
+  .reveal {
+    animation: none !important;
+  }
   *,
   *::before,
   *::after {

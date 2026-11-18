@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { calculateScore, middleStrategyPath, middleStrategyWorstCase, NUMBER_RANGES, numberRange } from "./game-engine";
+import { calculateScore, middleStrategyPath, middleStrategySteps, middleStrategyWorstCase, NUMBER_RANGES, numberRange } from "./game-engine";
 import { RANGE_IDS } from "./ranges";
 
 describe("scoring", () => {
@@ -70,5 +70,29 @@ describe("guess budget", () => {
       const path = middleStrategyPath(n, 1, 1000);
       expect(path[path.length - 1]).toBe(n);
     }
+  });
+});
+
+describe("middle strategy, step by step", () => {
+  test("matches the path and halves the window every time", () => {
+    for (const max of [10, 100, 1000]) {
+      for (let secret = 1; secret <= max; secret += max === 1000 ? 7 : 1) {
+        const steps = middleStrategySteps(secret, 1, max);
+        expect(steps.map((s) => s.guess)).toEqual(middleStrategyPath(secret, 1, max));
+        expect(steps[steps.length - 1]).toMatchObject({ guess: secret, result: "correct" });
+        for (let i = 1; i < steps.length; i++) {
+          expect(steps[i].before).toBe(steps[i - 1].after);
+          expect(steps[i].before).toBeLessThanOrEqual(Math.ceil(steps[i - 1].before / 2));
+        }
+      }
+    }
+  });
+
+  test("reads like the game: 37 in 1 to 100", () => {
+    expect(middleStrategySteps(37, 1, 100).map((s) => [s.low, s.high, s.guess, s.result])).toEqual([
+      [1, 100, 50, "lower"],
+      [1, 49, 25, "higher"],
+      [26, 49, 37, "correct"],
+    ]);
   });
 });

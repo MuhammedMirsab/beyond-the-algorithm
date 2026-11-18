@@ -5,6 +5,7 @@
 
 import type { EpochLog } from "../engine/classifier";
 import type { DatasetPhoto } from "../engine/dataset";
+import type { TrainMap } from "../engine/projection";
 import { decide, DEFAULT_THRESHOLD, NONE_LABEL, outcomeOf, tally, type Candidate, type Tally } from "../engine/rules";
 
 export type StepId = "intro" | "pick" | "examples" | "train" | "test" | "results";
@@ -64,13 +65,17 @@ export interface TrainedRun {
   seconds: number;
   /** One example and its numbers, for the "photos become numbers" visual. */
   sample: { photo: ExamplePhoto; embedding: Float32Array } | null;
+  /** The examples on a flat map (null with too few different photos). */
+  map: TrainMap | null;
+  /** Numbers (weights) in the last layer that training adjusted, counted from the model. */
+  weights: number;
 }
 
 export type TrainState =
   | { phase: "idle" }
   | { phase: "model" }
   | { phase: "reading"; done: number; total: number; current: { photo: ExamplePhoto; embedding: Float32Array } | null }
-  | { phase: "practising"; history: EpochLog[]; total: number }
+  | { phase: "practising"; history: EpochLog[]; total: number; map: TrainMap | null }
   | { phase: "done"; run: TrainedRun }
   | { phase: "error"; message: string };
 
@@ -126,6 +131,8 @@ export const initialState: GameState = {
 export type Action =
   | { type: "go"; step: StepId }
   | { type: "rename"; id: string; name: string }
+  /** A tapped idea: fills the first empty name, or clears the name if a group already has it. */
+  | { type: "toggle-name"; name: string }
   | { type: "add-group" }
   | { type: "remove-group"; id: string }
   | { type: "use-library"; category: string; label: string }
@@ -155,6 +162,15 @@ export function reducer(state: GameState, action: Action): GameState {
         ...state,
         groups: state.groups.map((g) => (g.id === action.id ? { ...g, name: action.name.slice(0, NAME_MAX) } : g)),
       };
+
+    case "toggle-name": {
+      const wanted = action.name.trim().toLowerCase();
+      const owner = state.groups.find((g) => g.name.trim().toLowerCase() === wanted);
+      const target = owner ?? state.groups.find((g) => !g.name.trim());
+      if (!target) return state;
+      const name = owner ? "" : action.name.slice(0, NAME_MAX);
+      return { ...state, groups: state.groups.map((g) => (g.id === target.id ? { ...g, name } : g)) };
+    }
 
     case "add-group": {
       if (state.groups.length >= MAX_GROUPS) return state;
@@ -215,7 +231,8 @@ export function reducer(state: GameState, action: Action): GameState {
         revealed: [],
         capture: null,
         selected: null,
-        testMode: "photos",
+        // Taught with the camera: test with the camera. Library photos only: test on new library photos.
+        testMode: state.groups.every((g) => g.library) ? "photos" : "camera",
         previous,
       };
     }

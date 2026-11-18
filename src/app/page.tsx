@@ -1,10 +1,11 @@
-import { ShieldCheck } from "lucide-react";
-import { CURATORS, GAMES, GROUPS, gamesInGroup, type Group } from "@/content/games";
+import Link from "next/link";
+import { Rotate3d, ShieldCheck } from "lucide-react";
+import { CURATORS, GAMES, GROUPS, gamePath, gamesInGroup, type Group } from "@/content/games";
+import { GameGlyph } from "@/components/art/game-glyph";
 import { GameTile } from "@/components/hub/game-tile";
-import { PhoneHandoff } from "@/components/game/phone-handoff";
 import { Globe } from "@/components/hub/globe";
-import { GLOBE_SAMPLES } from "@/components/hub/globe-config";
 import { SpectrumMark } from "@/components/hub/spectrum-mark";
+import { WatchingMark } from "@/components/hub/watching-mark";
 import { cn } from "@/lib/cn";
 
 export default function Home() {
@@ -18,7 +19,6 @@ export default function Home() {
             <GameGroup key={group.id} group={group} index={i} />
           ))}
         </div>
-        <About />
       </main>
       <SiteFooter />
     </div>
@@ -42,16 +42,17 @@ function Hero() {
     <section id="top" className="relative mx-auto w-full max-w-[75rem] px-4 sm:px-6 lg:px-8">
       <div className="grid items-center gap-2 pb-8 pt-6 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] md:gap-8 lg:pb-12 lg:pt-8">
         <div className="relative z-10 flex flex-col gap-5">
-          <h1 className="type-display-1 max-w-[15ch] text-fg">How much can a machine work out about you?</h1>
-          <p className="type-body-lg max-w-[32rem] text-fg-muted">
+          <h1 className="type-display-1 enter max-w-[15ch] text-fg">How much can a machine work out about you?</h1>
+          <p className="type-body-lg enter max-w-[32rem] text-fg-muted [--enter-delay:90ms]">
             Ten quick games made by IISJ Computer Science students. Play one, then see exactly how the AI did it.
           </p>
         </div>
-        <figure className="relative mx-auto w-[min(100%,22rem)] md:w-full md:max-w-[24rem]">
+        <figure className="enter relative mx-auto w-[min(100%,22rem)] [--enter-delay:180ms] md:w-full md:max-w-[24rem]">
           <Globe className="w-full" />
-          <figcaption className="type-label mt-1 flex items-center justify-center gap-2 text-fg-subtle">
-            <span aria-hidden className="size-1.5 rounded-full bg-fg" />
-            Jeddah, in a world of {GLOBE_SAMPLES.toLocaleString("en")} points
+          {/* An invitation to touch it, and the theme of the arcade in one gesture. */}
+          <figcaption className="type-small mt-2 flex items-center justify-center gap-2 text-center text-fg-subtle">
+            <Rotate3d aria-hidden className="size-4 shrink-0 text-fg-muted" />
+            Spin it away. It always finds you again.
           </figcaption>
         </figure>
       </div>
@@ -64,22 +65,11 @@ function GameGroup({ group, index }: { group: Group; index: number }) {
   const three = games.length === 3;
   return (
     <section id={index === 0 ? "games" : undefined} aria-labelledby={`group-${group.id}`} className="flex scroll-mt-6 flex-col gap-6">
-      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-end md:gap-10">
+      <div className="reveal grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-end md:gap-10">
         <h2 id={`group-${group.id}`} className="type-title-1 text-fg">
           {group.title}
         </h2>
-        <div className="flex flex-col gap-4">
-          <p className="type-body max-w-[32rem] text-fg-muted">{group.line}</p>
-          {group.id === "around" ? (
-            <PhoneHandoff
-              path="/phone"
-              size={88}
-              title="Play the phone game on your own phone"
-              text="Scan with your phone's camera. It tests your phone's real sensors."
-              className="hidden w-fit lg:flex"
-            />
-          ) : null}
-        </div>
+        <p className="type-body max-w-[32rem] text-fg-muted">{group.line}</p>
       </div>
       <ul
         className={cn(
@@ -90,7 +80,7 @@ function GameGroup({ group, index }: { group: Group; index: number }) {
         )}
       >
         {games.map((game) => (
-          <li key={game.slug} className={cn("flex w-[84%] shrink-0 snap-start sm:w-auto", three && "sm:last:col-span-2 lg:last:col-span-1")}>
+          <li key={game.slug} className={cn("reveal flex w-[84%] shrink-0 snap-start sm:w-auto", three && "sm:last:col-span-2 lg:last:col-span-1")}>
             <GameTile game={game} className="w-full" />
           </li>
         ))}
@@ -99,62 +89,77 @@ function GameGroup({ group, index }: { group: Group; index: number }) {
   );
 }
 
-function About() {
-  const byCurator = (id: "mirsab" | "dilshaan") => GAMES.filter((g) => g.curator === id).map((g) => g.short);
+/**
+ * The page ends by answering the question it opened with (while the brand
+ * mark watches you read it), then lists every game with the idea behind it,
+ * one tap away. Credits and the data promise are small print: true and
+ * findable, never in the way.
+ */
+function SiteFooter() {
+  const makers = (["mirsab", "dilshaan"] as const).map((id) => CURATORS[id].name).join(" and ");
   return (
-    <section aria-labelledby="about-title" className="border-t border-line">
-      <div className="mx-auto grid w-full max-w-[75rem] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16 lg:px-8 lg:py-20">
-        <div className="flex flex-col gap-4">
-          <h2 id="about-title" className="type-title-1 text-fg">
-            Made by two students
+    <footer className="overflow-x-clip border-t border-line">
+      <div className="mx-auto flex w-full max-w-[75rem] flex-col gap-12 px-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-16 sm:px-6 lg:gap-16 lg:px-8 lg:pt-24">
+        <div className="grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_auto] md:gap-16">
+          <div className="reveal flex flex-col gap-4">
+            <h2 className="type-display-2 max-w-[16ch] text-fg">Every game here worked something out about you.</h2>
+            <p className="type-body-lg max-w-[30rem] text-fg-muted">
+              The apps on your phone do the same thing all day, with far more data. Now you know how.
+            </p>
+          </div>
+          <WatchingMark className="w-[min(64vw,14rem)] justify-self-center md:w-[16rem] md:justify-self-end lg:w-[18rem]" />
+        </div>
+
+        <nav aria-labelledby="footer-games" className="flex flex-col gap-4">
+          <h2 id="footer-games" className="type-label text-fg-subtle">
+            Ten games, ten ideas from machine learning
           </h2>
-          <p className="type-body-lg max-w-[34rem] text-fg-muted">
-            Beyond the Algorithm is the Computer Science department&apos;s project for EDEX 2026 at International Indian School Jeddah.
-          </p>
-          <ul className="mt-2 flex flex-col gap-3">
-            {(["mirsab", "dilshaan"] as const).map((id) => (
-              <li key={id} className="flex flex-col gap-1 rounded-lg bg-surface p-5 shadow-ring">
-                <span className="flex items-baseline gap-2">
-                  <span className="type-title-3 text-fg">{CURATORS[id].name}</span>
-                  <span className="type-small text-fg-subtle">{CURATORS[id].grade}</span>
-                </span>
-                <span className="type-small text-fg-muted">{byCurator(id).join(", ")}</span>
+          <ul className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
+            {GAMES.map((game, i) => (
+              <li key={game.slug} className="reveal flex" style={{ ["--reveal-shift" as string]: `${(i % 5) * 12}%` }}>
+                <Link
+                  href={gamePath(game.slug)}
+                  data-game={game.slug}
+                  className={cn(
+                    // Phones: two columns, icon above the name. From sm: icon beside it.
+                    "group/chip flex w-full flex-col items-start gap-2.5 rounded-[1.25rem] bg-surface p-3 shadow-ring sm:flex-row sm:items-center sm:gap-3 sm:p-2 sm:pr-4",
+                    "transition-[background-color,box-shadow,scale] duration-150 ease-out hover:bg-raised hover:shadow-ring-strong active:scale-[0.98]",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg",
+                  )}
+                >
+                  <span className="grid size-11 shrink-0 place-items-center rounded-[0.875rem] bg-game text-game-ink transition-transform duration-200 ease-[var(--ease-out)] group-hover/chip:-rotate-12 group-hover/chip:scale-105 motion-reduce:transition-none">
+                    <GameGlyph slug={game.slug} className="size-5" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[0.9375rem] font-semibold leading-5 text-fg">{game.short}</span>
+                    <span className="type-small text-fg-subtle">{game.skill}</span>
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
-        </div>
-        <div className="flex flex-col gap-4">
-          <h2 className="type-title-1 flex items-center gap-3 text-fg">
-            <ShieldCheck className="size-7 shrink-0 text-success" aria-hidden />
-            What happens to your data
-          </h2>
-          <ul className="flex flex-col gap-4">
-            <li className="type-body max-w-[34rem] text-fg-muted">
-              <strong className="font-semibold text-fg">Camera games run on this device.</strong> The video is analysed in the browser
-              and never recorded or sent anywhere.
-            </li>
-            <li className="type-body max-w-[34rem] text-fg-muted">
-              <strong className="font-semibold text-fg">Games keep working offline once they have loaded.</strong> Even the
-              handwriting in AirWrite is read on this device. Linking your phone to the booth screen is the one thing that goes
-              online, and it sends readings, never pictures or sound.
-            </li>
-            <li className="type-body max-w-[34rem] text-fg-muted">
-              <strong className="font-semibold text-fg">Scoreboards stay on this screen.</strong> A name only appears if you type one
-              in, and every game lets you skip that.
-            </li>
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
+        </nav>
 
-function SiteFooter() {
-  return (
-    <footer className="border-t border-line">
-      <div className="mx-auto flex w-full max-w-[75rem] flex-col gap-2 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-        <span className="type-small text-fg-subtle">Beyond the Algorithm · EDEX 2026</span>
-        <span className="type-small text-fg-subtle">International Indian School Jeddah · Computer Science</span>
+        <div className="flex flex-col gap-6 border-t border-line pt-8 md:flex-row md:items-start md:justify-between md:gap-12">
+          <div className="flex max-w-[30rem] items-start gap-3">
+            <span className="mt-0.5">
+              <SpectrumMark size={28} />
+            </span>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[0.9375rem] font-semibold text-fg">Beyond the Algorithm</span>
+              <span className="type-small text-pretty text-fg-subtle">
+                Made by two students, {makers}, for EDEX 2026 at International Indian School Jeddah.
+              </span>
+            </div>
+          </div>
+          <p className="type-small flex max-w-[27rem] items-start gap-2 text-pretty text-fg-subtle">
+            <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />
+            <span>
+              Cameras and microphones are read on this device and never recorded. Scoreboards stay on this screen. A linked phone
+              sends readings, never pictures or sound.
+            </span>
+          </p>
+        </div>
       </div>
     </footer>
   );

@@ -63,7 +63,7 @@ export function RoundReview({ questions, answers }: { questions: readonly Active
           if (!question) return null;
           const outcome = outcomeOf(answer);
           return (
-            <li key={answer.pairId} className="flex flex-col gap-3 rounded-lg bg-surface p-4 shadow-ring">
+            <li key={answer.pairId} className="reveal flex flex-col gap-3 rounded-lg bg-surface p-4 shadow-ring">
               <div className="flex items-center justify-between gap-3">
                 <span className="type-label text-fg-subtle">
                   Round {answer.questionIndex + 1} · {LEVEL_NAME[question.pair.difficulty]}
