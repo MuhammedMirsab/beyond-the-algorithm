@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test";
 import { getCounterMove } from "../engine/aiPredictor";
 import type { CVFrameResult, DetectedGesture, Gesture, PredictionBreakdown } from "../engine/types";
 import {
+  AUTO_ABANDON_MS,
+  AUTO_NEXT_MS,
   isRoundLive,
   LEAD_IN_MS,
   MatchController,
@@ -277,5 +279,91 @@ describe("Rematch and Next player", () => {
     expect(view.history).toHaveLength(0);
     // Still usable afterwards (React StrictMode mounts twice).
     expect(controller.startRound()).toBe(true);
+  });
+});
+
+describe("The next round starts by itself", () => {
+  it("starts 3.5 s after a reveal only when the arena allows it, and Space can start it sooner", () => {
+    const controller = new MatchController("normal");
+    controller.setInputMode("keys");
+    controller.startRound();
+    toShoot();
+    controller.throwMove("rock");
+    jest.advanceTimersByTime(AUTO_NEXT_MS * 2);
+    expect(controller.getSnapshot().match.phase).toBe("round_complete"); // off by default
+
+    controller.setAutoNext(true);
+    controller.startRound();
+    toShoot();
+    controller.throwMove("paper");
+    expect(controller.getSnapshot().match.phase).toBe("round_complete");
+    jest.advanceTimersByTime(AUTO_NEXT_MS - 1);
+    expect(controller.getSnapshot().match.phase).toBe("round_complete");
+    jest.advanceTimersByTime(1);
+    expect(controller.getSnapshot().beat).toBe("lock");
+    expect(controller.getSnapshot().match.phase).toBe("locked");
+
+    toShoot();
+    controller.throwMove("scissors");
+    expect(controller.startRound()).toBe(true); // Space before the timer
+    const sealed = controller.getSnapshot().match.sealedCommitment;
+    jest.advanceTimersByTime(AUTO_NEXT_MS);
+    expect(controller.getSnapshot().history).toHaveLength(3);
+    expect(controller.getSnapshot().match.phase).toBe("detecting");
+    expect(controller.getSnapshot().match.sealedCommitment).toBe(sealed); // the same round, not restarted
+  });
+
+  it("waits when the arena can't play, and never starts after the match ends", () => {
+    const controller = new MatchController("normal");
+    controller.setInputMode("keys");
+    controller.setAutoNext(true);
+    controller.startRound();
+    toShoot();
+    controller.throwMove("rock");
+    controller.setAutoNext(false);
+    jest.advanceTimersByTime(AUTO_NEXT_MS);
+    expect(controller.getSnapshot().match.phase).toBe("round_complete");
+
+    controller.setAutoNext(true);
+    for (let i = 0; i < 40 && controller.getSnapshot().match.phase !== "match_complete"; i++) {
+      if (controller.getSnapshot().match.phase === "round_complete" || controller.getSnapshot().match.phase === "idle") {
+        controller.startRound();
+      }
+      toShoot();
+      controller.throwMove(getCounterMove(controller.getSnapshot().match.sealedCommitment!.aiMove));
+      jest.advanceTimersByTime(AUTO_NEXT_MS);
+    }
+    expect(controller.getSnapshot().match.phase).toBe("match_complete");
+    jest.advanceTimersByTime(AUTO_NEXT_MS * 3);
+    expect(controller.getSnapshot().match.phase).toBe("match_complete");
+  });
+
+  it("stops after a camera miss until Space", () => {
+    const controller = new MatchController("normal");
+    controller.setAutoNext(true);
+    controller.startRound();
+    toShoot();
+    jest.advanceTimersByTime(SHOOT_TIMEOUT_MS);
+    expect(controller.getSnapshot().missed).toBe(true);
+    jest.advanceTimersByTime(AUTO_NEXT_MS * 3);
+    expect(controller.getSnapshot().missed).toBe(true);
+  });
+
+  it("calls off an auto-started keys round nobody answers, and stops starting more", () => {
+    const controller = new MatchController("normal");
+    controller.setInputMode("keys");
+    controller.setAutoNext(true);
+    controller.startRound();
+    toShoot();
+    controller.throwMove("rock");
+    jest.advanceTimersByTime(AUTO_NEXT_MS + TO_SHOOT_MS);
+    expect(controller.getSnapshot().match.phase).toBe("detecting");
+    jest.advanceTimersByTime(AUTO_ABANDON_MS);
+    const view = controller.getSnapshot();
+    expect(isRoundLive(view)).toBe(false);
+    expect(view.match.phase).toBe("round_complete");
+    expect(view.history).toHaveLength(1);
+    jest.advanceTimersByTime(AUTO_NEXT_MS * 3);
+    expect(controller.getSnapshot().match.phase).toBe("round_complete");
   });
 });

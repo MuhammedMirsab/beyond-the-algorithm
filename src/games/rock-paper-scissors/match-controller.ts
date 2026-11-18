@@ -15,6 +15,10 @@
  * - No confident throw 3 s after Shoot: the round is "missed" and can be
  *   replayed with the same sealed move.
  * - R/P/S pressed during the lock or the chant are kept and thrown at Shoot.
+ * - While the arena allows it (`setAutoNext`), the next round starts by itself
+ *   3.5 s after a reveal; Space still starts it sooner. An auto-started round
+ *   nobody answers with keys is called off after 20 s, and auto-start stops
+ *   until Space, so an abandoned booth still goes idle.
  *
  * Browser only: methods are called from event handlers and effects.
  */
@@ -74,6 +78,10 @@ export const SHOOT_GRACE_MS = 300;
 export const SHOOT_TIMEOUT_MS = 3000;
 /** The result sound waits for the AI's card to turn, landing with the verdict. */
 const VERDICT_SOUND_MS = 300;
+/** After a reveal, the next round starts by itself this long later. */
+export const AUTO_NEXT_MS = 3500;
+/** An auto-started round with keys and no throw this long after Shoot is called off. */
+export const AUTO_ABANDON_MS = 20_000;
 
 const BEAT_FOR_STEP: Record<3 | 2 | 1, Beat> = { 3: "rock", 2: "paper", 1: "scissors" };
 
@@ -103,6 +111,10 @@ export class MatchController {
   private validation: ValidationState = createValidationState();
   private shootAt = 0;
   private audio: AudioManager | null = null;
+  /** The arena is ready and on screen, so rounds may start by themselves. */
+  private autoNext = false;
+  /** The live round was started by the auto timer, not by Space. */
+  private autoStarted = false;
 
   constructor(difficulty: Difficulty = "normal") {
     this.view = freshView(difficulty);
@@ -128,6 +140,11 @@ export class MatchController {
 
   unlockAudio(): void {
     (this.audio ??= new AudioManager()).unlock();
+  }
+
+  /** The arena turns this on while it can play (camera live or keys, play screen). */
+  setAutoNext(enabled: boolean): void {
+    this.autoNext = enabled;
   }
 
   /* ── Matches and visitors ──────────────────────────────────── */
@@ -163,6 +180,7 @@ export class MatchController {
   /** Space or the start button. Returns false when a round can't start now. */
   startRound(): boolean {
     const { match, missed, history, learning } = this.view;
+    this.autoStarted = false;
 
     // Replay a missed round: same sealed move, the lock beat and the chant again.
     if (missed && match.phase === "locked" && match.sealedCommitment) {
@@ -209,6 +227,7 @@ export class MatchController {
       return;
     }
     if (this.view.inputMode === "camera") this.later(SHOOT_TIMEOUT_MS, () => this.miss());
+    else if (this.autoStarted) this.later(AUTO_ABANDON_MS, () => this.abandon());
   }
 
   /** R, P or S (keys mode, or as a fallback in camera mode). */
@@ -261,11 +280,13 @@ export class MatchController {
       beat: null,
     });
 
+    const next = result.nextMatch;
+    if (this.autoNext && next.phase === "round_complete") this.later(AUTO_NEXT_MS, () => this.autoStart());
+
     const audio = this.audio;
     if (!audio) return;
     // The card turns now; the result sounds when the verdict lands.
     audio.playReveal();
-    const next = result.nextMatch;
     this.later(VERDICT_SOUND_MS, () => {
       if (next.phase === "match_complete") {
         if (next.winner === "player") audio.playMatchWon();
@@ -279,6 +300,22 @@ export class MatchController {
         audio.playDraw();
       }
     });
+  }
+
+  /** The auto timer: the next round, if the arena still allows it and nothing else started one. */
+  private autoStart(): void {
+    const { match, missed } = this.view;
+    if (!this.autoNext || missed || match.phase !== "round_complete") return;
+    if (this.startRound()) this.autoStarted = true;
+  }
+
+  /** Nobody answered an auto-started round with keys: back to waiting for Space, unscored. */
+  private abandon(): void {
+    const { match } = this.view;
+    if (match.phase !== "detecting" || !match.sealedCommitment) return;
+    this.clearTimers();
+    this.autoStarted = false;
+    this.set({ match: this.unsealed(match), missed: false, pendingThrow: null, beat: null });
   }
 
   private miss(): void {

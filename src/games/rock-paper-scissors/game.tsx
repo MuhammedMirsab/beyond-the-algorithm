@@ -70,6 +70,11 @@ export function RockPaperScissorsGame() {
   const ready = view.inputMode === "keys" || cameraReady;
   const live = isRoundLive(view);
 
+  // The next round starts by itself after a reveal, only while the arena can play.
+  useEffect(() => {
+    controller.setAutoNext(screen === "play" && ready);
+  }, [controller, screen, ready]);
+
   const toTop = () => window.scrollTo({ top: 0 });
 
   const playWithCamera = () => {
