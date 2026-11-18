@@ -1,4 +1,4 @@
-import { FRAGMENT_SHADER, FRAGMENT_SHADER_FALLBACK, VERTEX_SHADER } from "./shaders";
+import { FRAGMENT_SHADER, VERTEX_SHADER } from "./shaders";
 
 export interface DrawParams {
   /** Fitted video rect in CSS px. */
@@ -14,7 +14,7 @@ export interface DrawParams {
   lens: number;
   prevLens: number;
   mix: number;
-  /** Cartoon lens face in device px (10 × vec4, laid out by faceLayout in face.ts); all zero = no face. */
+  /** Cartoon lens face points in device px (4 × vec4), presence in [10]; all zero = no face. */
   face: Float32Array;
 }
 
@@ -48,35 +48,6 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string) {
     throw new Error(`Shader compile failed: ${log}`);
   }
   return shader;
-}
-
-/** Compiles and links one program; throws with the driver's log if it is rejected. */
-function link(gl: WebGL2RenderingContext, fragment: string) {
-  const vs = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-  let fs: WebGLShader;
-  try {
-    fs = compile(gl, gl.FRAGMENT_SHADER, fragment);
-  } catch (err) {
-    gl.deleteShader(vs);
-    throw err;
-  }
-  const program = gl.createProgram();
-  if (!program) {
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    throw new Error("Could not create program");
-  }
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const log = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    throw new Error(`Program link failed: ${log}`);
-  }
-  return program;
 }
 
 /**
@@ -126,14 +97,17 @@ export class Renderer {
 
   private init() {
     const gl = this.gl;
-    let program: WebGLProgram;
-    try {
-      program = link(gl, FRAGMENT_SHADER);
-    } catch (err) {
-      // A driver that rejects the Cartoon lens still gets every filter,
-      // with the previous Cartoon look, instead of a broken game.
-      console.error("[viewfinder] lens shader rejected; using the previous Cartoon lens", err);
-      program = link(gl, FRAGMENT_SHADER_FALLBACK);
+    const vs = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+    const fs = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    if (!program) throw new Error("Could not create program");
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error(`Program link failed: ${gl.getProgramInfoLog(program)}`);
     }
     this.program = program;
     for (const name of UNIFORMS) this.uniforms[name] = gl.getUniformLocation(program, name);

@@ -1,4 +1,4 @@
-import { PREVIEW_FRAGMENT_SHADER, PREVIEW_FRAGMENT_SHADER_FALLBACK, PREVIEW_MAX_CELLS, VERTEX_SHADER } from "./shaders";
+import { PREVIEW_FRAGMENT_SHADER, PREVIEW_MAX_CELLS, VERTEX_SHADER } from "./shaders";
 
 /** A thumbnail's place on the preview canvas, in CSS px from the canvas's top left. */
 export interface PreviewCell {
@@ -23,7 +23,7 @@ export interface PreviewFrame {
   mirror: boolean;
   /** Shader time in seconds (0 under reduced motion, like the main view). */
   time: number;
-  /** Cartoon face as fractions of the main view's video rect (40 floats, see faceLayout in face.ts; all zero = no face). */
+  /** Cartoon face as fractions of the main view's video rect (16 floats; all zero = no face). */
   face: Float32Array;
 }
 
@@ -77,8 +77,6 @@ export class LensPreview {
   private program: WebGLProgram | null = null;
   private linked = false;
   private failed = false;
-  /** True once the driver rejected the new Cartoon lens: build with the previous one. */
-  private fallback = false;
   private vao: WebGLVertexArrayObject | null = null;
   private texture: WebGLTexture | null = null;
   private texW = 0;
@@ -121,8 +119,28 @@ export class LensPreview {
   };
 
   private init() {
-    if (!this.buildProgram()) return;
     const gl = this.gl;
+    this.linked = false;
+    this.failed = false;
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    if (!vs || !fs || !program) {
+      this.failed = true;
+      return;
+    }
+    gl.shaderSource(vs, VERTEX_SHADER);
+    gl.shaderSource(fs, PREVIEW_FRAGMENT_SHADER);
+    gl.compileShader(vs);
+    gl.compileShader(fs);
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    // Flagged for deletion; they live as long as the program.
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    this.program = program;
+
     this.vao = gl.createVertexArray();
     this.texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -133,32 +151,6 @@ export class LensPreview {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
-  /** Starts compiling the lens program (in the background where the browser allows it). */
-  private buildProgram() {
-    const gl = this.gl;
-    this.linked = false;
-    this.failed = false;
-    const vs = gl.createShader(gl.VERTEX_SHADER);
-    const fs = gl.createShader(gl.FRAGMENT_SHADER);
-    const program = gl.createProgram();
-    if (!vs || !fs || !program) {
-      this.failed = true;
-      return false;
-    }
-    gl.shaderSource(vs, VERTEX_SHADER);
-    gl.shaderSource(fs, this.fallback ? PREVIEW_FRAGMENT_SHADER_FALLBACK : PREVIEW_FRAGMENT_SHADER);
-    gl.compileShader(vs);
-    gl.compileShader(fs);
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    // Flagged for deletion; they live as long as the program.
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    this.program = program;
-    return true;
-  }
-
   /** Finishes linking once the (possibly background) compile is done. */
   private checkLinked() {
     if (this.linked) return true;
@@ -166,15 +158,6 @@ export class LensPreview {
     const gl = this.gl;
     if (this.parallel && !gl.getProgramParameter(this.program, this.parallel.COMPLETION_STATUS_KHR)) return false;
     if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
-      if (!this.fallback) {
-        // Same rescue as the main view: the previous Cartoon lens, compiled now.
-        console.warn("[viewfinder] filter previews: using the previous Cartoon lens:", gl.getProgramInfoLog(this.program));
-        this.fallback = true;
-        gl.deleteProgram(this.program);
-        this.program = null;
-        this.buildProgram();
-        return false;
-      }
       console.warn("[viewfinder] filter previews unavailable:", gl.getProgramInfoLog(this.program));
       this.failed = true;
       return false;

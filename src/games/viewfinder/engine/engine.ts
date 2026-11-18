@@ -1,7 +1,6 @@
 import type { HandLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { CARTOON_LENS, LENSES, LENS_COUNT, wrapLens } from "./lenses";
-import { FaceFollower, faceLayout, loadFaceTracker, type FaceTracker } from "./face";
-import { FACE_UNIFORM_FLOATS } from "./face-points";
+import { FaceFollower, loadFaceTracker, type FaceTracker } from "./face";
 import { bounds, centroid, edgeLines, signedArea } from "./geometry";
 import { FrameGesture, type FrameState, type GestureEvent, type RawHand } from "./gesture";
 import { Overlay } from "./overlay";
@@ -95,8 +94,8 @@ export class ViewfinderEngine {
   private readonly glCanvas: HTMLCanvasElement;
   private readonly gesture = new FrameGesture();
   private readonly edges = new Float32Array(12);
-  private readonly faceUniform = new Float32Array(FACE_UNIFORM_FLOATS);
-  private readonly faceNormal = new Float32Array(FACE_UNIFORM_FLOATS);
+  private readonly faceUniform = new Float32Array(16);
+  private readonly faceNormal = new Float32Array(16);
   private readonly faceFollower = new FaceFollower();
   /** Loaded the first time the Cartoon lens is picked. */
   private face: FaceTracker | null = null;
@@ -482,12 +481,6 @@ export class ViewfinderEngine {
     this.lastDraw = performance.now();
   }
 
-  /**
-   * The face for the shader, in device px (layout in shaders.ts, uFace[10]):
-   * [0] iris R, iris L · [1] head centre, face width, eye width · [2] chin, presence, face height
-   * [3] cheek R, cheek L · [4] right eye middle, axis · [5] right eye half width, upper lid, lower lid, iris radius
-   * [6] left eye middle, axis · [7] left eye sizes · [8] nose tip, nose width, 0 · [9] up (chin to forehead), 0, 0
-   */
   private faceUniforms() {
     const u = this.faceUniform;
     const f = this.faceFollower.shape;
@@ -496,7 +489,12 @@ export class ViewfinderEngine {
       return u;
     }
     const d = this.renderer.dpr;
-    u.set(faceLayout(f, this.faceFollower.presence, (p) => [p.x * d, p.y * d], (l) => l * d));
+    u.set([
+      f.eyeRight.x * d, f.eyeRight.y * d, f.eyeLeft.x * d, f.eyeLeft.y * d,
+      f.center.x * d, f.center.y * d, f.faceWidth * d, f.eyeWidth * d,
+      f.chin.x * d, f.chin.y * d, this.faceFollower.presence, 0,
+      f.cheekRight.x * d, f.cheekRight.y * d, f.cheekLeft.x * d, f.cheekLeft.y * d,
+    ]);
     return u;
   }
 
@@ -508,22 +506,20 @@ export class ViewfinderEngine {
       u.fill(0);
       return u;
     }
-    u.set(
-      faceLayout(
-        f,
-        this.faceFollower.presence,
-        (p) => [(p.x - rect.x) / rect.w, (p.y - rect.y) / rect.h],
-        (l) => l / rect.w,
-      ),
-    );
+    const nx = (x: number) => (x - rect.x) / rect.w;
+    const ny = (y: number) => (y - rect.y) / rect.h;
+    u.set([
+      nx(f.eyeRight.x), ny(f.eyeRight.y), nx(f.eyeLeft.x), ny(f.eyeLeft.y),
+      nx(f.center.x), ny(f.center.y), f.faceWidth / rect.w, f.eyeWidth / rect.w,
+      nx(f.chin.x), ny(f.chin.y), this.faceFollower.presence, 0,
+      nx(f.cheekRight.x), ny(f.cheekRight.y), nx(f.cheekLeft.x), ny(f.cheekLeft.y),
+    ]);
     return u;
   }
 
   private facePoints() {
     const f = this.faceFollower.shape;
-    return f
-      ? [f.eyeRight, f.eyeLeft, f.right.mid, f.left.mid, f.noseTip, f.center, f.chin, f.cheekRight, f.cheekLeft]
-      : [];
+    return f ? [f.eyeRight, f.eyeLeft, f.center, f.chin, f.cheekRight, f.cheekLeft] : [];
   }
 
   private flushStats(now: number) {

@@ -1,13 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { thumbnailVideoRect } from "./preview";
-import {
-  FRAGMENT_SHADER,
-  FRAGMENT_SHADER_FALLBACK,
-  PREVIEW_FRAGMENT_SHADER,
-  PREVIEW_FRAGMENT_SHADER_FALLBACK,
-  PREVIEW_MAX_CELLS,
-} from "./shaders";
-import { FACE_UNIFORM_FLOATS } from "./face-points";
+import { FRAGMENT_SHADER, PREVIEW_FRAGMENT_SHADER, PREVIEW_MAX_CELLS } from "./shaders";
 import { LENS_COUNT } from "./lenses";
 
 /** The body of a GLSL function, from its signature to the closing brace at column 0. */
@@ -32,7 +25,7 @@ describe("shaders", () => {
       "uniform vec4 uVideoRect;",
       "uniform vec2 uCenter;",
       "uniform vec4 uBox;",
-      "uniform vec4 uFace[10];",
+      "uniform vec4 uFace[4];",
       "uniform vec3 uEdges[4];",
       "uniform int uLens;",
       "uniform int uPrevLens;",
@@ -47,26 +40,6 @@ describe("shaders", () => {
     }
     expect(PREVIEW_FRAGMENT_SHADER).toContain("vec3 col = clamp(lens(id, local), 0.0, 1.0);");
     expect(FRAGMENT_SHADER).toContain("vec3 current = lens(uLens, p);");
-  });
-
-  test("the face uniform holds exactly what faceLayout writes, in both programs", () => {
-    expect(FACE_UNIFORM_FLOATS).toBe(10 * 4);
-    expect(PREVIEW_FRAGMENT_SHADER).toContain("uniform vec4 uFaceN[10];");
-    expect(PREVIEW_FRAGMENT_SHADER).toContain("vec4 gFace[10];");
-    for (let i = 0; i < 10; i++) expect(PREVIEW_FRAGMENT_SHADER).toContain(`gFace[${i}] = `);
-  });
-
-  test("the fallback builds differ only in the Cartoon lens", () => {
-    const cartoon = (source: string) => fn(source, "vec3 lensCartoon(vec2 p)");
-    expect(cartoon(FRAGMENT_SHADER_FALLBACK)).not.toBeNull();
-    expect(cartoon(FRAGMENT_SHADER_FALLBACK)).not.toBe(cartoon(FRAGMENT_SHADER));
-    expect(cartoon(PREVIEW_FRAGMENT_SHADER_FALLBACK)).toBe(cartoon(FRAGMENT_SHADER_FALLBACK));
-    for (const sig of ["vec3 lensPixel(vec2 p)", "vec3 lensLoupe(vec2 p)", "vec3 lens(int id, vec2 p)", "void main()"]) {
-      expect(fn(FRAGMENT_SHADER_FALLBACK, sig)).toBe(fn(FRAGMENT_SHADER, sig));
-      expect(fn(PREVIEW_FRAGMENT_SHADER_FALLBACK, sig)).toBe(fn(PREVIEW_FRAGMENT_SHADER, sig));
-    }
-    // The old lens reads only the first four face slots, which keep their meaning.
-    expect(cartoon(FRAGMENT_SHADER_FALLBACK)).not.toMatch(/uFace\[[4-9]\]/);
   });
 
   test("the preview has room for every lens", () => {
