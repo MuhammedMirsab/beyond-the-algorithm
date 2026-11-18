@@ -491,35 +491,42 @@ function readWord(groups: Group[]): { reading: WordReading; groups: Group[] } {
 }
 
 // ── The word the visitor was asked to write ───────────────────
-/** Absolute $P cost bands for accepting the expected word (see D_GOOD / D_BAD). */
-const EXPECT_MEAN = 1.45;
-const EXPECT_WORST = 1.75;
-/** ...and relative to each letter's own best match, like the word list. */
-const EXPECT_RATIO = 1.7;
+/**
+ * Limits for reading the ink as the word on screen, measured on real air
+ * writing (an H whose stems curl inward at the top matched A best, H only
+ * 7th to 17th, but never far behind) against random scribbles:
+ *   real HI:   letter ratios 1.32-1.75 / 1.00, mean 1.16-1.37, costs up to 2.44
+ *   scribble:  ratios 1.89 / 1.25, mean 1.57, costs 2.6-2.7
+ * Ratio = the target letter's $P cost over the best cost for that ink.
+ */
+const EXPECT_RATIO_MEAN = 1.45;
+const EXPECT_RATIO_WORST = 1.8;
+const EXPECT_COST_MEAN = 2.3;
+const EXPECT_COST_WORST = 2.6;
 
 /**
  * How well a letter split fits the word on screen ("Hi", "Cat"...), or null
- * when it plainly doesn't. Every letter must look reasonably like its target
- * letter in absolute terms, so a scribble never turns into the suggestion.
+ * when it plainly doesn't. Each letter has to be a close runner-up for its
+ * ink, and the ink has to look like letters at all, so a scribble or a
+ * clearly different letter never turns into the suggestion.
  */
-function expectedFit(groups: Group[], word: string): { mean: number; quality: number } | null {
+function expectedFit(groups: Group[], word: string): { ratio: number } | null {
   if (groups.length !== word.length) return null;
   let costSum = 0;
   let ratioSum = 0;
-  let quality = 0;
   for (let i = 0; i < groups.length; i++) {
     const scores = classify(groups[i].strokes);
     if (!scores.length) return null;
     const ch = word[i];
     const cost = isDigit(ch) ? digitCost(scores, ch) : letterCost(scores, ch);
-    if (!(cost <= EXPECT_WORST)) return null;
+    const ratio = Math.max(cost, 0.05) / Math.max(scores[0].d, 0.05);
+    if (!(cost <= EXPECT_COST_WORST) || ratio > EXPECT_RATIO_WORST) return null;
     costSum += cost;
-    ratioSum += Math.max(cost, 0.05) / Math.max(scores[0].d, 0.05);
-    quality += Math.min(1, Math.max(0, (D_BAD - cost) / (D_BAD - D_GOOD)));
+    ratioSum += ratio;
   }
-  const mean = costSum / groups.length;
-  if (mean > EXPECT_MEAN || ratioSum / groups.length > EXPECT_RATIO) return null;
-  return { mean, quality: quality / groups.length };
+  const ratio = ratioSum / groups.length;
+  if (costSum / groups.length > EXPECT_COST_MEAN || ratio > EXPECT_RATIO_MEAN) return null;
+  return { ratio };
 }
 
 /**
@@ -537,14 +544,14 @@ function preferExpected(
   if (!word || !/^[A-Z0-9]+$/.test(word)) return null;
   if (reading.text.replace(/\s+/g, "").toUpperCase() === word) return null;
   const flat = words.flat();
-  let best: { groups: Group[]; mean: number; quality: number } | null = null;
+  let best: { groups: Group[]; ratio: number } | null = null;
   for (const groups of [flat, ...splitVariants(flat)]) {
     const fit = expectedFit(groups, word);
-    if (fit && (!best || fit.mean < best.mean)) best = { groups, ...fit };
+    if (fit && (!best || fit.ratio < best.ratio)) best = { groups, ...fit };
   }
   if (!best) return null;
-  const sure = Math.min(1, Math.max(0, (EXPECT_MEAN - best.mean) / (EXPECT_MEAN - D_GOOD)));
-  const confidence = Math.max(0.35, (0.5 + 0.4 * sure) * Math.min(1, best.quality + 0.3));
+  const sure = Math.min(1, Math.max(0, (EXPECT_RATIO_MEAN - best.ratio) / (EXPECT_RATIO_MEAN - 1)));
+  const confidence = 0.45 + 0.35 * sure;
   const alternatives: string[] = [];
   for (const a of reading.kind === "text" ? [reading.text, ...reading.alternatives] : [])
     if (a && a.toUpperCase() !== word && !alternatives.includes(a)) alternatives.push(a);
