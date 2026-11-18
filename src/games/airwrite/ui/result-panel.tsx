@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, CircleAlert, CircleHelp, EyeOff, PenLine, RotateCcw, RotateCw, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { FeedbackPrompt } from "@/components/game/feedback-prompt";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { KeyHints } from "@/components/ui/key-hints";
@@ -359,6 +360,8 @@ export function ResultPanel({
             </motion.div>
           </div>
         </div>
+
+        {phase.kind === "result" ? <FeedbackPrompt className="-mt-6 self-start max-sm:w-full" /> : null}
 
         {phase.kind === "result" && phase.first ? (
           <AirWriteHowItWorks story={phase.story} fps={phase.fps} usedCamera={phase.usedCamera} />

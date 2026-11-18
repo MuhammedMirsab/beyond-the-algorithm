@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/cn";
+import { FeedbackPrompt } from "./feedback-prompt";
 
 /**
  * The reveal: how the AI did what it just did. Numbered because it is a real
@@ -112,7 +113,11 @@ export function ResultPanel({
           {stats ? <div className="flex flex-wrap gap-x-10 gap-y-4 pt-2">{stats}</div> : null}
         </div>
         {score ? <div className="md:text-right">{score}</div> : null}
-        <div className="flex flex-wrap gap-3 md:col-span-2">{actions}</div>
+        <div className="flex flex-wrap items-end justify-between gap-6 md:col-span-2">
+          {/* The actions keep at least 22rem; below that the feedback code drops under them. */}
+          <div className="flex min-w-0 grow basis-[22rem] flex-wrap gap-3">{actions}</div>
+          <FeedbackPrompt className="max-sm:w-full" />
+        </div>
       </div>
       {children}
     </section>

@@ -162,7 +162,7 @@ Every animation needs a job: feedback, where something came from, a state change
 - `GameIntro`: the first screen of every game: skill, title, lead, 2 to 3 steps, one big button, requirement chips, small print, art on the game colour. Pass `<GameArt slug mode="intro" />`: the intro art plays a short looping breakdown of how the game works without any hover, pauses off screen, and holds a still frame under reduced motion. Below desktop the art is a banner capped at 42% of the screen height, so the title and button stay in view. `keys` puts the game's KeyHints right under the buttons, on devices with a mouse only.
 - `HowItWorks`: the reveal, numbered steps. Every game ends with one. Cards share rows (subgrid), so pictures, titles and text line up.
 - `NextPlayerButton` (header) and `NextPlayerIcon` (result screens): the one look for Next player across the arcade.
-- `ResultPanel`, `Notice`.
+- `ResultPanel`, `Notice`. ResultPanel always carries `FeedbackPrompt` next to its actions: a QR code to `/feedback?game=<slug>` on the booth laptop, a plain link on touch screens. That QR is the only way into the feedback form; the hub never links to it. Answers go to Upstash Redis (`KV_REST_API_URL`/`KV_REST_API_TOKEN`) and are read at `/feedback/responses?key=<FEEDBACK_KEY>`.
 - `CameraPrompt`, `CameraWaiting`, `ModelLoading`, `CameraProblem`, `cameraIssueFrom()`, `CAMERA_ISSUE_COPY`, `PRIVACY_LINE`.
 - `Scoreboard`, `NameEntry` (skip always works) with `useLocalBoard()`.
 - `PhoneFrame`: a modern iPhone at true proportions. `PhoneHandoff`: QR code to continue on a phone.
