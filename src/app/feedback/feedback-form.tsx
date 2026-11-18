@@ -6,12 +6,14 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { GameGlyph } from "@/components/art/game-glyph";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/chip";
-import { COMMENT_MAX, ISSUES, LOW_RATING, NAME_MAX, RATINGS, type IssueId, type Rating } from "@/content/feedback";
+import { COMMENT_MAX, ISSUES, LOW_RATING, NAME_MAX, parseFeedback, RATINGS, type IssueId, type Rating } from "@/content/feedback";
 import { GAMES, type GameSlug } from "@/content/games";
 import { entrance } from "@/lib/entrance";
+import { getDb } from "@/lib/firebase";
 import { cn } from "@/lib/cn";
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
+const SEND_TIMEOUT_MS = 12_000;
 
 /** Native radios, visually hidden: the label is the control people see and tap. */
 const hiddenRadio = "peer sr-only";
@@ -42,18 +44,28 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
       return;
     }
     setError(null);
+    // A hidden field people never see: anything in it is a bot, so pretend it worked.
+    if (trap) {
+      setSent(true);
+      return;
+    }
+    const input = parseFeedback({ name, game, rating, issues, comment });
+    if (!input) {
+      setError("Pick the game you played and a rating.");
+      return;
+    }
     setSending(true);
     try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, game, rating, issues: low ? issues : [], comment: low ? comment : "", website: trap }),
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!res.ok || !data?.ok) throw new Error(data?.error ?? "It didn't send. Try again in a moment.");
+      const [db, fs] = await Promise.all([getDb(), import("firebase/firestore")]);
+      const write = fs.addDoc(fs.collection(db, "feedback"), { ...input, at: fs.serverTimestamp() });
+      // Firestore waits for the server; on no signal, say so instead of spinning forever.
+      await Promise.race([
+        write,
+        new Promise((_, reject) => window.setTimeout(() => reject(new Error("timeout")), SEND_TIMEOUT_MS)),
+      ]);
       setSent(true);
-    } catch (err) {
-      setError(err instanceof Error && err.message !== "Failed to fetch" ? err.message : "No connection. Check your internet and try again.");
+    } catch {
+      setError("It didn't send. Check your internet and try again.");
     } finally {
       setSending(false);
     }

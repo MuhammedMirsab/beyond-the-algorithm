@@ -8,7 +8,7 @@ import { cleanName, NAME_MAX, type BoardEntry } from "@/lib/leaderboard";
 import { cn } from "@/lib/cn";
 
 /**
- * Today's board on this screen. Highlights the visitor's own row.
+ * The shared board (see useBoard). Highlights the visitor's own row.
  * `format` turns a score into what people read ("5 of 6", "1,240").
  */
 export function Scoreboard({
@@ -18,6 +18,9 @@ export function Scoreboard({
   format = (e) => e.score.toLocaleString("en"),
   title = "Today's board",
   emptyText = "No scores yet. Yours could be the first.",
+  total,
+  rankOf,
+  loading = false,
   className,
 }: {
   entries: BoardEntry[];
@@ -26,11 +29,18 @@ export function Scoreboard({
   format?: (entry: BoardEntry) => string;
   title?: string;
   emptyText?: string;
+  /** Everyone on the shared board, not only the rows loaded here. */
+  total?: number | null;
+  /** The real place of an entry on the whole board, when known. */
+  rankOf?: (id: string) => number | undefined;
+  /** The shared board hasn't answered yet. */
+  loading?: boolean;
   className?: string;
 }) {
   const shown = entries.slice(0, limit);
   const ownIndex = highlightId ? entries.findIndex((e) => e.id === highlightId) : -1;
   const ownOutside = ownIndex >= limit ? entries[ownIndex] : null;
+  const players = total ?? entries.length;
 
   return (
     <section className={cn("flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-ring sm:p-6", className)} aria-label={title}>
@@ -40,12 +50,12 @@ export function Scoreboard({
           {title}
         </h2>
         <span className="type-caption text-fg-subtle tabular-nums">
-          {entries.length === 1 ? "1 player" : `${entries.length.toLocaleString("en")} players`}
+          {loading && shown.length === 0 ? null : players === 1 ? "1 player" : `${players.toLocaleString("en")} players`}
         </span>
       </div>
 
       {shown.length === 0 ? (
-        <p className="type-body py-6 text-center text-fg-subtle">{emptyText}</p>
+        <p className="type-body py-6 text-center text-fg-subtle">{loading ? "Loading the board." : emptyText}</p>
       ) : (
         <ol className="flex flex-col">
           {shown.map((entry, i) => (
@@ -56,7 +66,7 @@ export function Scoreboard({
               <li aria-hidden className="type-caption py-1 text-center text-fg-faint">
                 ...
               </li>
-              <Row rank={ownIndex + 1} entry={ownOutside} own value={format(ownOutside)} />
+              <Row rank={rankOf?.(ownOutside.id) ?? ownIndex + 1} entry={ownOutside} own value={format(ownOutside)} />
             </>
           ) : null}
         </ol>

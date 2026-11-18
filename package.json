@@ -21,6 +21,7 @@
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "cobe": "2.0.1",
+    "firebase": "12.19.0",
     "lucide-react": "^1.73.0",
     "motion": "14.14.0",
     "next": "16.4.6",

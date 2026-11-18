@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// Beyond the Algorithm. Published by hand in the Firebase console
+// (Firestore > Rules); keep this file and the console in step.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Shared scoreboards: anyone can read and add a score, nobody can edit or delete one.
+    match /boards/{game}/entries/{id} {
+      allow read: if game.matches('^[a-z-]{2,40}$');
+      allow create: if game.matches('^[a-z-]{2,40}$')
+        && id.matches('^e_[a-z0-9_]{4,40}$')
+        && request.resource.data.keys().hasOnly(['name', 'score', 'detail', 'tiebreak', 'at'])
+        && request.resource.data.keys().hasAll(['name', 'score', 'at'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 20
+        && request.resource.data.score is number
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 10000000
+        && (!('detail' in request.resource.data) || (request.resource.data.detail is string && request.resource.data.detail.size() <= 80))
+        && (!('tiebreak' in request.resource.data) || request.resource.data.tiebreak is number)
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+
+    // Visitor feedback: anyone can send one, nobody can read it from the site.
+    // Read it in the Firebase console.
+    match /feedback/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['name', 'game', 'rating', 'issues', 'comment', 'at'])
+        && request.resource.data.keys().hasAll(['name', 'game', 'rating', 'issues', 'comment', 'at'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.game in ['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'air-studio', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone']
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.issues is list
+        && request.resource.data.issues.size() <= 6
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 400
+        && request.resource.data.at == request.time;
+      allow read, update, delete: if false;
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

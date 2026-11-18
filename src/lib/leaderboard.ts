@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { readJSON, storageKey, subscribeKey, writeJSON } from "./storage";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getDb } from "./firebase";
 
 /**
- * Local-first scoreboards. Each device keeps its own board for the day, so a
- * booth laptop driving the projector never depends on the venue Wi-Fi.
- * Other tabs on the same device (a second screen) update live.
+ * Shared scoreboards in Firestore: a score added on the booth laptop shows up
+ * on every other screen with the board open, within a second. Firestore's
+ * local cache keeps the board on the device, so it still shows on bad Wi-Fi
+ * and new scores upload once the connection is back.
+ *
+ * Path: boards/<game>/entries/<id>. Only the top TOP entries are listened to,
+ * which keeps a busy exhibition day inside the free plan's daily reads.
  */
 
 export interface BoardEntry {
@@ -20,7 +24,8 @@ export interface BoardEntry {
   at: number;
 }
 
-const MAX_ENTRIES = 200;
+const TOP = 20;
+const DETAIL_MAX = 80;
 const EMPTY: BoardEntry[] = [];
 
 export const NAME_MAX = 20;
@@ -45,46 +50,127 @@ function sortEntries(entries: BoardEntry[]): BoardEntry[] {
   );
 }
 
-/** Cache parsed snapshots per key so useSyncExternalStore gets stable references. */
-const cache = new Map<string, { raw: string | null; value: BoardEntry[] }>();
-
-function readBoard(key: string): BoardEntry[] {
-  if (typeof window === "undefined") return EMPTY;
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(key);
-  } catch {
-    raw = null;
-  }
-  const hit = cache.get(key);
-  if (hit && hit.raw === raw) return hit.value;
-  const value = raw ? sortEntries(readJSON<BoardEntry[]>(key, EMPTY)) : EMPTY;
-  cache.set(key, { raw, value });
-  return value;
+/** A Firestore document as a board entry, or null if it isn't one. */
+function toEntry(id: string, data: Record<string, unknown>): BoardEntry | null {
+  if (typeof data.name !== "string" || typeof data.score !== "number") return null;
+  const at = data.at as { toMillis?: () => number } | null | undefined;
+  return {
+    id,
+    name: data.name,
+    score: data.score,
+    detail: typeof data.detail === "string" ? data.detail : undefined,
+    tiebreak: typeof data.tiebreak === "number" ? data.tiebreak : undefined,
+    // A just-written entry has no server time yet: treat it as now.
+    at: typeof at?.toMillis === "function" ? at.toMillis() : Date.now(),
+  };
 }
 
-export function useLocalBoard(gameId: string) {
-  const key = storageKey(gameId, "board");
+const newId = () => `e_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-  const entries = useSyncExternalStore(
-    useCallback((onChange) => subscribeKey(key, onChange), [key]),
-    () => readBoard(key),
-    () => EMPTY,
-  );
+export function useBoard(gameId: string) {
+  const [remote, setRemote] = useState<BoardEntry[]>(EMPTY);
+  const [mine, setMine] = useState<BoardEntry[]>(EMPTY);
+  const [ranks, setRanks] = useState<Record<string, number>>({});
+  const [total, setTotal] = useState<number | null>(null);
+  const [ready, setReady] = useState(false);
+
+  // Listen to the top of the board while it is on screen.
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe = () => {};
+    let counting = false;
+
+    (async () => {
+      try {
+        const [db, fs] = await Promise.all([getDb(), import("firebase/firestore")]);
+        if (cancelled) return;
+        const entries = fs.collection(db, "boards", gameId, "entries");
+
+        // The player count: one cheap aggregate read, refreshed when the board changes.
+        const recount = async () => {
+          if (counting) return;
+          counting = true;
+          try {
+            const snap = await fs.getCountFromServer(entries);
+            if (!cancelled) setTotal(snap.data().count);
+          } catch {
+            // Offline: keep the last count.
+          } finally {
+            counting = false;
+          }
+        };
+
+        unsubscribe = fs.onSnapshot(
+          fs.query(entries, fs.orderBy("score", "desc"), fs.limit(TOP)),
+          (snap) => {
+            const list: BoardEntry[] = [];
+            for (const d of snap.docs) {
+              const entry = toEntry(d.id, d.data());
+              if (entry) list.push(entry);
+            }
+            setRemote(list);
+            setReady(true);
+            if (!snap.metadata.fromCache && !snap.metadata.hasPendingWrites) void recount();
+          },
+          () => setReady(true),
+        );
+      } catch {
+        if (!cancelled) setReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [gameId]);
 
   const add = useCallback(
-    (entry: Omit<BoardEntry, "id" | "at">): { id: string; rank: number } => {
-      const full: BoardEntry = { ...entry, id: `e_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`, at: Date.now() };
-      const next = sortEntries([...readBoard(key), full]).slice(0, MAX_ENTRIES);
-      writeJSON(key, next);
-      const rank = next.findIndex((e) => e.id === full.id) + 1;
-      return { id: full.id, rank: rank > 0 ? rank : next.length + 1 };
+    (entry: Omit<BoardEntry, "id" | "at">): { id: string } => {
+      const full: BoardEntry = { ...entry, detail: entry.detail?.slice(0, DETAIL_MAX), id: newId(), at: Date.now() };
+      // Shown straight away; the shared board confirms it a moment later.
+      setMine((list) => [...list, full]);
+      setTotal((n) => (n == null ? n : n + 1));
+
+      void (async () => {
+        try {
+          const [db, fs] = await Promise.all([getDb(), import("firebase/firestore")]);
+          const data: Record<string, unknown> = { name: full.name, score: full.score, at: fs.serverTimestamp() };
+          if (full.detail) data.detail = full.detail;
+          if (typeof full.tiebreak === "number") data.tiebreak = full.tiebreak;
+          await fs.setDoc(fs.doc(db, "boards", gameId, "entries", full.id), data);
+          // Its real place, even when it is below the top of the board.
+          const above = await fs.getCountFromServer(
+            fs.query(fs.collection(db, "boards", gameId, "entries"), fs.where("score", ">", full.score)),
+          );
+          setRanks((r) => ({ ...r, [full.id]: above.data().count + 1 }));
+        } catch {
+          // Offline or refused: it stays on this screen and Firestore retries when it can.
+        }
+      })();
+
+      return { id: full.id };
     },
-    [key],
+    [gameId],
   );
 
-  const remove = useCallback((id: string) => writeJSON(key, readBoard(key).filter((e) => e.id !== id)), [key]);
-  const clear = useCallback(() => writeJSON(key, []), [key]);
+  const entries = useMemo(() => {
+    const seen = new Set(remote.map((e) => e.id));
+    return sortEntries([...remote, ...mine.filter((e) => !seen.has(e.id))]);
+  }, [remote, mine]);
 
-  return useMemo(() => ({ entries, add, remove, clear }), [entries, add, remove, clear]);
+  /** 1-based place on the whole board, when known. */
+  const rankOf = useCallback(
+    (id: string): number | undefined => {
+      if (ranks[id]) return ranks[id];
+      const i = entries.findIndex((e) => e.id === id);
+      return i >= 0 && i < TOP ? i + 1 : undefined;
+    },
+    [ranks, entries],
+  );
+
+  return useMemo(
+    () => ({ entries, add, rankOf, total: total ?? (ready ? entries.length : null), ready }),
+    [entries, add, rankOf, total, ready],
+  );
 }

@@ -155,7 +155,7 @@ function SiteFooter() {
           <p className="type-small flex max-w-[27rem] items-start gap-2 text-pretty text-fg-subtle">
             <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />
             <span>
-              Cameras and microphones are read on this device and never recorded. Scoreboards stay on this screen. A linked phone
+              Cameras and microphones are read on this device and never recorded. Scoreboards keep only the name you type and your score. A linked phone
               sends readings, never pictures or sound.
             </span>
           </p>

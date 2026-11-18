@@ -9,7 +9,7 @@ import { NextPlayerIcon } from "@/components/game/next-player";
 import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
 import { Score, Stat } from "@/components/ui/score";
-import { useLocalBoard } from "@/lib/leaderboard";
+import { useBoard } from "@/lib/leaderboard";
 import { boardDetail, rankTier, ROUNDS, summarize, tallyByLevel, verdict, type LevelTally } from "../engine/scoring";
 import type { ActiveQuestion, PlayerAnswer } from "../engine/types";
 import { EASE_OUT, formatSeconds, LEVEL_CHANGE, LEVEL_NAME, LEVELS, OutcomeDot, outcomeOf, SPRING_POP } from "./labels";
@@ -38,10 +38,10 @@ export function ResultsScreen({
   const summary = summarize(answers);
   const tier = rankTier(summary.accuracy);
   const tally = tallyByLevel(questions, answers);
-  const board = useLocalBoard("real-or-ai");
+  const board = useBoard("real-or-ai");
   const [step, setStep] = useState<"name" | "board">("name");
   const [entryId, setEntryId] = useState<string | null>(null);
-  const rankIndex = entryId ? board.entries.findIndex((e) => e.id === entryId) : -1;
+  const rank = entryId ? board.rankOf(entryId) : undefined;
 
   // A near-perfect game earns confetti, never under reduced motion.
   useEffect(() => {
@@ -86,7 +86,7 @@ export function ResultsScreen({
           <RoundStrip questions={questions} answers={answers} />
           <Stat value={`${summary.correct} of ${summary.total}`} label="Correct" />
           <Stat value={formatSeconds(summary.averageSeconds)} label="Average per round" />
-          {rankIndex >= 0 ? <Stat value={`#${rankIndex + 1}`} label="Rank today" /> : null}
+          {rank ? <Stat value={`#${rank}`} label="Rank today" /> : null}
         </>
       }
       actions={
@@ -111,7 +111,7 @@ export function ResultsScreen({
                 className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-ring sm:p-6"
               >
                 <NameEntry onSubmit={submitName} onSkip={() => setStep("board")} />
-                <p className="type-caption text-fg-subtle">Only the name you type and your score are saved, on this device.</p>
+                <p className="type-caption text-fg-subtle">Only the name you type and your score are saved, on the shared board.</p>
               </motion.div>
             ) : (
               <motion.div
@@ -120,7 +120,7 @@ export function ResultsScreen({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25, ease: EASE_OUT }}
               >
-                <Scoreboard entries={board.entries} highlightId={entryId} />
+                <Scoreboard entries={board.entries} highlightId={entryId} total={board.total} rankOf={board.rankOf} loading={!board.ready} />
               </motion.div>
             )}
           </AnimatePresence>

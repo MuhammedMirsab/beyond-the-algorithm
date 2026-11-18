@@ -8,7 +8,7 @@ import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
 import { KeyHints } from "@/components/ui/key-hints";
 import { Score, Stat } from "@/components/ui/score";
-import { useLocalBoard } from "@/lib/leaderboard";
+import { useBoard } from "@/lib/leaderboard";
 import { middleStrategySteps, numberRange, type ScoreBreakdown } from "../engine/game-engine";
 import { elapsedSeconds, humanScore, type HumanState } from "../engine/human";
 import { doublingSum, formatNumber } from "../engine/ranges";
@@ -130,7 +130,7 @@ function MiddleStrategy({ human }: { human: HumanState }) {
 /** A win: how the score was made, then a name for today's board. */
 function ScoreAndBoard({ human, score }: { human: HumanState; score: ScoreBreakdown }) {
   const range = numberRange(human.range);
-  const board = useLocalBoard("mind-reader");
+  const board = useBoard("mind-reader");
   const [ownId, setOwnId] = useState<string | null>(null);
   const [named, setNamed] = useState(false);
   const seconds = elapsedSeconds(human);
@@ -183,13 +183,13 @@ function ScoreAndBoard({ human, score }: { human: HumanState; score: ScoreBreakd
             <NameEntry onSubmit={addToBoard} onSkip={() => setNamed(true)} />
           </div>
         )}
-        <Scoreboard entries={board.entries} highlightId={ownId} />
+        <Scoreboard entries={board.entries} highlightId={ownId} total={board.total} rankOf={board.rankOf} loading={!board.ready} />
       </div>
     </div>
   );
 }
 
 function BoardOnly() {
-  const board = useLocalBoard("mind-reader");
-  return <Scoreboard entries={board.entries} title="Today's board" />;
+  const board = useBoard("mind-reader");
+  return <Scoreboard entries={board.entries} title="Today's board" total={board.total} loading={!board.ready} />;
 }

@@ -162,9 +162,9 @@ Every animation needs a job: feedback, where something came from, a state change
 - `GameIntro`: the first screen of every game: skill, title, lead, 2 to 3 steps, one big button, requirement chips, small print, art on the game colour. Pass `<GameArt slug mode="intro" />`: the intro art plays a short looping breakdown of how the game works without any hover, pauses off screen, and holds a still frame under reduced motion. Below desktop the art is a banner capped at 42% of the screen height, so the title and button stay in view. `keys` puts the game's KeyHints right under the buttons, on devices with a mouse only.
 - `HowItWorks`: the reveal, numbered steps. Every game ends with one. Cards share rows (subgrid), so pictures, titles and text line up.
 - `NextPlayerButton` (header) and `NextPlayerIcon` (result screens): the one look for Next player across the arcade.
-- `ResultPanel`, `Notice`. ResultPanel always carries `FeedbackPrompt` next to its actions: a QR code to `/feedback?game=<slug>` on the booth laptop, a plain link on touch screens. That QR is the only way into the feedback form; the hub never links to it. Answers go to Upstash Redis (`KV_REST_API_URL`/`KV_REST_API_TOKEN`) and are read at `/feedback/responses?key=<FEEDBACK_KEY>`.
+- `ResultPanel`, `Notice`. ResultPanel always carries `FeedbackPrompt` next to its actions: a QR code to `/feedback?game=<slug>` on the booth laptop, a plain link on touch screens. That QR is the only way into the feedback form; the hub never links to it. Answers go to the Firestore `feedback` collection. The rules let anyone add one and nobody read them from the site; read them in the Firebase console.
 - `CameraPrompt`, `CameraWaiting`, `ModelLoading`, `CameraProblem`, `cameraIssueFrom()`, `CAMERA_ISSUE_COPY`, `PRIVACY_LINE`.
-- `Scoreboard`, `NameEntry` (skip always works) with `useLocalBoard()`.
+- `Scoreboard`, `NameEntry` (skip always works) with `useBoard()` (shared in Firestore, top 20 live).
 - `PhoneFrame`: a modern iPhone at true proportions. `PhoneHandoff`: QR code to continue on a phone.
 
 `src/components/hub` (the arcade's front page):
@@ -192,7 +192,7 @@ The rules from `humanizer` and the interface guidelines, applied:
 
 - Every game has a one-tap **Next player** that resets everything: state, scores in memory, camera, model memory (the RPS opponent forgets you).
 - Intro and result screens reset themselves after about 90 seconds idle (`useIdle`). Camera-only play never triggers idle resets.
-- Nothing about a visitor is stored except what they type into a scoreboard. No photos, no frames, no downloads.
-- Scoreboards are per device (`useLocalBoard`), so the projector never waits on Wi-Fi.
+- Nothing about a visitor is stored except what they type into a scoreboard or the feedback form. No photos, no frames, no downloads.
+- Scoreboards are shared through Firestore (`useBoard`, `src/lib/firebase.ts`) and update live on every screen. Its local cache keeps them showing on bad Wi-Fi. Security rules are in `firestore.rules`.
 - Models and runtimes are self-hosted under `/mediapipe` and `/models`. Nothing loads from a CDN.
 - Keyboard shortcuts on the laptop, big touch targets on phones.
