@@ -143,7 +143,7 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
     // shows the ink being split into letters before the answer appears.
     let story: ReadingStory;
     try {
-      const screened = forTheScreen(recognizeStrokes(req.strokes));
+      const screened = forTheScreen(recognizeStrokes(req.strokes, { expect: req.target }));
       const result = inDisplayCase(screened.result);
       const hidden = screened.hidden;
       const readable = result.kind === "text" && !hidden;

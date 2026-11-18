@@ -490,6 +490,70 @@ function readWord(groups: Group[]): { reading: WordReading; groups: Group[] } {
   return { reading: { ...best.reading, alternatives }, groups: best.groups };
 }
 
+// ── The word the visitor was asked to write ───────────────────
+/** Absolute $P cost bands for accepting the expected word (see D_GOOD / D_BAD). */
+const EXPECT_MEAN = 1.45;
+const EXPECT_WORST = 1.75;
+/** ...and relative to each letter's own best match, like the word list. */
+const EXPECT_RATIO = 1.7;
+
+/**
+ * How well a letter split fits the word on screen ("Hi", "Cat"...), or null
+ * when it plainly doesn't. Every letter must look reasonably like its target
+ * letter in absolute terms, so a scribble never turns into the suggestion.
+ */
+function expectedFit(groups: Group[], word: string): { mean: number; quality: number } | null {
+  if (groups.length !== word.length) return null;
+  let costSum = 0;
+  let ratioSum = 0;
+  let quality = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const scores = classify(groups[i].strokes);
+    if (!scores.length) return null;
+    const ch = word[i];
+    const cost = isDigit(ch) ? digitCost(scores, ch) : letterCost(scores, ch);
+    if (!(cost <= EXPECT_WORST)) return null;
+    costSum += cost;
+    ratioSum += Math.max(cost, 0.05) / Math.max(scores[0].d, 0.05);
+    quality += Math.min(1, Math.max(0, (D_BAD - cost) / (D_BAD - D_GOOD)));
+  }
+  const mean = costSum / groups.length;
+  if (mean > EXPECT_MEAN || ratioSum / groups.length > EXPECT_RATIO) return null;
+  return { mean, quality: quality / groups.length };
+}
+
+/**
+ * Context, like a phone keyboard's autocorrect: the visitor is usually
+ * writing the word on screen. If the ink (as split, or one change away)
+ * really does look like that word, read it as that word; the plain reading
+ * stays as the first "Or maybe".
+ */
+function preferExpected(
+  words: Group[][],
+  reading: Recognition,
+  expect: string,
+): { reading: Recognition; words: Group[][] } | null {
+  const word = expect.replace(/\s+/g, "").toUpperCase();
+  if (!word || !/^[A-Z0-9]+$/.test(word)) return null;
+  if (reading.text.replace(/\s+/g, "").toUpperCase() === word) return null;
+  const flat = words.flat();
+  let best: { groups: Group[]; mean: number; quality: number } | null = null;
+  for (const groups of [flat, ...splitVariants(flat)]) {
+    const fit = expectedFit(groups, word);
+    if (fit && (!best || fit.mean < best.mean)) best = { groups, ...fit };
+  }
+  if (!best) return null;
+  const sure = Math.min(1, Math.max(0, (EXPECT_MEAN - best.mean) / (EXPECT_MEAN - D_GOOD)));
+  const confidence = Math.max(0.35, (0.5 + 0.4 * sure) * Math.min(1, best.quality + 0.3));
+  const alternatives: string[] = [];
+  for (const a of reading.kind === "text" ? [reading.text, ...reading.alternatives] : [])
+    if (a && a.toUpperCase() !== word && !alternatives.includes(a)) alternatives.push(a);
+  return {
+    reading: { text: word, confidence, alternatives: alternatives.slice(0, 3), kind: "text", ms: reading.ms },
+    words: [best.groups],
+  };
+}
+
 /** The letter split behind the last reading of each stroke list (so the result card shows the same letters). */
 const lastSplit = new WeakMap<StrokeXY[], Group[][]>();
 
@@ -506,9 +570,26 @@ export interface StrokeInput {
   points: StrokeXY;
 }
 
-export function recognizeStrokes(strokes: StrokeXY[]): Recognition {
+export interface RecognizeOptions {
+  /** The word the visitor was asked to write, if any: read as that word when the ink really fits it. */
+  expect?: string | null;
+}
+
+export function recognizeStrokes(strokes: StrokeXY[], options: RecognizeOptions = {}): Recognition {
+  const plain = recognizePlain(strokes);
+  if (!options.expect) return plain;
+  const words = lastSplit.get(strokes);
+  if (!words?.length) return plain;
+  const context = preferExpected(words, plain, options.expect);
+  if (!context) return plain;
+  lastSplit.set(strokes, context.words);
+  return context.reading;
+}
+
+function recognizePlain(strokes: StrokeXY[]): Recognition {
   const started = performance.now();
   const firstSplit = segment(strokes.filter((s) => s.length > 0));
+  lastSplit.set(strokes, firstSplit);
   if (!firstSplit.length) return { text: "", confidence: 0, alternatives: [], kind: "unreadable", ms: 0 };
 
   const read = firstSplit.map(readWord);
