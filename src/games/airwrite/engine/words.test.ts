@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Recognition } from "./recognition/recognize";
-import { forTheScreen, isRude, normaliseWord } from "./words";
+import { displayCase, forTheScreen, inDisplayCase, isRude, normaliseWord } from "./words";
 
 const reading = (text: string, alternatives: string[] = []): Recognition => ({ text, confidence: 0.8, alternatives, kind: "text", ms: 3 });
 
@@ -25,5 +25,21 @@ describe("forTheScreen", () => {
 describe("normaliseWord", () => {
   it("ignores case, spaces and punctuation", () => {
     expect(normaliseWord("hello, World")).toBe(normaliseWord("HELLO WORLD"));
+  });
+});
+
+describe("displayCase", () => {
+  it("shows a reading in capitals in sentence case", () => {
+    expect(displayCase("CAT")).toBe("Cat");
+    expect(displayCase("HELLO WORLD")).toBe("Hello world");
+  });
+  it("keeps lowercase readings, digits and EDEX as they are", () => {
+    expect(displayCase("cat")).toBe("cat");
+    expect(displayCase("2026")).toBe("2026");
+    expect(displayCase("EDEX")).toBe("EDEX");
+    expect(displayCase("")).toBe("");
+  });
+  it("formats the alternatives too", () => {
+    expect(inDisplayCase(reading("HI", ["HE"]))).toEqual(reading("Hi", ["He"]));
   });
 });

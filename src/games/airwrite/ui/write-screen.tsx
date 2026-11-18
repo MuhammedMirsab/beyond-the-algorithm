@@ -14,7 +14,7 @@ import { letterAnatomy, segmentLetters } from "../engine/letters";
 import { recognizeStrokes } from "../engine/recognition/recognize";
 import { StrokeStore } from "../engine/strokes";
 import { useHandTracking } from "../engine/useHandTracking";
-import { forTheScreen } from "../engine/words";
+import { forTheScreen, inDisplayCase } from "../engine/words";
 import { AdaptiveButton } from "./adaptive-button";
 import { CameraDock } from "./camera-dock";
 import { HowItWorksModal, type ReadingStory } from "./how-it-works";
@@ -143,7 +143,9 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
     // shows the ink being split into letters before the answer appears.
     let story: ReadingStory;
     try {
-      const { result, hidden } = forTheScreen(recognizeStrokes(req.strokes));
+      const screened = forTheScreen(recognizeStrokes(req.strokes));
+      const result = inDisplayCase(screened.result);
+      const hidden = screened.hidden;
       const readable = result.kind === "text" && !hidden;
       const { boxes, words } = segmentLetters(req.strokes, readable ? result.text : null, req.ink);
       story = {

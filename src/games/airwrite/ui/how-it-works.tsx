@@ -9,6 +9,7 @@ import { CLOUD_SIZE, letterAnatomy, type LetterAnatomy, type LetterBox } from ".
 import { LEXICON } from "../engine/recognition/lexicon";
 import type { CloudPoint, StrokeXY } from "../engine/recognition/pdollar";
 import { recognizeStrokes, segment, type Recognition } from "../engine/recognition/recognize";
+import { inDisplayCase } from "../engine/words";
 import { TEMPLATES } from "../engine/recognition/templates";
 import { HAND_CONNECTIONS } from "../engine/gesture";
 import { HandDiagram } from "./hand-diagram";
@@ -57,7 +58,7 @@ let example: { strokes: StrokeXY[]; result: Recognition; anatomy: LetterAnatomy 
 
 function exampleStory() {
   if (!example) {
-    const result = recognizeStrokes(EXAMPLE_STROKES);
+    const result = inDisplayCase(recognizeStrokes(EXAMPLE_STROKES));
     example = { strokes: EXAMPLE_STROKES, result, anatomy: letterAnatomy(EXAMPLE_STROKES, result.text) };
   }
   return example;
