@@ -428,6 +428,18 @@ function decodeWord(groups: Group[]): WordReading {
 }
 
 // ── Second opinions on the letter split ───────────────────────
+/** Horizontal centre of a stroke's ink, weighted by length along the line. */
+function inkCenterX(s: StrokeXY): number {
+  let w = 0;
+  let x = 0;
+  for (let i = 1; i < s.length; i++) {
+    const l = Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]);
+    w += l;
+    x += (l * (s[i][0] + s[i - 1][0])) / 2;
+  }
+  return w > 0 ? x / w : s[0][0];
+}
+
 function groupOf(strokes: StrokeXY[]): Group {
   const g: Group = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, strokes: [] };
   for (const s of strokes) mergeInto(g, { ...boxOf(s), strokes: [s] });
@@ -451,12 +463,9 @@ function splitVariants(groups: Group[]): Group[][] {
   }
   groups.forEach((g, i) => {
     if (g.strokes.length < 2) return;
-    const byX = g.strokes
-      .map((s) => {
-        const b = boxOf(s);
-        return { s, cx: (b.minX + b.maxX) / 2 };
-      })
-      .sort((a, b) => a.cx - b.cx);
+    // Order by where most of each stroke's ink is, not by its box: a C whose
+    // tail runs under the next letter has a box as wide as both.
+    const byX = g.strokes.map((s) => ({ s, cx: inkCenterX(s) })).sort((a, b) => a.cx - b.cx);
     for (let c = 1; c < byX.length; c++) {
       if (byX[c].cx - byX[c - 1].cx < 0.2 * letterH) continue;
       const left = groupOf(byX.slice(0, c).map((x) => x.s));
@@ -502,7 +511,8 @@ function readWord(groups: Group[]): { reading: WordReading; groups: Group[] } {
 const EXPECT_RATIO_MEAN = 1.45;
 const EXPECT_RATIO_WORST = 1.8;
 const EXPECT_COST_MEAN = 2.3;
-const EXPECT_COST_WORST = 2.6;
+/** One loopy letter may be far from its shape (a looped T in a recorded CAT: 2.93) if the rest fit. */
+const EXPECT_COST_WORST = 3.0;
 
 /**
  * How well a letter split fits the word on screen ("Hi", "Cat"...), or null
@@ -510,12 +520,12 @@ const EXPECT_COST_WORST = 2.6;
  * ink, and the ink has to look like letters at all, so a scribble or a
  * clearly different letter never turns into the suggestion.
  */
-function expectedFit(groups: Group[], word: string): { ratio: number } | null {
+function expectedFit(groups: Group[], word: string, scoresOf: (g: Group) => CharScore[]): { ratio: number } | null {
   if (groups.length !== word.length) return null;
   let costSum = 0;
   let ratioSum = 0;
   for (let i = 0; i < groups.length; i++) {
-    const scores = classify(groups[i].strokes);
+    const scores = scoresOf(groups[i]);
     if (!scores.length) return null;
     const ch = word[i];
     const cost = isDigit(ch) ? digitCost(scores, ch) : letterCost(scores, ch);
@@ -544,9 +554,31 @@ function preferExpected(
   if (!word || !/^[A-Z0-9]+$/.test(word)) return null;
   if (reading.text.replace(/\s+/g, "").toUpperCase() === word) return null;
   const flat = words.flat();
+  // The same letter group turns up in many splits: score each one once.
+  const ids = new Map<StrokeXY, number>();
+  const cache = new Map<string, CharScore[]>();
+  const scoresOf = (g: Group) => {
+    const key = g.strokes
+      .map((s) => {
+        if (!ids.has(s)) ids.set(s, ids.size);
+        return ids.get(s);
+      })
+      .sort()
+      .join(",");
+    let scores = cache.get(key);
+    if (!scores) {
+      scores = classify(g.strokes);
+      cache.set(key, scores);
+    }
+    return scores;
+  };
+  // The split as read, every split one change away, and (for short words) two changes away.
+  const once = splitVariants(flat);
+  const candidates = [flat, ...once];
+  if (flat.length <= 6) for (const v of once) candidates.push(...splitVariants(v));
   let best: { groups: Group[]; ratio: number } | null = null;
-  for (const groups of [flat, ...splitVariants(flat)]) {
-    const fit = expectedFit(groups, word);
+  for (const groups of candidates) {
+    const fit = expectedFit(groups, word, scoresOf);
     if (fit && (!best || fit.ratio < best.ratio)) best = { groups, ...fit };
   }
   if (!best) return null;
