@@ -57,12 +57,6 @@ function HandsSettings({
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-5">
-        <SwitchRow
-          label="Left-handed"
-          description="Strum the guitar with your left hand, and mirror the drum kit."
-          checked={t.leftHanded}
-          onCheckedChange={(leftHanded) => settings.update("tracking", { leftHanded })}
-        />
         <SliderRow
           label="Sensitivity"
           description="Higher plays with gentler moves. Lower it if notes play by themselves."

@@ -1,4 +1,4 @@
-import type { ProgressionId, ScaleId } from "./music";
+import type { ScaleId } from "./music";
 
 /**
  * One visitor's settings, in memory only (the original app saved them to
@@ -6,7 +6,7 @@ import type { ProgressionId, ScaleId } from "./music";
  * Defaults are the original app's tuned values.
  */
 
-export type InstrumentId = "piano" | "drums" | "guitar" | "synth" | "percussion";
+export type InstrumentId = "piano" | "synth" | "percussion";
 
 export interface FxSettings {
   reverb: number;
@@ -26,7 +26,6 @@ export interface Box {
 
 export type PianoPreset = "acoustic" | "grand" | "electric" | "synth" | "ambient" | "organ";
 export type DrumPack = "acoustic" | "vintage" | "electronic";
-export type DrumLayout = "standard" | "compact";
 export type GuitarPreset = "acoustic" | "clean" | "distorted" | "bass";
 export type SynthPreset = "warmLead" | "theremin" | "squareBass" | "pad" | "acidLine" | "chipLead";
 export type PercLayout = "full" | "latin" | "hand" | "electronic";
@@ -88,15 +87,6 @@ export interface Settings {
     volume: number;
     fx: FxSettings;
   };
-  drums: { pack: DrumPack; layout: DrumLayout; sensOffset: number; velocitySens: number; volume: number; fx: FxSettings };
-  guitar: {
-    preset: GuitarPreset;
-    progression: ProgressionId;
-    chordSelect: "height" | "pinch";
-    strumSens: number;
-    volume: number;
-    fx: FxSettings;
-  };
   synth: SynthParams;
   percussion: { layout: PercLayout; shake: boolean; sensOffset: number; volume: number; fx: FxSettings };
   metronome: { bpm: number; sig: TimeSig; volume: number; countIn: number; accent: boolean };
@@ -136,10 +126,6 @@ export const DEFAULTS: Settings = {
     volume: 0.9,
     fx: fx(0.22),
   },
-  // Booth default: five big pads (the original app's beginner kit, which most drum lessons use too). Big targets
-  // land a first hit in seconds; the full kit is one switch away in Settings.
-  drums: { pack: "acoustic", layout: "compact", sensOffset: 0, velocitySens: 70, volume: 0.9, fx: fx(0.12) },
-  guitar: { preset: "acoustic", progression: "pop", chordSelect: "height", strumSens: 50, volume: 0.9, fx: fx(0.18) },
   synth: {
     level: "simple",
     preset: "warmLead",
@@ -217,8 +203,6 @@ export function applyPatch(patch: SettingsPatch): SettingsPatch {
 
 export const INSTRUMENT_NAMES: Record<InstrumentId, string> = {
   piano: "Piano",
-  drums: "Drums",
-  guitar: "Guitar",
   synth: "Synth",
   percussion: "Percussion",
 };

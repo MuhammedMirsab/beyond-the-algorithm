@@ -80,7 +80,7 @@ describe("practiceReport advice", () => {
 });
 
 describe("freeReport", () => {
-  const notes = (times: number[]): PlayEvent[] => times.map((t) => ({ t, inst: "drums", kind: "hit", piece: "snare", vel: 0.8 }));
+  const notes = (times: number[]): PlayEvent[] => times.map((t) => ({ t, inst: "percussion", kind: "hit", piece: "snare", vel: 0.8 }));
 
   it("asks for more notes when a beat played but the take was short", () => {
     const r = freeReport({ title: "Take", events: notes([0, 0.5]), duration: 1, bpm: 120, gridDefined: true, latencyMs: 0 });

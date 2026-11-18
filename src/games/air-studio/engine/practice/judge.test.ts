@@ -8,7 +8,7 @@ const ZERO = 10; // context time of beat 0
 
 const lesson = (patch: Partial<Lesson> = {}): Lesson => ({
   id: "test",
-  inst: "drums",
+  inst: "percussion",
   title: "Test",
   level: "Beginner",
   desc: "",
@@ -23,7 +23,7 @@ const lesson = (patch: Partial<Lesson> = {}): Lesson => ({
   ...patch,
 });
 
-const hit = (piece: string, t: number): PlayEvent => ({ t, inst: "drums", kind: "hit", piece, vel: 0.8 });
+const hit = (piece: string, t: number): PlayEvent => ({ t, inst: "percussion", kind: "hit", piece, vel: 0.8 });
 const label = (k: string) => k;
 
 describe("LessonJudge", () => {

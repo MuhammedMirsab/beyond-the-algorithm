@@ -16,8 +16,6 @@ import { InstrumentGlyph } from "./instrument-glyph";
 
 const UNIT: Record<InstrumentId, [string, string]> = {
   piano: ["note", "notes"],
-  drums: ["hit", "hits"],
-  guitar: ["strum", "strums"],
   synth: ["note", "notes"],
   percussion: ["hit", "hits"],
 };

@@ -137,8 +137,8 @@ export interface StudioView {
   bests: Record<string, number>;
 }
 
-/** The first instrument: drums. Synthesised, so nothing to download, and any quick move down over a big pad plays. */
-export const DEFAULT_INSTRUMENT: InstrumentId = "drums";
+/** The first instrument: percussion. Synthesised, so nothing to download, and any quick move down over a pad plays. */
+export const DEFAULT_INSTRUMENT: InstrumentId = "percussion";
 
 /** Play along starts on the pop band, at its own tempo. */
 const DEFAULT_PLAY_ALONG = "pop";
@@ -222,7 +222,7 @@ const fallbackLabel = (k: string) => (k === "*" ? "Any pad" : (PIECE_LABEL[k] ??
  * drawing) never touches React state.
  *
  * The first tap goes straight to playing: the camera (or the mouse) and the
- * drums start together, the kit plays a short fill when it's ready, and the
+ * percussion start together, the kit plays a short fill when it's ready, and the
  * rest of the studio is revealed as the visitor plays (reveal.ts).
  *
  * mount() and unmount() bracket the component's life and survive StrictMode.
@@ -387,7 +387,7 @@ export class StudioSession {
 
   /* ── Input ─────────────────────────────────────────────────────── */
 
-  /** From a click: start the audio (browsers allow it only after a click), the camera and the drums, together. */
+  /** From a click: start the audio (browsers allow it only after a click), the camera and the percussion, together. */
   chooseCamera = () => {
     this.startAudio();
     this.check = null;
@@ -504,8 +504,7 @@ export class StudioSession {
     if (samples.length < 12) return;
     const hits = this.strikes.filter((s) => s.hand === hand && s.t >= from && s.t <= end).map((s) => ({ t: s.t - from, v: s.v }));
     const s = settings.get();
-    const offset = this.view.instrument === "percussion" ? s.percussion.sensOffset : s.drums.sensOffset;
-    const threshold = strikeThreshold(offset) / REF_SIZE;
+    const threshold = strikeThreshold(s.percussion.sensOffset) / REF_SIZE;
     this.strikeStory = { samples, hits, threshold, rearm: threshold * REARM_FRACTION, span: end - from, hand, simulated: this.view.mode === "mouse" };
   }
 

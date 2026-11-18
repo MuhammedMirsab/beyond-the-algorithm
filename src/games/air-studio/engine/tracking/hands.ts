@@ -281,6 +281,20 @@ export class HandSet {
     return { time: now, hands, Left: L, Right: R };
   }
 
+  /**
+   * Palms of the hands in play (mirrored, 0 to 1), so new detections can be
+   * matched to them. A hand missed for a moment still counts, so it comes
+   * straight back instead of waiting to be confirmed as new.
+   */
+  palms(now: number): Pt[] {
+    const out: Pt[] = [];
+    for (const label of ["Left", "Right"] as const) {
+      const h = this.slots[label].hand;
+      if (h.present || (h.lastSeen > 0 && now - h.lastSeen < FRESH_GAP_MS)) out.push(h.palm);
+    }
+    return out;
+  }
+
   /** Forget both hands (camera off, Next player). Keeps the label check: it describes the runtime, not the visitor. */
   clear() {
     for (const label of ["Left", "Right"] as const) {

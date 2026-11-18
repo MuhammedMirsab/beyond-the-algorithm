@@ -61,22 +61,7 @@ export const TOO_FAR = 0.065;
 function lines(i: CoachInput): string[] {
   const cam = i.mode === "camera";
   const click = i.touch ? "Tap" : "Click";
-  const strumHand = i.leftHanded ? "left" : "right";
-  const fretHand = i.leftHanded ? "right" : "left";
   switch (i.instrument) {
-    case "drums":
-      return cam
-        ? [
-            "Hit the air over a pad. A quick move down plays it.",
-            "That's a hit. The camera saw your hand move down fast.",
-            "Hit faster to play louder.",
-            "Rest between hits. A still hand stays quiet.",
-          ]
-        : [
-            `${click} a pad, or flick the ${i.touch ? "finger" : "mouse"} down over it.`,
-            "That's a hit. A quick move down counts, just like a real hand.",
-            "A faster flick plays louder.",
-          ];
     case "percussion":
       return cam
         ? [
@@ -102,18 +87,6 @@ function lines(i: CoachInput): string[] {
             `${click} a key, or move the pointer down across the dotted line.`,
             "That's a note. Move back above the line to let go.",
             "Slide sideways below the line to play the next keys.",
-          ];
-    case "guitar":
-      return cam
-        ? [
-            `Swing your ${strumHand} hand down through the strings.`,
-            `That's a strum. Raise or lower your ${fretHand} hand to change chords.`,
-            "Strum up as well as down. Make a fist to mute.",
-          ]
-        : [
-            `${click} the strings, or flick down or up through them.`,
-            i.touch ? "That's a strum. Each flick strums the chord." : "That's a strum. Keys 1 to 6 move your left hand to change chords.",
-            ...(i.touch ? [] : ["Hold Space to mute the strings."]),
           ];
     case "synth":
       return cam

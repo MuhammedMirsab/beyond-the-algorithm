@@ -3,7 +3,7 @@
  * visitor plays. A visitor who walks up sees only the instrument; each part
  * of the dock arrives when it is the natural next thing to try.
  *
- *   0  the instrument alone (drums, ready to hit)
+ *   0  the instrument alone (percussion, ready to hit)
  *   1  the instrument switcher and settings
  *   2  play along and record
  *   3  practice

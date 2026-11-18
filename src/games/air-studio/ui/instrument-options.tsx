@@ -4,14 +4,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/chip";
-import { Segmented, SliderRow, SwitchRow } from "@/components/ui/controls";
-import { DRUM_PACKS } from "../engine/audio/instruments/drums";
-import { GUITAR_PRESETS } from "../engine/audio/instruments/guitar";
+import { Segmented, SwitchRow } from "@/components/ui/controls";
 import { PIANO_PRESETS } from "../engine/audio/instruments/piano";
 import { SYNTH_PRESETS } from "../engine/audio/instruments/synth";
-import { DRUM_LAYOUTS } from "../engine/instruments/drums";
 import { PERC_LAYOUTS } from "../engine/instruments/percussion";
-import { NOTE_NAMES, PROGRESSIONS, SCALES, type ProgressionId, type ScaleId } from "../engine/music";
+import { NOTE_NAMES, SCALES, type ScaleId } from "../engine/music";
 import { DEFAULTS, settings, type InstrumentId, type PercLayout, type Settings } from "../engine/settings";
 import { useSettings } from "./hooks";
 
@@ -148,77 +145,6 @@ function PianoOptions() {
   );
 }
 
-function LeftHanded({ description }: { description: string }) {
-  const leftHanded = useSettings((st) => st.tracking).leftHanded;
-  return <SwitchRow label="Left-handed" description={description} checked={leftHanded} onCheckedChange={(on) => settings.update("tracking", { leftHanded: on })} />;
-}
-
-function DrumOptions() {
-  const s = useSettings((st) => st.drums);
-  const u = (p: Partial<Settings["drums"]>) => settings.update("drums", p);
-  return (
-    <>
-      <Field label="Sound" hint="Studio and vintage are built from waves and noise. 808 uses recordings of a classic drum machine.">
-        <Chips value={s.pack} options={DRUM_PACKS.map((p) => ({ value: p.id, label: p.label }))} onChange={(pack) => u({ pack })} />
-      </Field>
-      <Field label="Kit">
-        <Segmented
-          label="Kit"
-          value={s.layout}
-          onValueChange={(layout) => u({ layout })}
-          options={[
-            { value: "compact", label: DRUM_LAYOUTS.compact.label },
-            { value: "standard", label: DRUM_LAYOUTS.standard.label },
-          ]}
-        />
-      </Field>
-      <LeftHanded description="Mirrors the kit, so the hi-hat is on your right." />
-    </>
-  );
-}
-
-function GuitarOptions() {
-  const s = useSettings((st) => st.guitar);
-  const u = (p: Partial<Settings["guitar"]>) => settings.update("guitar", p);
-  const ids = Object.keys(PROGRESSIONS) as ProgressionId[];
-  return (
-    <>
-      <Field label="Sound">
-        <Segmented label="Sound" value={s.preset} onValueChange={(preset) => u({ preset })} options={GUITAR_PRESETS.map((p) => ({ value: p.id, label: p.label }))} />
-      </Field>
-      <Field label="Chords" hint="The column shows them top to bottom.">
-        <div className="flex flex-wrap gap-2">
-          {ids.map((id) => (
-            <ToggleChip key={id} pressed={s.progression === id} onClick={() => u({ progression: id })}>
-              {PROGRESSIONS[id].label}
-              <span className={s.progression === id ? "text-canvas/70" : "text-fg-subtle"}>{PROGRESSIONS[id].chords.join(" ")}</span>
-            </ToggleChip>
-          ))}
-        </div>
-      </Field>
-      <Field label="Change chords by">
-        <Segmented
-          label="Change chords by"
-          value={s.chordSelect}
-          onValueChange={(chordSelect) => u({ chordSelect })}
-          options={[
-            { value: "height", label: "Hand height" },
-            { value: "pinch", label: "Pinching" },
-          ]}
-        />
-      </Field>
-      <SliderRow
-        label="Strum sensitivity"
-        description="Higher plays with smaller swings."
-        value={s.strumSens}
-        onValueChange={(strumSens) => u({ strumSens })}
-        valueText={s.strumSens < 34 ? "Low" : s.strumSens < 67 ? "Medium" : "High"}
-      />
-      <LeftHanded description="Strum with your left hand and choose chords with your right." />
-    </>
-  );
-}
-
 function SynthOptions() {
   const s = useSettings((st) => st.synth);
   const u = (p: Partial<Settings["synth"]>) => settings.update("synth", p);
@@ -284,8 +210,6 @@ function PercussionOptions() {
 
 const RESET: Record<InstrumentId, () => void> = {
   piano: () => settings.update("piano", structuredClone(DEFAULTS.piano)),
-  drums: () => settings.update("drums", structuredClone(DEFAULTS.drums)),
-  guitar: () => settings.update("guitar", structuredClone(DEFAULTS.guitar)),
   synth: () => settings.update("synth", structuredClone(DEFAULTS.synth)),
   percussion: () => settings.update("percussion", structuredClone(DEFAULTS.percussion)),
 };
@@ -298,8 +222,6 @@ export function InstrumentOptions({ instrument }: { instrument: InstrumentId }) 
   return (
     <div className="flex flex-col gap-7">
       {instrument === "piano" ? <PianoOptions /> : null}
-      {instrument === "drums" ? <DrumOptions /> : null}
-      {instrument === "guitar" ? <GuitarOptions /> : null}
       {instrument === "synth" ? <SynthOptions /> : null}
       {instrument === "percussion" ? <PercussionOptions /> : null}
     </div>

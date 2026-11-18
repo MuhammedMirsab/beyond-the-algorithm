@@ -4,6 +4,7 @@ import { settings } from "../settings";
 import { openCamera, stopStream } from "./camera";
 import { EMPTY_FRAME, HandSet, type FoundHand, type HandLabel, type TrackFrame } from "./hands";
 import { acquireHandModel, type Delegate, type HandModel, type ModelLease } from "./landmarker";
+import { PlayerHands } from "./player-hands";
 import { playArea } from "./reach";
 import { NO_STROKE, simHandPoints, startStroke, strokeStep, type SimAnchor, type Stroke } from "./sim-hand";
 
@@ -51,6 +52,8 @@ const SIM_HZ = 60;
 class HandTracker {
   private stateValue: TrackerState = OFF;
   private readonly hands = new HandSet();
+  /** Keeps the visitor's own hands out of everything the model finds (a booth has a crowd behind the player). */
+  private readonly player = new PlayerHands();
   private readonly frameListeners = new Set<(f: TrackFrame) => void>();
   private readonly stateListeners = new Set<() => void>();
   private videoEl: HTMLVideoElement | null = null;
@@ -250,7 +253,8 @@ class HandTracker {
       const cat = res.handedness[i]?.[0];
       return { label: this.hands.labelFor(cat?.categoryName), pts: lm.map((p) => ({ x: 1 - p.x, y: p.y })), score: cat?.score ?? 0 };
     });
-    this.emit(this.hands.ingest(found, now, this.aspect, settings.get().tracking.smoothing));
+    const mine = this.player.pick(found, this.aspect, this.hands.palms(now));
+    this.emit(this.hands.ingest(mine, now, this.aspect, settings.get().tracking.smoothing));
     this.measure(now, video);
   }
 
@@ -314,6 +318,7 @@ class HandTracker {
     this.sim = { x: 0.6, y: 0.4, fist: false, leftY: -1, visible: false };
     this.simStroke = NO_STROKE;
     this.hands.clear();
+    this.player.reset();
     this.lastFrame = EMPTY_FRAME;
     this.frameTimes = [];
     this.detHist = [];

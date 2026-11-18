@@ -1,7 +1,12 @@
 /**
  * MediaPipe Hand Landmarker, self-hosted under /mediapipe (see @/lib/mediapipe)
- * so it works on exhibition Wi-Fi. Two hands, GPU first with a CPU fallback,
- * as in the original app. `?delegate=cpu` forces the CPU for troubleshooting.
+ * so it works on exhibition Wi-Fi. GPU first with a CPU fallback, as in the
+ * original app. `?delegate=cpu` forces the CPU for troubleshooting.
+ *
+ * The game plays with two hands, but the model is asked for more: at a busy
+ * booth the crowd behind the visitor has hands too, and with only two places
+ * a bystander's hand could take one and the visitor's own hand would not be
+ * looked for again until it left. player-hands.ts picks the visitor's two.
  *
  * The library is imported lazily, so nothing touches the browser on the
  * server. One landmarker is shared through leases: React StrictMode's double
@@ -12,6 +17,9 @@ import type { HandLandmarker, HandLandmarkerResult } from "@mediapipe/tasks-visi
 import { MEDIAPIPE_MODELS, MEDIAPIPE_WASM } from "@/lib/mediapipe";
 
 export type Delegate = "GPU" | "CPU";
+
+/** Hands looked for in each picture: the visitor's two plus room for the crowd behind them (fewer on the slower CPU). */
+const HANDS_FOUND: Record<Delegate, number> = { GPU: 4, CPU: 3 };
 
 /** Rough sizes, only used to weight progress when the server sends no content-length. */
 const MODEL_EST = 7.8e6;
@@ -91,7 +99,7 @@ export class HandModel {
           const landmarker = await HandLandmarker.createFromOptions(fileset, {
             baseOptions: { modelAssetBuffer: modelBytes.slice(), delegate },
             runningMode: "VIDEO",
-            numHands: 2,
+            numHands: HANDS_FOUND[delegate],
             minHandDetectionConfidence: options.minConfidence,
             minHandPresenceConfidence: options.minConfidence,
             minTrackingConfidence: 0.5,

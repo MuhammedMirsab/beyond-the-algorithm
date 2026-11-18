@@ -33,23 +33,6 @@ const GLYPHS: Record<InstrumentId, React.ReactNode> = {
       <rect x="13.6" y="5.5" width="2.8" height="7" rx="0.6" fill="currentColor" />
     </>
   ),
-  // A snare drum and two sticks coming down on it.
-  drums: (
-    <>
-      <ellipse cx="12" cy="12" rx="8" ry="2.8" />
-      <path d="M4 12v5c0 1.55 3.6 2.8 8 2.8s8-1.25 8-2.8v-5" />
-      <path d="M5.5 3.5 10.5 9.6M18.5 3.5 13.5 9.6" />
-    </>
-  ),
-  // A guitar, neck up and to the right: two bouts, sound hole, bridge.
-  guitar: (
-    <g transform="translate(12 12.4) scale(1.14) rotate(42) translate(-12 -12)">
-      <path d="M9.52 12.13A4.6 4.6 0 1 0 14.48 12.13A3.4 3.4 0 1 0 9.52 12.13Z" />
-      <circle cx="12" cy="14.5" r="1.3" fill="currentColor" stroke="none" />
-      <path d="M12 6.4V1.6" />
-      <path d="M10.6 18.1h2.8" />
-    </g>
-  ),
   // A wave with a fingertip riding its crest: pitch follows the hand.
   synth: (
     <>

@@ -4,7 +4,7 @@ import { coachLine, IDLE_REMIND_MS, NO_HANDS_MS, STEP_AT, type CoachInput } from
 const base: CoachInput = {
   mode: "camera",
   live: true,
-  instrument: "drums",
+  instrument: "percussion",
   leftHanded: false,
   touch: false,
   left: true,
@@ -32,7 +32,7 @@ describe("coach", () => {
     expect(l?.text).toBe("Raise your hands so the camera can see them.");
     expect(l?.big).toBe(true);
     // A hand that dropped out for a moment is not worth a message.
-    expect(line({ left: false, right: false, size: null, noHandsFor: NO_HANDS_MS - 1 })?.id).toBe("drums-0");
+    expect(line({ left: false, right: false, size: null, noHandsFor: NO_HANDS_MS - 1 })?.id).toBe("percussion-0");
   });
 
   it("puts light before distance, and distance before the lesson", () => {
@@ -47,12 +47,13 @@ describe("coach", () => {
     const first = line({ events: 1, sinceEvent: 100 });
     expect(first?.tone).toBe("good");
     expect(first?.text).toContain("The camera saw your hand move down fast");
-    expect(line({ events: STEP_AT[2], sinceEvent: 100 })?.text).toBe("Hit faster to play louder.");
+    expect(line({ events: STEP_AT[2], sinceEvent: 100 })?.text).toBe("Make a fist and shake it for the shaker.");
+    expect(line({ events: STEP_AT[3], sinceEvent: 100 })?.text).toBe("Hit faster to play louder.");
     expect(line({ events: STEP_AT[4], sinceEvent: 100 })).toBeNull();
   });
 
   it("reminds a visitor who has stopped, with a hand still up", () => {
-    expect(line({ events: 40, sinceEvent: IDLE_REMIND_MS })?.id).toBe("drums-remind");
+    expect(line({ events: 40, sinceEvent: IDLE_REMIND_MS })?.id).toBe("percussion-remind");
   });
 
   it("speaks to the mouse and to touch screens in their own words", () => {
@@ -60,13 +61,8 @@ describe("coach", () => {
     expect(line({ mode: "mouse", touch: true })?.text).toBe("Tap a pad, or flick the finger down over it.");
   });
 
-  it("names the strumming hand, and swaps it for left-handed players", () => {
-    expect(line({ instrument: "guitar" })?.text).toBe("Swing your right hand down through the strings.");
-    expect(line({ instrument: "guitar", leftHanded: true })?.text).toBe("Swing your left hand down through the strings.");
-  });
-
   it("never writes in capitals or with exclamation marks", () => {
-    for (const instrument of ["drums", "piano", "guitar", "synth", "percussion"] as const) {
+    for (const instrument of ["piano", "synth", "percussion"] as const) {
       for (const mode of ["camera", "mouse"] as const) {
         for (const events of [0, 1, 4, 8]) {
           const l = line({ instrument, mode, events, sinceEvent: 100 });
