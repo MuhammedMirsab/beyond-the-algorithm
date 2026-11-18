@@ -1,15 +1,19 @@
 "use client";
 
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Check, RotateCcw, Trophy } from "lucide-react";
+import { useState } from "react";
 import { NextPlayerIcon } from "@/components/game/next-player";
 import { ResultPanel } from "@/components/game/panels";
+import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { KeyHints } from "@/components/ui/key-hints";
 import { Score, Stat } from "@/components/ui/score";
 import { entrance } from "@/lib/entrance";
 import { cn } from "@/lib/cn";
+import { useBoard } from "@/lib/leaderboard";
+import { BOARD_ID, boardDetail, boardScore, boardTiebreak, type RunForBoard } from "../engine/board";
 import { formatScore, formatTime } from "../engine/format";
 import { LEVELS } from "../engine/game/levels";
 import { LEVEL_COUNT, type RunSummary } from "../play/machine";
@@ -61,6 +65,42 @@ function verdict(summary: RunSummary): { label: string; title: string } {
     label: `Out of lives · level ${summary.levelIndex + 1}, ${pct}% of the way`,
     title: summary.furthest >= 0.75 ? `So close to the end of level ${summary.levelIndex + 1}` : "Out of lives",
   };
+}
+
+/** Today's shared board: a name for this run first (skippable), then the board with the visitor's row lit. */
+function RunBoard({ run }: { run: RunForBoard }) {
+  const board = useBoard(BOARD_ID);
+  const [step, setStep] = useState<"name" | "board">("name");
+  const [entryId, setEntryId] = useState<string | null>(null);
+  const points = boardScore(run);
+
+  const submitName = (name: string) => {
+    const { id } = board.add({ name, score: points, detail: boardDetail(run), tiebreak: boardTiebreak(run) });
+    setEntryId(id);
+    setStep("board");
+  };
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {step === "name" ? (
+        <motion.div
+          key="name"
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-ring sm:p-6"
+        >
+          <NameEntry onSubmit={submitName} onSkip={() => setStep("board")} />
+          <p className="type-caption text-fg-subtle">
+            {formatScore(points)} points for this run. Only the name you type and your score are saved, on the shared board.
+          </p>
+        </motion.div>
+      ) : (
+        <motion.div key="board" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: EASE_OUT }}>
+          <Scoreboard entries={board.entries} highlightId={entryId} total={board.total} rankOf={board.rankOf} loading={!board.ready} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }
 
 /** Game over and victory: the verdict, the road so far, the visitor's numbers, the next step, then the reveal. */
@@ -131,6 +171,16 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
           </div>
         </section>
       ) : null}
+      <RunBoard
+        run={{
+          outcome: summary.outcome,
+          score: summary.score,
+          levelIndex: summary.levelIndex,
+          furthest: summary.furthest,
+          levelCount: LEVEL_COUNT,
+          runTime: summary.runTime,
+        }}
+      />
       <FaceHowItWorks session={session} calibration={view.calibration} stats={view.faceStats} tracking={view.tracking} />
     </ResultPanel>
   );
