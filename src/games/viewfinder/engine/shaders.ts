@@ -17,6 +17,10 @@
  *
  * Lens order must match LENSES in ./lenses.ts.
  *
+ * Both programs also come in a FALLBACK build with the previous Cartoon lens.
+ * The renderer and the thumbnails switch to it only if a graphics driver
+ * rejects the current one, so a shader problem can never take the game down.
+ *
  * The capture flash of the original app is gone: the booth never saves
  * pictures of visitors, so there is nothing to flash for.
  */
@@ -44,19 +48,23 @@ uniform int uLens;
 uniform int uPrevLens;
 uniform float uMix;       // 0..1 lens transition progress (1 = settled)
 uniform float uDpr;
-// Cartoon lens face (device px): [0] eyeR.xy eyeL.xy · [1] center.xy faceW eyeW
-// [2] chin.xy presence 0 · [3] cheekR.xy cheekL.xy. presence 0 = no face.
-uniform vec4 uFace[4];
+// Cartoon lens face (device px), filled by faceLayout() in face.ts:
+// [0] iris R.xy, iris L.xy · [1] head centre.xy, face width, eye width
+// [2] chin.xy, presence, face height · [3] cheek R.xy, cheek L.xy
+// [4] right eye middle.xy, axis.xy · [5] right eye half width, upper lid, lower lid, iris radius
+// [6] left eye middle.xy, axis.xy · [7] left eye sizes, as [5] · [8] nose tip.xy, nose width, 0
+// [9] up.xy (unit, chin to forehead), 0, 0. Presence 0 = no face.
+uniform vec4 uFace[10];
 
 out vec4 outColor;
 `;
 
 /**
- * Helpers and the eleven lenses. Reads uVideo, uVideoRect, uMirror, uCenter,
+ * Helpers and the ten other lenses. Reads uVideo, uVideoRect, uMirror, uCenter,
  * uBox, uTime, uDpr and uFace: uniforms in the compositor, per-thumbnail
  * globals in the preview.
  */
-const LENS_LIBRARY = `
+const LIB_HEAD = `
 // ───────────────────────────── helpers
 vec2 toUV(vec2 p) {
   vec2 uv = (p - uVideoRect.xy) / uVideoRect.zw;
@@ -249,8 +257,256 @@ vec3 lensLoupe(vec2 p) {
   vec3 col = vec3(cam(q + dir * ca).r, cam(q).g, cam(q - dir * ca).b);
   return col * (1.06 - 0.12 * k * k);
 }
+`;
 
+/** The Cartoon lens: a 3D animated film look from pixels only. */
+const CARTOON = `
+// ───────────────────────────── cartoon (3D animated film look)
+// A 3D animated film character made from the camera's own pixels. The face
+// model only says where the eyes, nose, cheeks and chin are; everything below
+// is plain pixel work, nothing is generated:
+//   big round eyes, a big head, a small chin, a soft round nose
+//       → local warps around those points
+//   clean cartoon eyes: white eyeballs, big glossy irises in the visitor's own
+//   eye colour, a dark lash line and two catchlights
+//       → painted inside a bigger, rounder opening that still blinks with the real eye
+//   smooth skin that light seems to glow through
+//       → two edge-preserving blurs (the wider one on skin only) and a warm red
+//         tint where the light fades
+//   a face that looks modelled in 3D
+//       → lit like a soft rounded shape: warm key light from the upper left,
+//         rim light on the far side, a broad sheen
+//   rosy cheeks and nose, rich colour, shadows that never go black, glow
+//   shallow depth of field → all but the head and shoulders melts into soft colour
+vec2 bulge(vec2 p, vec2 c, float R, float s) {
+  vec2 d = p - c;
+  float rr = max(R, 1e-3);
+  float k = max(0.0, 1.0 - dot(d, d) / (rr * rr));
+  return -d * s * k * k; // s > 0 magnifies, s < 0 shrinks
+}
 
+vec2 cartoonWarp(vec2 p) {
+  float w = uFace[2].z;
+  if (w < 0.001) return p;
+  float faceW = uFace[1].z;
+  float faceH = uFace[2].w;
+  vec2 up = uFace[9].xy;
+  vec2 brow = 0.5 * (uFace[4].xy + uFace[6].xy) + up * (0.12 * faceH);
+  vec2 off = bulge(p, brow, faceW * 1.05, 0.16 * w);         // a bigger head
+  off += bulge(p, uFace[4].xy, uFace[5].x * 3.1, 0.4 * w);   // big eyes
+  off += bulge(p, uFace[6].xy, uFace[7].x * 3.1, 0.4 * w);
+  off += bulge(p, uFace[8].xy, uFace[8].z * 0.9, 0.16 * w);  // a soft, round nose tip
+  off += bulge(p, uFace[2].xy - up * (0.06 * faceH), faceW * 0.55, -0.26 * w); // a small chin
+  return p + off;
+}
+
+// Edge-preserving blur: neighbours of a similar colour are averaged, edges stay.
+vec3 bilateral(vec2 q, float r, float k, out vec3 bright) {
+  vec3 c0 = cam(q);
+  vec3 sum = c0;
+  float wsum = 1.0;
+  bright = max(c0 - 0.72, 0.0);
+  for (int i = 0; i < 16; i++) {
+    float a = float(i) * 0.3926991 + 0.2;
+    vec2 o = vec2(cos(a), sin(a)) * r * ((i & 1) == 0 ? 1.0 : 0.55);
+    vec3 c = cam(q + o);
+    vec3 dc = c - c0;
+    float wt = exp(-dot(dc, dc) * k);
+    sum += c * wt;
+    wsum += wt;
+    bright += max(c - 0.72, 0.0);
+  }
+  bright /= 17.0;
+  return sum / wsum;
+}
+
+// A second, wider pass for skin: pores, freckles and creases go, features stay.
+vec3 skinBlur(vec2 q, float r, vec3 c0) {
+  vec3 sum = c0;
+  float wsum = 1.0;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 0.7853982 + 0.39;
+    vec3 c = cam(q + vec2(cos(a), sin(a)) * r);
+    vec3 dc = c - c0;
+    float wt = exp(-dot(dc, dc) * 22.0);
+    sum += c * wt;
+    wsum += wt;
+  }
+  return sum / wsum;
+}
+
+vec3 discBlur(vec2 q, float r) {
+  vec3 sum = cam(q);
+  for (int i = 0; i < 20; i++) {
+    float a = float(i) * 2.39996; // golden angle spiral
+    float rr = r * sqrt((float(i) + 0.5) / 20.0);
+    sum += cam(q + vec2(cos(a), sin(a)) * rr);
+  }
+  return sum / 21.0;
+}
+
+float skinTone(vec3 c) {
+  float cb = -0.1687 * c.r - 0.3313 * c.g + 0.5 * c.b;
+  float cr = 0.5 * c.r - 0.4187 * c.g - 0.0813 * c.b;
+  // Light and dark skin both sit in this small patch of blue-difference / red-difference.
+  return (1.0 - smoothstep(0.025, 0.06, abs(cb + 0.07))) * (1.0 - smoothstep(0.035, 0.085, abs(cr - 0.1))) * smoothstep(0.04, 0.12, luma(c));
+}
+
+float softDot(vec2 p, vec2 c, float r) {
+  float rr = max(r, 1e-3);
+  return 1.0 - smoothstep(rr * 0.55, rr, length(p - c));
+}
+
+// One cartoon eye, drawn in camera space (q) so it follows the warp.
+// m: middle of the corners · ax: unit vector along the eye
+// g: half width, upper lid, lower lid, iris radius · ic: iris centre.
+// Returns the eye's colour and how much of this pixel it covers; lash gets
+// the strength of the dark lid lines (they also fall on the skin around it).
+vec4 cartoonEye(vec2 q, vec2 m, vec2 ax, vec4 g, vec2 ic, out float lash) {
+  lash = 0.0;
+  float a = max(g.x, 1.0);
+  vec2 d = q - m;
+  if (dot(d, d) > 4.0 * a * a) return vec4(0.0);
+  vec2 upv = vec2(ax.y, -ax.x);
+  if (upv.y > 0.0) upv = -upv; // screen y grows downwards
+  float lx = dot(d, ax);
+  float ly = dot(d, upv);
+  float t = min(abs(lx) / a, 1.0);
+  float edge = max(1.0 - t * t, 0.0);
+  float fe = 0.04 * a + 0.6 * uDpr;
+
+  // A rounder, taller opening than the real one; it still closes in a blink.
+  float upper = g.y * 1.7 * pow(edge, 0.55);
+  float lower = g.z * 1.5 * pow(edge, 0.75);
+  float open = smoothstep(-fe, fe, upper - ly) * smoothstep(-fe, fe, ly + lower) * (1.0 - smoothstep(a - fe, a + fe, abs(lx)));
+
+  // Eyeball: warm white, shaded under the upper lid and into the corners.
+  float lidShade = 1.0 - smoothstep(upper - 0.6 * max(upper, 1.0), upper, ly);
+  vec3 ball = vec3(0.96, 0.94, 0.92) * mix(0.6, 1.0, lidShade) * mix(0.82, 1.0, 1.0 - smoothstep(0.55, 1.0, t));
+
+  // Iris: bigger than the real one, in the visitor's own eye colour made rich.
+  float ir = max(g.w, 0.5) * 1.3;
+  vec2 di = q - ic;
+  float r = length(di) / ir;
+  float rs = g.w * 0.55;
+  vec3 raw = 0.25 * (cam(ic + vec2(rs, 0.3 * rs)) + cam(ic + vec2(-rs, 0.3 * rs))
+    + cam(ic + vec2(0.35 * rs, rs)) + cam(ic + vec2(-0.35 * rs, rs)));
+  float rl = luma(raw);
+  vec3 chroma = raw - vec3(rl);
+  vec3 tint = clamp((vec3(rl) + chroma * 2.0) * (0.36 / max(rl, 0.03)), 0.0, 1.0);
+  vec3 iris = mix(vec3(0.45, 0.27, 0.13), tint, smoothstep(0.015, 0.05, length(chroma)));
+  float below = clamp(dot(di, -upv) / ir, -1.0, 1.0);
+  iris *= 0.55 + 0.75 * smoothstep(-0.6, 0.9, below); // light pools in the lower half
+  float fibre = r > 0.4 ? sin(atan(di.y, di.x) * 23.0) : 0.0; // (atan needs a non-zero vector)
+  iris *= 1.0 + 0.12 * fibre * smoothstep(0.45, 0.9, r); // fibres
+  iris *= mix(1.0, 0.3, smoothstep(0.74, 1.0, r)); // dark rim
+  iris = mix(iris, vec3(0.025, 0.02, 0.02), 1.0 - smoothstep(0.4, 0.47, r)); // pupil
+  float inIris = 1.0 - smoothstep(1.0 - fe / ir, 1.0, r);
+  ball = mix(ball, iris * mix(0.6, 1.0, lidShade), inIris);
+  // Lit like the face around it (the cheek below), so the eyes never glow in a dim room.
+  ball *= clamp(0.45 + 0.9 * luma(cam(m - upv * (g.z + a))), 0.65, 1.0);
+
+  // Catchlights: the window reflection animated eyes always have.
+  vec2 key = vec2(-0.6, -0.8); // towards the light: up and to the left on screen
+  float shine = 1.0 - smoothstep(0.16, 0.25, length(di / ir - key * 0.42));
+  shine = max(shine, 0.8 * (1.0 - smoothstep(0.05, 0.09, length(di / ir + key * 0.4))));
+  ball = mix(ball, vec3(1.0), shine * inIris);
+
+  // Lash line: a dark upper lid edge, thickest in the middle, thin at the corners.
+  float th = a * 0.16 * (0.3 + 0.7 * pow(edge, 0.35));
+  float du = ly - upper;
+  lash = smoothstep(-0.4 * th - fe, -0.4 * th, du) * (1.0 - smoothstep(th, th + fe, du)) * (1.0 - smoothstep(a * 0.86, a * 1.06, abs(lx)));
+  // And a soft lower lid line.
+  float dl = -ly - lower;
+  float tl = a * 0.05;
+  lash = max(lash, 0.3 * smoothstep(-tl - fe, -tl, dl) * (1.0 - smoothstep(tl, tl + fe, dl)) * (1.0 - smoothstep(a * 0.55, a, abs(lx))));
+  return vec4(ball, open);
+}
+
+vec3 lensCartoon(vec2 p) {
+  float w = uFace[2].z;
+  bool hasFace = w > 0.001;
+  float faceW = max(uFace[1].z, 1.0);
+  float faceH = max(uFace[2].w, 1.0);
+  vec2 fu = uFace[9].xy;       // up the face, chin to forehead
+  vec2 fr = vec2(-fu.y, fu.x); // across the face, to the right on screen
+  vec2 q = cartoonWarp(p);
+
+  // Every surface smoothed like a modelled, painted one; skin smoothest of all.
+  float r = hasFace ? clamp(faceW * 0.035, 3.0 * uDpr, 12.0 * uDpr) : 5.0 * uDpr;
+  vec3 bright;
+  vec3 col = bilateral(q, r, 40.0, bright);
+  float skin = skinTone(col);
+  if (skin > 0.02) col = mix(col, skinBlur(q, r * 2.2, col), skin * 0.75);
+
+  if (hasFace) {
+    // The face, lit like a soft rounded shape (an ellipsoid) from the upper left.
+    vec2 hd = q - uFace[1].xy;
+    vec2 e2 = vec2(dot(hd, fr) / (0.55 * faceW), dot(hd, fu) / (0.58 * faceH));
+    float rr = dot(e2, e2);
+    float z = sqrt(max(1.0 - rr, 0.0));
+    vec3 n = normalize(vec3(e2, z + 0.2));
+    vec3 L = normalize(vec3(-0.55, 0.6, 0.65));
+    float wrap = clamp((dot(n, L) + 0.5) / 1.5, 0.0, 1.0);
+    float on = (1.0 - smoothstep(0.8, 1.08, sqrt(rr))) * skin * w;
+    vec3 lit = col * (0.74 + 0.4 * wrap);
+    // Where the light fades, it glows red through the skin.
+    lit += vec3(0.09, 0.02, 0.0) * smoothstep(0.2, 0.45, wrap) * (1.0 - smoothstep(0.45, 0.75, wrap));
+    // Rim light on the far side, and a broad soft sheen.
+    lit += vec3(1.0, 0.9, 0.82) * 0.16 * pow(1.0 - min(z, 1.0), 2.0) * smoothstep(-0.1, 0.6, e2.x);
+    lit += vec3(1.0, 0.96, 0.9) * 0.09 * pow(max(dot(n, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0), 16.0);
+    col = mix(col, lit, on);
+
+    // Rosy cheeks and nose tip, and a soft highlight on the nose.
+    float blush = min(softDot(q, uFace[3].xy, faceW * 0.16) + softDot(q, uFace[3].zw, faceW * 0.16), 1.0);
+    col = mix(col, col * vec3(1.06, 0.8, 0.8) + vec3(0.07, 0.01, 0.02), blush * skin * 0.42 * w);
+    float nose = softDot(q, uFace[8].xy, uFace[8].z * 0.55);
+    col = mix(col, col * vec3(1.05, 0.85, 0.83) + vec3(0.05, 0.0, 0.0), nose * skin * 0.3 * w);
+    col += vec3(1.0, 0.95, 0.9) * (0.14 * w) * softDot(q, uFace[8].xy + (fu * 0.22 - fr * 0.18) * uFace[8].z, uFace[8].z * 0.22);
+
+    // Depth of field: the head and shoulders stay sharp, the rest melts into soft colour.
+    vec2 hp = p - uFace[1].xy;
+    float eh = length(vec2(dot(hp, fr) / (0.78 * faceW), dot(hp, fu) / (0.8 * faceH)));
+    vec2 tp = p - (uFace[2].xy - fu * (0.9 * faceH));
+    float et = length(vec2(dot(tp, fr) / (1.55 * faceW), dot(tp, fu) / (0.95 * faceH)));
+    float dof = smoothstep(0.95, 1.5, min(eh, et)) * w;
+    if (dof > 0.01) {
+      vec3 bg = discBlur(q, clamp(faceW * 0.09, 8.0 * uDpr, 26.0 * uDpr));
+      float bl = luma(bg);
+      bg = max(mix(vec3(bl), bg, 1.3), 0.0) * 0.84 + vec3(0.11, 0.085, 0.08);
+      col = mix(col, bg, dof);
+    }
+  }
+
+  // Rich colour, cool shadows and warm highlights, never a crushed black.
+  float g = luma(col);
+  col = max(mix(vec3(g), col, 1.25), 0.0);
+  col *= mix(vec3(0.95, 0.97, 1.05), vec3(1.04, 1.0, 0.94), smoothstep(0.2, 0.85, g));
+  col = col * 0.88 + vec3(0.045, 0.05, 0.065);
+
+  if (hasFace) {
+    float lashR;
+    float lashL;
+    vec4 eyeR = cartoonEye(q, uFace[4].xy, uFace[4].zw, uFace[5], uFace[0].xy, lashR);
+    vec4 eyeL = cartoonEye(q, uFace[6].xy, uFace[6].zw, uFace[7], uFace[0].zw, lashL);
+    col = mix(col, eyeR.rgb, eyeR.a * w);
+    col = mix(col, eyeL.rgb, eyeL.a * w);
+    col = mix(col, vec3(0.07, 0.045, 0.04), max(lashR, lashL) * w);
+  }
+
+  // Soft glow around bright areas.
+  col += bright * vec3(1.0, 0.86, 0.72) * 0.7;
+  return col;
+}
+`;
+
+/**
+ * The previous Cartoon lens, kept as a fallback: if the new one fails to
+ * compile on some graphics driver, the renderer and the thumbnails build their
+ * program with this one instead, so the game keeps working. It reads only
+ * uFace[0] to uFace[3], which mean the same in both.
+ */
+const CARTOON_FALLBACK = `
 // ───────────────────────────── cartoon (3D animated film look)
 // What makes the look, and how each part is faked in one pass:
 //   big eyes, big head, small chin → three local warps around face points
@@ -373,7 +629,9 @@ vec3 lensCartoon(vec2 p) {
   col += bright * vec3(1.0, 0.85, 0.7) * 0.9;
   return col;
 }
+`;
 
+const LIB_TAIL = `
 vec3 lens(int id, vec2 p) {
   switch (id) {
     case 0: return lensPixel(p);
@@ -391,6 +649,9 @@ vec3 lens(int id, vec2 p) {
   return cam(p);
 }
 `;
+
+/** Helpers, every lens and the lens switch, with the given Cartoon lens. */
+const lensLibrary = (cartoon: string) => LIB_HEAD + cartoon + LIB_TAIL;
 
 const MAIN_COMPOSE = `
 // ───────────────────────────── compose
@@ -440,7 +701,10 @@ void main() {
 }
 `;
 
-export const FRAGMENT_SHADER = MAIN_HEADER + LENS_LIBRARY + MAIN_COMPOSE;
+export const FRAGMENT_SHADER = MAIN_HEADER + lensLibrary(CARTOON) + MAIN_COMPOSE;
+
+/** The compositor with the previous Cartoon lens, for drivers that reject the new one. */
+export const FRAGMENT_SHADER_FALLBACK = MAIN_HEADER + lensLibrary(CARTOON_FALLBACK) + MAIN_COMPOSE;
 
 /** Most thumbnails the preview program lays out (one per lens). */
 export const PREVIEW_MAX_CELLS = 12;
@@ -458,9 +722,9 @@ uniform vec4 uCells[${PREVIEW_MAX_CELLS}];         // thumbnail rects (device px
 uniform int uCount;
 uniform float uRadius;          // thumbnail corner radius (device px)
 uniform vec4 uLocalRect;        // the camera picture fitted into one thumbnail (thumbnail px)
-// The Cartoon lens face, as fractions of the main view's video rect:
-// [0] eyeR.xy eyeL.xy · [1] center.xy faceW eyeW (of the rect width) · [2] chin.xy presence 0 · [3] cheekR.xy cheekL.xy
-uniform vec4 uFaceN[4];
+// The Cartoon lens face, laid out like uFace in the compositor, with points as
+// fractions of the main view's video rect and lengths as fractions of its width.
+uniform vec4 uFaceN[10];
 
 out vec4 outColor;
 
@@ -468,7 +732,7 @@ out vec4 outColor;
 vec4 gRect;
 vec2 gCenter;
 vec4 gBox;
-vec4 gFace[4];
+vec4 gFace[10];
 #define uVideoRect gRect
 #define uCenter gCenter
 #define uBox gBox
@@ -512,13 +776,22 @@ void main() {
   gCenter = cell.zw * 0.5;
   gBox = vec4(0.0, 0.0, cell.zw);
   gFace[0] = vec4(toCell(uFaceN[0].xy), toCell(uFaceN[0].zw));
-  gFace[1] = vec4(toCell(uFaceN[1].xy), uFaceN[1].z * gRect.z, uFaceN[1].w * gRect.z);
-  gFace[2] = vec4(toCell(uFaceN[2].xy), uFaceN[2].z, 0.0);
+  gFace[1] = vec4(toCell(uFaceN[1].xy), uFaceN[1].zw * gRect.z);
+  gFace[2] = vec4(toCell(uFaceN[2].xy), uFaceN[2].z, uFaceN[2].w * gRect.z);
   gFace[3] = vec4(toCell(uFaceN[3].xy), toCell(uFaceN[3].zw));
+  gFace[4] = vec4(toCell(uFaceN[4].xy), uFaceN[4].zw);
+  gFace[5] = uFaceN[5] * gRect.z;
+  gFace[6] = vec4(toCell(uFaceN[6].xy), uFaceN[6].zw);
+  gFace[7] = uFaceN[7] * gRect.z;
+  gFace[8] = vec4(toCell(uFaceN[8].xy), uFaceN[8].z * gRect.z, 0.0);
+  gFace[9] = uFaceN[9];
 
   vec3 col = clamp(lens(id, local), 0.0, 1.0);
   outColor = vec4(col * alpha, alpha);
 }
 `;
 
-export const PREVIEW_FRAGMENT_SHADER = PREVIEW_HEADER + LENS_LIBRARY + PREVIEW_MAIN;
+export const PREVIEW_FRAGMENT_SHADER = PREVIEW_HEADER + lensLibrary(CARTOON) + PREVIEW_MAIN;
+
+/** The thumbnails with the previous Cartoon lens, for drivers that reject the new one. */
+export const PREVIEW_FRAGMENT_SHADER_FALLBACK = PREVIEW_HEADER + lensLibrary(CARTOON_FALLBACK) + PREVIEW_MAIN;

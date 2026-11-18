@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { FACE_POINTS_USED } from "../engine/face-points";
 import { LENSES } from "../engine/lenses";
 import { POINTS_LABEL } from "../engine/overlay";
 import {
@@ -120,7 +121,7 @@ describe("how it works", () => {
     expect(howSteps(numbers)[1].text).toContain("(point 4)");
     expect(howSteps(numbers)[1].text).toContain("(point 8)");
     expect(howSteps(numbers)[4].text).toContain("478 points");
-    expect(howSteps(numbers)[4].text).toContain("reads 12 of them");
+    expect(howSteps(numbers)[4].text).toContain(`reads ${FACE_POINTS_USED} of them`);
   });
 
   test("uses the visitor's own numbers", () => {

@@ -36,7 +36,7 @@ export const LENSES = [
   {
     id: "cartoon",
     name: "Cartoon",
-    recipe: "A face model finds your eyes and chin. Your eyes grow, your chin shrinks, your skin is smoothed and the light warms.",
+    recipe: "A face model finds your eyes, nose and chin. Your eyes grow and get big shiny irises, your chin shrinks, your skin is smoothed and your face is lit like a 3D film.",
     accent: "#ffb38a",
   },
   {

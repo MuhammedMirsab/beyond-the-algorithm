@@ -259,7 +259,7 @@ export function howSteps(n: SessionNumbers | null): HowStep[] {
     {
       id: "face",
       title: "Cartoon also finds your face",
-      text: `Pick Cartoon and a second model places ${FACE_POINTS} points on your face. The recipe reads ${FACE_POINTS_USED} of them, around your eyes, cheeks and chin, then grows your eyes, shrinks your chin, smooths your skin and warms the light.`,
+      text: `Pick Cartoon and a second model places ${FACE_POINTS} points on your face. The recipe reads ${FACE_POINTS_USED} of them, around your eyes, nose, cheeks and chin, then grows your eyes and repaints them, shrinks your chin, smooths your skin and lights your face like a 3D film.`,
       yours:
         has && n.facesFound > 0
           ? `It found your face in ${formatCount(n.facesFound)} ${plural(n.facesFound, "picture", "pictures")}.`
