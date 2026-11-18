@@ -3,7 +3,7 @@
 import { Check, CircleHelp, X } from "lucide-react";
 import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/cn";
-import { NONE_LABEL, type Candidate, type Decision, type Outcome } from "../engine/rules";
+import type { Candidate, Decision, Outcome } from "../engine/rules";
 import { explainDecision, OUTCOME_WORD } from "./copy";
 
 const OUTCOME_TONE = { right: "success", wrong: "danger", unknown: "warning" } as const;
@@ -37,12 +37,11 @@ export function OutcomeBadge({ outcome, className }: { outcome: Outcome; classNa
 
 /**
  * How sure it is about each group, with the line it must reach to answer
- * (the visitor's slider). "No object" never needs the line: when it wins,
- * nothing it learned is in view.
+ * (the visitor's slider).
  */
 export function SureBars({ candidates, decision, threshold }: { candidates: Candidate[]; decision: Decision; threshold: number }) {
   const line = Math.round(threshold * 100);
-  const highlight = decision.reason === "nothing" ? NONE_LABEL : decision.answer;
+  const highlight = decision.answer;
   return (
     <div className="flex flex-col gap-3">
       <ul className="flex flex-col gap-3">
@@ -61,9 +60,7 @@ export function SureBars({ candidates, decision, threshold }: { candidates: Cand
                   )}
                   style={{ transform: `scaleX(${p / 100})` }}
                 />
-                {c.label === NONE_LABEL ? null : (
-                  <span className="absolute -inset-y-1 w-0.5 rounded-full bg-fg" style={{ left: `${line}%` }} />
-                )}
+                <span className="absolute -inset-y-1 w-0.5 rounded-full bg-fg" style={{ left: `${line}%` }} />
               </span>
             </li>
           );

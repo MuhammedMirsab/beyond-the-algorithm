@@ -51,7 +51,7 @@ export function ClusterMap({
   label,
 }: {
   map: TrainMap;
-  /** Every group's label, the visitor's first, "No object" last. */
+  /** Every group's label, in the order the visitor named them. */
   labels: readonly string[];
   /** Where the camera's frame lands now, 0..1. */
   live?: Point2 | null;

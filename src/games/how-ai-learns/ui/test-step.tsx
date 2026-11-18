@@ -112,7 +112,7 @@ export function TestStep({ game }: { game: LearnGame }) {
     if (next) dispatch({ type: "select-test", id: next.photo.id });
   };
 
-  // In the order the visitor named them, "No object" last: the same marks as on the training map.
+  // In the order the visitor named them: the same marks as on the training map.
   const labels = trainingGroups(state.groups).map((g) => g.label);
   // With no library groups there are no test photos: the camera is the test.
   const cameraOnly = testPhotos.length === 0;

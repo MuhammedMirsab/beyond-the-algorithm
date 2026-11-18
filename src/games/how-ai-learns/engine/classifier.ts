@@ -17,7 +17,8 @@
  */
 
 import type * as TF from "@tensorflow/tfjs";
-import { decide, NONE_LABEL, rankCandidates, similarityCutoffFrom, type Candidate, type Decision } from "./rules";
+import { leaveOneOutObjectScores, objectCutoffFrom } from "./objectness";
+import { decide, rankCandidates, similarityCutoffFrom, type Candidate, type Decision } from "./rules";
 import { DEFAULT_HOLD_OUT, dedupe, stratifiedSplit, type HoldOut } from "./split";
 import { centroid, cosineSimilarity, leaveOneOutSimilarities } from "./vectors";
 
@@ -62,6 +63,8 @@ export interface Classifier {
   /** One normalised "average example" per label, same order as labels. */
   centroids: Float32Array[];
   similarityCutoff: number;
+  /** Live camera: the object score a picture needs before it names anything (objectness.ts). */
+  objectCutoff: number;
   history: EpochLog[];
   counts: { train: number; val: number; test: number; duplicatesRemoved: number };
   /** Accuracy on the held-out part of the examples, if any was held out. */
@@ -209,8 +212,7 @@ export async function trainClassifier(tf: Tf, examples: Example[], options: Trai
     // new photo of the same thing can expect. (The original compared examples
     // with an average that included themselves, which overstates closeness
     // with few examples and made it refuse most new photos at 3 to 5 each.)
-    // The "No object" group is a mix of anything else, so it is left out.
-    const intra = byLabel.flatMap((vectors, i) => (labels[i] === NONE_LABEL ? [] : leaveOneOutSimilarities(vectors, dim)));
+    const intra = byLabel.flatMap((vectors) => leaveOneOutSimilarities(vectors, dim));
 
     return {
       head,
@@ -218,6 +220,7 @@ export async function trainClassifier(tf: Tf, examples: Example[], options: Trai
       embeddingDim: dim,
       centroids,
       similarityCutoff: similarityCutoffFrom(intra),
+      objectCutoff: objectCutoffFrom(leaveOneOutObjectScores(byLabel)),
       history,
       counts: { train: train.length, val: val.length, test: test.length, duplicatesRemoved: removed },
       testAccuracy,

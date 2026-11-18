@@ -3,8 +3,7 @@
  * original predictWithClassifier, pulled out as pure functions so the booth
  * slider can re-decide without running the model again, and so it is tested.
  *
- * Four ways to stay quiet:
- * - nothing: its best match is the built-in "No object" group.
+ * Three ways to stay quiet:
  * - unfamiliar: the photo's numbers are far from the average example of the
  *   group it picked (cosine similarity below the cutoff set at training).
  * - unsure: its best guess is below the threshold the visitor chose.
@@ -20,13 +19,19 @@ export interface Candidate {
 }
 
 /**
- * The built-in group every model learns: the empty scene (camera photos of
- * the background) or photos of other things. When it wins, nothing the
- * visitor taught is in the picture.
+ * What the live camera says when none of the visitor's things is in view
+ * (see objectness.ts). Not a group: the model only learns the visitor's things.
  */
 export const NONE_LABEL = "No object";
 
-export type UnknownReason = "nothing" | "unfamiliar" | "unsure" | "torn";
+/**
+ * A new object of the same kind (another phone) sits further from the
+ * visitor's photos than those photos sit from each other, so the live camera
+ * checks familiarity against a looser cutoff than the test photos.
+ */
+export const LIVE_CUTOFF_SHARE = 0.85;
+
+export type UnknownReason = "unfamiliar" | "unsure" | "torn";
 
 export interface Decision {
   /** The label it answers with, or null for "I don't know". */
@@ -59,8 +64,6 @@ export function decide(
   const top = ranked[0];
   const runnerUp = ranked[1] ?? null;
   const margin = runnerUp ? top.probability - runnerUp.probability : top.probability;
-
-  if (top.label === NONE_LABEL) return { answer: null, reason: "nothing", top, runnerUp };
 
   const unfamiliar = top.similarity < similarityCutoff;
   const unsure = top.probability < threshold;

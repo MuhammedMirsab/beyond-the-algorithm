@@ -14,13 +14,10 @@ import {
 import { drawFromPool, photoUrl, type DatasetPhoto } from "../engine/dataset";
 import { buildMap } from "../engine/projection";
 import { loadFeatureExtractor, loadTf, modelStatusStore } from "../engine/vision";
-import { NONE_LABEL } from "../engine/rules";
 import { getSession } from "./session";
 import {
   initialState,
   LIBRARY_BATCH,
-  NONE_GROUP,
-  otherThingsPool,
   perGroupCounts,
   reducer,
   testPhotosFor,
@@ -89,16 +86,15 @@ export function useLearnGame() {
     });
   };
 
-  /** Library photos for a group: its category, or for "No object" photos of other things. */
+  /** Library photos for a group: its category's, if it has one. */
   const libraryPoolFor = (groupId: string): DatasetPhoto[] => {
     if (dataset.status !== "ready") return [];
-    if (groupId === NONE_GROUP) return otherThingsPool(state.groups, dataset.split.pool);
     const library = state.groups.find((g) => g.id === groupId)?.library;
     return library ? (dataset.split.pool.get(library) ?? []) : [];
   };
 
   const addFromLibrary = (groupId: string) => {
-    const label = groupId === NONE_GROUP ? NONE_LABEL : (state.groups.find((g) => g.id === groupId)?.name.trim() ?? "");
+    const label = state.groups.find((g) => g.id === groupId)?.name.trim() ?? "";
     const taken = new Set((state.examples[groupId] ?? []).map((p) => p.id));
     const photos = drawFromPool(libraryPoolFor(groupId), taken, LIBRARY_BATCH).map((p) => libraryExample(p, groupId, label));
     dispatch({ type: "add-examples", category: groupId, photos });
@@ -136,7 +132,7 @@ export function useLearnGame() {
               label,
               url,
               kind: "camera",
-              title: category === NONE_GROUP ? "Your photo with no object" : `Your photo of ${label}`,
+              title: `Your photo of ${label}`,
             },
           ],
         });
@@ -231,8 +227,8 @@ export function useLearnGame() {
         return;
       }
       session.setClassifier(classifier);
-      // The "photos become numbers" sample: one of the visitor's things, not the background.
-      const firstIndex = Math.max(0, examples.findIndex((e) => e.label !== NONE_LABEL));
+      // The "photos become numbers" sample: the first example.
+      const firstIndex = 0;
       const first = examples[firstIndex];
       dispatch({
         type: "train",

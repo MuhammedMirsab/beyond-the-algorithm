@@ -4,7 +4,6 @@ import {
   initialState,
   MAX_EXAMPLES,
   namesProblem,
-  otherThingsPool,
   reducer,
   tallyResults,
   testPhotosFor,
@@ -45,7 +44,7 @@ describe("naming", () => {
     s = reducer(s, { type: "rename", id: "g2", name: "phone " });
     expect(namesProblem(s.groups)).toBe("Give each thing a different name.");
     s = reducer(s, { type: "rename", id: "g2", name: "No object" });
-    expect(namesProblem(s.groups)).toContain("already one of its groups");
+    expect(namesProblem(s.groups)).toContain("when nothing is there");
     s = reducer(s, { type: "rename", id: "g2", name: "Bottle" });
     expect(namesProblem(s.groups)).toBeNull();
     s = reducer(s, { type: "add-group" });
@@ -79,15 +78,9 @@ describe("naming", () => {
     expect(s.examples.g3.map((p) => p.kind)).toEqual(["camera"]);
   });
 
-  test("the model always learns No object too", () => {
+  test("the model learns only the visitor's things, no extra No object group", () => {
     const s = reducer(initialState, { type: "rename", id: "g1", name: "Phone" });
-    expect(trainingGroups(s.groups).map((g) => g.label)).toEqual(["Phone", "", "No object"]);
-    const pool = new Map([
-      ["pens", [{ id: "p1" } as DatasetPhoto]],
-      ["cups", [{ id: "c1" } as DatasetPhoto]],
-    ]);
-    const withPens = reducer(s, { type: "use-library", category: "pens", label: "Pen" });
-    expect(otherThingsPool(withPens.groups, pool).map((p) => p.id)).toEqual(["c1"]);
+    expect(trainingGroups(s.groups).map((g) => g.label)).toEqual(["Phone", ""]);
   });
 });
 

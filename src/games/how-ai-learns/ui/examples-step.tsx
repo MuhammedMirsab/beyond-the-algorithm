@@ -9,9 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { KeyHints } from "@/components/ui/key-hints";
 import { cn } from "@/lib/cn";
-import { NONE_LABEL } from "../engine/rules";
 import { joinWords } from "./copy";
-import { LIBRARY_BATCH, MAX_EXAMPLES, MIN_EXAMPLES, NONE_GROUP, type ExamplePhoto } from "./state";
+import { LIBRARY_BATCH, MAX_EXAMPLES, MIN_EXAMPLES, type ExamplePhoto } from "./state";
 import { StepLayout } from "./step-layout";
 import { cameraPermission, useCamera } from "./use-camera";
 import type { LearnGame } from "./use-learn-game";
@@ -41,7 +40,6 @@ interface Run {
 interface GroupView {
   id: string;
   label: string;
-  none: boolean;
   hasLibrary: boolean;
   photos: ExamplePhoto[];
   /** Library photos still available to add. */
@@ -57,9 +55,8 @@ function burstFor(have: number) {
 /**
  * Step 2: examples. One camera on screen the whole time. Press Take photos
  * (or Space): 3, 2, 1, then five photos in a row while the visitor turns the
- * thing a little. When a thing has its five, the next one is up, and "No
- * object" (the empty background) comes last. Library photos stay one tap
- * away for anyone with nothing to show.
+ * thing a little. When a thing has its five, the next one is up. Library
+ * photos stay one tap away for anyone with nothing to show.
  */
 export function ExamplesStep({ game }: { game: LearnGame }) {
   const { state, dataset, dispatch, actions, libraryPoolFor } = game;
@@ -73,14 +70,12 @@ export function ExamplesStep({ game }: { game: LearnGame }) {
 
   const groups: GroupView[] =
     dataset.status === "ready"
-      ? [
-          ...state.groups.map((g) => ({ id: g.id, label: g.name.trim(), none: false, hasLibrary: g.library !== null })),
-          { id: NONE_GROUP, label: NONE_LABEL, none: true, hasLibrary: true },
-        ].map((g) => {
+      ? state.groups.map((g) => {
+          const hasLibrary = g.library !== null;
           const photos = state.examples[g.id] ?? [];
           const taken = new Set(photos.map((p) => p.id));
-          const left = g.hasLibrary ? libraryPoolFor(g.id).filter((p) => !taken.has(p.id)).length : 0;
-          return { ...g, photos, left };
+          const left = hasLibrary ? libraryPoolFor(g.id).filter((p) => !taken.has(p.id)).length : 0;
+          return { id: g.id, label: g.name.trim(), hasLibrary, photos, left };
         })
       : [];
   const firstShort = groups.find((g) => g.photos.length < MIN_EXAMPLES);
@@ -154,7 +149,7 @@ export function ExamplesStep({ game }: { game: LearnGame }) {
     const done = latest.current.groups.find((g) => g.id === run.group);
     if (after) {
       latest.current.dispatch({ type: "capture", category: after.id });
-      showNote(after.none ? "Now take everything out of view." : `${done?.label ?? "That"} is done. Now show it ${after.label}.`);
+      showNote(`${done?.label ?? "That"} is done. Now show it ${after.label}.`);
     } else {
       showNote("Every group has its photos. Train it.");
     }
@@ -254,9 +249,7 @@ export function ExamplesStep({ game }: { game: LearnGame }) {
     phase.kind === "countdown"
       ? "Get ready"
       : phase.kind === "shooting"
-        ? active.none
-          ? "Keep everything out of view"
-          : "Turn it a little each time"
+        ? "Turn it a little each time"
         : active.photos.length < MIN_EXAMPLES
           ? `${active.photos.length} of ${MIN_EXAMPLES}`
           : `${active.photos.length} photos`;
@@ -267,8 +260,7 @@ export function ExamplesStep({ game }: { game: LearnGame }) {
       title="Show it each thing"
       lead={
         <p>
-          {MIN_EXAMPLES} photos of each, from a few angles. Then {MIN_EXAMPLES} with nothing in view, so it knows when nothing is
-          there.
+          {MIN_EXAMPLES} photos of each, from a few angles.
         </p>
       }
       secondary={
@@ -387,7 +379,7 @@ export function ExamplesStep({ game }: { game: LearnGame }) {
 
 /** "3 more pen photos", "1 more cup photo". */
 function needed(n: number, label: string) {
-  return `${n} more ${label === NONE_LABEL ? "“No object”" : label} photo${n === 1 ? "" : "s"}`;
+  return `${n} more ${label} photo${n === 1 ? "" : "s"}`;
 }
 
 function Plate({ group, line, busy }: { group: GroupView; line: string; busy: boolean }) {
@@ -400,7 +392,7 @@ function Plate({ group, line, busy }: { group: GroupView; line: string; busy: bo
           busy ? "bg-game text-game-ink" : "bg-black/75 text-white",
         )}
       >
-        <span className="type-title-3 truncate">{group.none ? "No object" : group.label}</span>
+        <span className="type-title-3 truncate">{group.label}</span>
         <span className="flex items-center gap-2.5">
           <span aria-hidden className="flex gap-1.5">
             {Array.from({ length: MIN_EXAMPLES }, (_, i) => (
@@ -483,7 +475,6 @@ function GroupCard({
       >
         <span className="flex min-w-0 flex-col">
           <span className={cn("type-title-3 truncate", selected ? "text-fg" : "text-fg-muted")}>{group.label}</span>
-          {group.none ? <span className="type-small text-fg-subtle">Nothing you taught it in view</span> : null}
           <span className="sr-only">{selected ? ", photos go here" : ", select to take its photos"}</span>
         </span>
         {count >= MIN_EXAMPLES ? (
@@ -531,7 +522,7 @@ function GroupCard({
           onClick={onLibrary}
           className="relative z-[1] -ml-2 self-start"
         >
-          {group.none ? `Add ${batch} library photos of other things` : `Add ${batch} from the library`}
+          {`Add ${batch} from the library`}
         </Button>
       ) : null}
     </li>

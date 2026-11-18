@@ -10,7 +10,7 @@ import { MODEL_NAME } from "../engine/vision";
 import { joinWords } from "./copy";
 import { LearnsHowItWorks } from "./how-it-works";
 import { getSession } from "./session";
-import { EXPERIMENT_EXAMPLES, NONE_GROUP, tallyResults, trainingGroups, type PreviousRun, type TestResult } from "./state";
+import { EXPERIMENT_EXAMPLES, tallyResults, trainingGroups, type PreviousRun, type TestResult } from "./state";
 import type { LearnGame } from "./use-learn-game";
 
 /** "10 pens and 10 cups" from per-label counts. */
@@ -59,7 +59,6 @@ export function ResultsStep({ game }: { game: LearnGame }) {
 
   const comparable: PreviousRun | null = previous && sameTestSet(previous.results, results) ? previous : null;
   const previousTally = comparable ? tallyResults(comparable.results, threshold, comparable.similarityCutoff) : null;
-  const nonePhotos = state.examples[NONE_GROUP] ?? [];
 
   return (
     <ResultPanel
@@ -123,7 +122,7 @@ export function ResultsStep({ game }: { game: LearnGame }) {
         </section>
       ) : null}
 
-      <LearnsHowItWorks run={run} labels={labels} threshold={threshold} results={results} live={live} nonePhotos={nonePhotos} />
+      <LearnsHowItWorks run={run} labels={labels} threshold={threshold} results={results} live={live} />
 
       <section aria-labelledby="experiment" className="flex flex-col items-start gap-4 rounded-xl bg-surface p-6 shadow-ring sm:p-8">
         <span className="type-label text-game">Try this</span>

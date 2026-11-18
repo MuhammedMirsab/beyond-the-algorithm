@@ -31,7 +31,6 @@ export const OUTCOME_WORD: Record<Outcome, string> = {
 /** One sentence on why it answered (or didn't), from the real numbers. */
 export function explainDecision(decision: Decision, threshold: number, truth?: string): string {
   const best = decision.top.label.toLowerCase();
-  if (decision.reason === "nothing") return "It thinks there is no object here, so it won’t guess.";
   if (decision.reason === "unfamiliar") return "This photo doesn’t look much like any of its examples, so it won’t guess.";
   if (decision.reason === "unsure") {
     return `Its best guess is ${best}, but it is only ${pct(decision.top.probability)} sure. You asked for ${pct(threshold)}.`;

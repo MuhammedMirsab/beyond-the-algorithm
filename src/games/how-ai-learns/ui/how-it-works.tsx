@@ -36,20 +36,17 @@ export function LearnsHowItWorks({
   threshold,
   results,
   live,
-  nonePhotos,
 }: {
   run: TrainedRun;
-  /** Every group, the visitor's first, "No object" last. */
+  /** Every group, in the order the visitor named them. */
   labels: string[];
   threshold: number;
   /** Test photo results, when it was tested on library photos. */
   results: Record<string, TestResult>;
-  /** Live camera answers: label (or "unsure") to count. */
+  /** Live camera answers: label (or "No object", or "unsure") to count. */
   live: Record<string, number>;
-  /** Example photos of the "No object" group. */
-  nonePhotos: ExamplePhoto[];
 }) {
-  const things = labels.filter((l) => l !== NONE_LABEL);
+  const things = labels;
   const meaning =
     things.length === 2
       ? `which numbers mean ${things[0].toLowerCase()} and which mean ${things[1].toLowerCase()}`
@@ -138,13 +135,13 @@ export function LearnsHowItWorks({
 
         <Chapter
           index={5}
-          title="“No object” is a group it learned too"
-          visual={nonePhotos.length ? <NoneVisual photos={nonePhotos} /> : null}
-          readout={`${run.perGroup[NONE_LABEL] ?? nonePhotos.length} photos with nothing you taught it`}
+          title="It can tell when nothing is there"
+          visual={null}
+          readout={live[NONE_LABEL] ? `It said no object is present ${live[NONE_LABEL].toLocaleString("en")} times while you tested` : null}
         >
-          Your photos with nothing in view became a group of their own. When that group wins, it says no object is present,
-          instead of being forced to pick one of your things. Without it, a model can only ever answer with something it was
-          taught.
+          It never saw a photo of nothing. Your photos share the same background, so their average stands for the scene, and
+          what pulls each photo away from that average is the thing in it. When a camera picture is pulled towards none of your
+          things, it says no object is present, instead of being forced to pick one of them.
         </Chapter>
       </ol>
     </section>
@@ -272,7 +269,7 @@ function AnswerVisual({ result, threshold, run }: { result: TestResult; threshol
 
 function LiveVisual({ live, labels }: { live: Record<string, number>; labels: string[] }) {
   const { ref, on } = useReveal<HTMLDivElement>();
-  const rows = [...labels, UNSURE]
+  const rows = [...labels, NONE_LABEL, UNSURE]
     .map((l) => ({ label: l === UNSURE ? "I don’t know" : l, count: live[l] ?? 0 }))
     .filter((r) => r.count > 0);
   const max = Math.max(1, ...rows.map((r) => r.count));
@@ -295,39 +292,6 @@ function LiveVisual({ live, labels }: { live: Record<string, number>; labels: st
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-/* ── 5. The "No object" group ───────────────────────────────────────── */
-
-function NoneVisual({ photos }: { photos: ExamplePhoto[] }) {
-  const { ref, on } = useReveal<HTMLDivElement>();
-  const shown = photos.slice(0, 6);
-  return (
-    <div ref={ref} className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-4 sm:p-6">
-      <div className="grid w-full grid-cols-3 gap-2">
-        {shown.map((photo, i) => (
-          <motion.div
-            key={photo.id}
-            className="relative aspect-[4/3] overflow-hidden rounded-sm bg-canvas"
-            initial={false}
-            animate={{ opacity: on ? 1 : 0, scale: on ? 1 : 0.94 }}
-            transition={{ duration: 0.35, delay: Math.min(i, 4) * 0.05, ease: EASE_OUT }}
-          >
-            <Image src={photo.url} alt="" fill unoptimized sizes="120px" className="object-cover" />
-          </motion.div>
-        ))}
-      </div>
-      <motion.span
-        className="type-title-3 inline-flex items-center gap-2 rounded-full bg-raised px-4 py-2 text-fg shadow-ring"
-        initial={false}
-        animate={{ opacity: on ? 1 : 0 }}
-        transition={{ duration: 0.3, delay: 0.4, ease: EASE_OUT }}
-      >
-        <MarkSwatch label={NONE_LABEL} labels={[NONE_LABEL]} />
-        {NONE_LABEL}
-      </motion.span>
     </div>
   );
 }

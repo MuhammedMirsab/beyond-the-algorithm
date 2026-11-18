@@ -55,7 +55,7 @@ export function HowAiLearnsGame() {
             lead="Teach it two things you have with you, like a phone and a bottle. It learns to tell them apart in seconds, then tells you what it sees."
             steps={[
               { title: "Name two things", text: "Nothing on you? Use the photo library." },
-              { title: "Show each one to the camera", text: "Five photos each, then five with nothing in view." },
+              { title: "Show each one to the camera", text: "Five photos each, from a few angles." },
               { title: "Train it, then test it live" },
             ]}
             primary={{ label: "Choose what to teach", onClick: actions.start }}

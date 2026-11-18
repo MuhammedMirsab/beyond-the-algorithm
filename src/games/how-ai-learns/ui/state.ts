@@ -25,8 +25,6 @@ export interface Group {
   library: string | null;
 }
 
-/** The built-in group: the empty background, or photos of other things. */
-export const NONE_GROUP = "none";
 export const NAME_MAX = 24;
 
 const GROUP_IDS = ["g1", "g2", "g3"];
@@ -43,7 +41,7 @@ export const EXPERIMENT_EXAMPLES = 3;
 
 export interface ExamplePhoto {
   id: string;
-  /** The group it belongs to (a group id or NONE_GROUP). */
+  /** The group it belongs to (a group id). */
   category: string;
   /** Group name when it was added; training uses the group's current name. */
   label: string;
@@ -322,20 +320,14 @@ function assignLibrary(state: GameState, category: string, label: string): GameS
 export function namesProblem(groups: Group[]): string | null {
   const names = groups.map((g) => g.name.trim().toLowerCase());
   if (names.some((n) => !n)) return groups.length === 2 ? "Name both things first." : "Name all three things first.";
-  if (names.includes(NONE_LABEL.toLowerCase())) return `“${NONE_LABEL}” is already one of its groups. Pick another name.`;
+  if (names.includes(NONE_LABEL.toLowerCase())) return `It says “${NONE_LABEL}” when nothing is there. Pick another name.`;
   if (new Set(names).size !== names.length) return "Give each thing a different name.";
   return null;
 }
 
-/** The groups the model learns, in order: the visitor's, then "No object". */
+/** The groups the model learns, in the order the visitor named them. */
 export function trainingGroups(groups: Group[]): { id: string; label: string }[] {
-  return [...groups.map((g) => ({ id: g.id, label: g.name.trim() })), { id: NONE_GROUP, label: NONE_LABEL }];
-}
-
-/** Library photos of the categories no group uses: the "No object" backup. */
-export function otherThingsPool(groups: Group[], pool: Map<string, DatasetPhoto[]>): DatasetPhoto[] {
-  const used = new Set(groups.map((g) => g.library));
-  return [...pool.entries()].filter(([category]) => !used.has(category)).flatMap(([, photos]) => photos);
+  return groups.map((g) => ({ id: g.id, label: g.name.trim() }));
 }
 
 /** The name of the group a library test photo should get. */

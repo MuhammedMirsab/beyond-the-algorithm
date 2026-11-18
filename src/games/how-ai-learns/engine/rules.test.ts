@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decide, NONE_LABEL, outcomeOf, similarityCutoffFrom, tally, type Candidate } from "./rules";
+import { decide, outcomeOf, similarityCutoffFrom, tally, type Candidate } from "./rules";
 
 const c = (label: string, probability: number, similarity = 0.8): Candidate => ({ label, probability, similarity });
 const rules = { threshold: 0.7, similarityCutoff: 0.5 };
@@ -21,13 +21,6 @@ describe("decide: when it answers", () => {
 });
 
 describe("decide: when it says I don't know", () => {
-  test("nothing: the No object group wins, however sure it is", () => {
-    const d = decide([c(NONE_LABEL, 0.95), c("Pen", 0.03), c("Cup", 0.02)], rules);
-    expect(d.answer).toBeNull();
-    expect(d.reason).toBe("nothing");
-    expect(outcomeOf(d, "Pen")).toBe("unknown");
-  });
-
   test("unsure: best guess below the threshold", () => {
     const d = decide([c("Pen", 0.62), c("Cup", 0.38)], rules);
     expect(d.answer).toBeNull();
