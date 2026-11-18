@@ -159,16 +159,16 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
                       >
                         <GameGlyph slug={g.slug} className="size-5 shrink-0 text-game" />
                         <span className="min-w-0 flex-1 text-[0.9375rem] font-semibold leading-tight text-fg">{g.short}</span>
+                      </span>
+                      {/* A tick on the corner, so several picks read as several picks without costing width. */}
+                      {picked ? (
                         <span
                           aria-hidden
-                          className={cn(
-                            "grid size-5 shrink-0 place-items-center rounded-full transition-[background-color,box-shadow] duration-150",
-                            picked ? "bg-game text-game-ink" : "shadow-[inset_0_0_0_1.5px_var(--color-line-strong)]",
-                          )}
+                          className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-game text-game-ink ring-[3px] ring-canvas"
                         >
-                          {picked ? <Check strokeWidth={3} className="size-3" /> : null}
+                          <Check strokeWidth={3} className="size-3" />
                         </span>
-                      </span>
+                      ) : null}
                     </label>
                   );
                 })}
