@@ -318,7 +318,7 @@ export function StudioScreen({ session, onNextPlayer }: { session: StudioSession
                   </>
                 }
               >
-                <p>Its recordings didn&apos;t download. Check the connection, then try again. The drums, percussion and synth need no download.</p>
+                <p>Its recordings didn&apos;t download. Check the connection, then try again. The synth needs no download.</p>
               </Notice>
             )}
           </div>

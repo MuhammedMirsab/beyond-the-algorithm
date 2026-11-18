@@ -40,13 +40,4 @@ const GLYPHS: Record<InstrumentId, React.ReactNode> = {
       <circle cx="14.5" cy="8.75" r="2.2" fill="currentColor" stroke="none" />
     </>
   ),
-  // A pair of bongos, one bigger than the other.
-  percussion: (
-    <>
-      <ellipse cx="8" cy="9" rx="5" ry="2" />
-      <path d="M3 9v6.2c0 1.1 2.2 2 5 2s5-.9 5-2V9" />
-      <ellipse cx="17.6" cy="11.4" rx="3.6" ry="1.5" />
-      <path d="M14 11.4v4.4c0 .85 1.6 1.5 3.6 1.5s3.6-.65 3.6-1.5v-4.4" />
-    </>
-  ),
 };

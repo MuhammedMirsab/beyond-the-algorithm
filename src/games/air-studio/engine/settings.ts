@@ -6,7 +6,7 @@ import type { ScaleId } from "./music";
  * Defaults are the original app's tuned values.
  */
 
-export type InstrumentId = "piano" | "synth" | "percussion";
+export type InstrumentId = "piano" | "synth";
 
 export interface FxSettings {
   reverb: number;
@@ -28,7 +28,6 @@ export type PianoPreset = "acoustic" | "grand" | "electric" | "synth" | "ambient
 export type DrumPack = "acoustic" | "vintage" | "electronic";
 export type GuitarPreset = "acoustic" | "clean" | "distorted" | "bass";
 export type SynthPreset = "warmLead" | "theremin" | "squareBass" | "pad" | "acidLine" | "chipLead";
-export type PercLayout = "full" | "latin" | "hand" | "electronic";
 export type TimeSig = "4/4" | "3/4" | "6/8" | "2/4" | "5/4";
 
 export interface SynthParams {
@@ -88,7 +87,6 @@ export interface Settings {
     fx: FxSettings;
   };
   synth: SynthParams;
-  percussion: { layout: PercLayout; shake: boolean; sensOffset: number; volume: number; fx: FxSettings };
   metronome: { bpm: number; sig: TimeSig; volume: number; countIn: number; accent: boolean };
   backing: { style: string; volume: number; loop: boolean; includeInRecording: boolean };
 }
@@ -149,7 +147,6 @@ export const DEFAULTS: Settings = {
     volume: 0.7,
     fx: fx(0.3, 0.25, 0.2),
   },
-  percussion: { layout: "full", shake: true, sensOffset: 0, volume: 0.9, fx: fx(0.15) },
   metronome: { bpm: 96, sig: "4/4", volume: 0.6, countIn: 1, accent: true },
   backing: { style: "pop", volume: 0.55, loop: true, includeInRecording: true },
 };
@@ -204,5 +201,4 @@ export function applyPatch(patch: SettingsPatch): SettingsPatch {
 export const INSTRUMENT_NAMES: Record<InstrumentId, string> = {
   piano: "Piano",
   synth: "Synth",
-  percussion: "Percussion",
 };

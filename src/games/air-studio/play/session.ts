@@ -5,7 +5,7 @@ import { TAKE_CAP_S, TakeRecorder, type TakeResult } from "../engine/audio/recor
 import { TakePlayer } from "../engine/audio/take-player";
 import { MAX_BPM, MIN_BPM, transport } from "../engine/audio/transport";
 import { playBus, type PlayEvent } from "../engine/events";
-import { drawHands, PadController, uiScale, type Controller } from "../engine/instruments/common";
+import { drawHands, uiScale, type Controller } from "../engine/instruments/common";
 import { createController, instrumentInfo } from "../engine/instruments/index";
 import { C, font, input, motion, noteGlyph, rgba, rr } from "../engine/instruments/palette";
 import { noteName } from "../engine/music";
@@ -137,8 +137,8 @@ export interface StudioView {
   bests: Record<string, number>;
 }
 
-/** The first instrument: percussion. Synthesised, so nothing to download, and any quick move down over a pad plays. */
-export const DEFAULT_INSTRUMENT: InstrumentId = "percussion";
+/** The first instrument: piano. Dip a fingertip below the line and a key plays. */
+export const DEFAULT_INSTRUMENT: InstrumentId = "piano";
 
 /** Play along starts on the pop band, at its own tempo. */
 const DEFAULT_PLAY_ALONG = "pop";
@@ -222,7 +222,7 @@ const fallbackLabel = (k: string) => (k === "*" ? "Any pad" : (PIECE_LABEL[k] ??
  * drawing) never touches React state.
  *
  * The first tap goes straight to playing: the camera (or the mouse) and the
- * percussion start together, the kit plays a short fill when it's ready, and the
+ * piano start together, and the
  * rest of the studio is revealed as the visitor plays (reveal.ts).
  *
  * mount() and unmount() bracket the component's life and survive StrictMode.
@@ -387,7 +387,7 @@ export class StudioSession {
 
   /* ── Input ─────────────────────────────────────────────────────── */
 
-  /** From a click: start the audio (browsers allow it only after a click), the camera and the percussion, together. */
+  /** From a click: start the audio (browsers allow it only after a click), the camera and the piano, together. */
   chooseCamera = () => {
     this.startAudio();
     this.check = null;
@@ -430,12 +430,7 @@ export class StudioSession {
     if (state.status === "running") this.maybeGreet();
   };
 
-  /**
-   * The stage goes live once the instrument is loaded and hands can be read.
-   * The first time, a pad kit plays a short fill across its pads: sound is on,
-   * and these are the things to hit. It is not the visitor's playing: nothing
-   * is counted or recorded.
-   */
+  /** The stage goes live once the instrument is loaded and hands can be read. */
   private maybeGreet() {
     if (this.view.live || !this.controller || this.view.mode === null) return;
     if (this.view.mode === "camera" && tracker.state.status !== "running") return;
@@ -443,21 +438,6 @@ export class StudioSession {
     this.liveSince = now;
     this.lastTick = now;
     this.set({ live: true });
-    const c = this.controller;
-    if (!(c instanceof PadController) || this.view.view !== "play") return;
-    const fill = c.demoFill();
-    fill.forEach((id, i) => {
-      const last = i === fill.length - 1;
-      const timer = window.setTimeout(
-        () => {
-          if (this.controller !== c) return;
-          c.demoHit(id, last ? 0.62 : 0.38 + i * 0.05, performance.now());
-          if (last && id !== "kick") c.demoHit("kick", 0.58, performance.now());
-        },
-        140 + i * 110,
-      );
-      this.greetTimers.push(timer);
-    });
   }
 
   /* ── Frames ────────────────────────────────────────────────────── */
@@ -503,8 +483,7 @@ export class StudioSession {
     const samples = this.speed[hand].filter((s) => s.t >= from && s.t <= end).map((s) => ({ t: s.t - from, v: s.v }));
     if (samples.length < 12) return;
     const hits = this.strikes.filter((s) => s.hand === hand && s.t >= from && s.t <= end).map((s) => ({ t: s.t - from, v: s.v }));
-    const s = settings.get();
-    const threshold = strikeThreshold(s.percussion.sensOffset) / REF_SIZE;
+    const threshold = strikeThreshold(0) / REF_SIZE;
     this.strikeStory = { samples, hits, threshold, rearm: threshold * REARM_FRACTION, span: end - from, hand, simulated: this.view.mode === "mouse" };
   }
 

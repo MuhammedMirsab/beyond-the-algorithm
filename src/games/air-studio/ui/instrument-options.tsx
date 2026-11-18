@@ -7,9 +7,8 @@ import { ToggleChip } from "@/components/ui/chip";
 import { Segmented, SwitchRow } from "@/components/ui/controls";
 import { PIANO_PRESETS } from "../engine/audio/instruments/piano";
 import { SYNTH_PRESETS } from "../engine/audio/instruments/synth";
-import { PERC_LAYOUTS } from "../engine/instruments/percussion";
 import { NOTE_NAMES, SCALES, type ScaleId } from "../engine/music";
-import { DEFAULTS, settings, type InstrumentId, type PercLayout, type Settings } from "../engine/settings";
+import { DEFAULTS, settings, type InstrumentId, type Settings } from "../engine/settings";
 import { useSettings } from "./hooks";
 
 /** A labelled group of options. */
@@ -194,24 +193,9 @@ function SynthOptions() {
   );
 }
 
-function PercussionOptions() {
-  const s = useSettings((st) => st.percussion);
-  const u = (p: Partial<Settings["percussion"]>) => settings.update("percussion", p);
-  const ids = Object.keys(PERC_LAYOUTS) as PercLayout[];
-  return (
-    <>
-      <Field label="Set">
-        <Segmented label="Set" value={s.layout} onValueChange={(layout) => u({ layout })} options={ids.map((id) => ({ value: id, label: PERC_LAYOUTS[id].label }))} />
-      </Field>
-      <SwitchRow label="Shaker" description="Make a fist and shake it side to side." checked={s.shake} onCheckedChange={(shake) => u({ shake })} />
-    </>
-  );
-}
-
 const RESET: Record<InstrumentId, () => void> = {
   piano: () => settings.update("piano", structuredClone(DEFAULTS.piano)),
   synth: () => settings.update("synth", structuredClone(DEFAULTS.synth)),
-  percussion: () => settings.update("percussion", structuredClone(DEFAULTS.percussion)),
 };
 
 /** Puts one instrument's options back to the defaults. */
@@ -223,7 +207,6 @@ export function InstrumentOptions({ instrument }: { instrument: InstrumentId }) 
     <div className="flex flex-col gap-7">
       {instrument === "piano" ? <PianoOptions /> : null}
       {instrument === "synth" ? <SynthOptions /> : null}
-      {instrument === "percussion" ? <PercussionOptions /> : null}
     </div>
   );
 }

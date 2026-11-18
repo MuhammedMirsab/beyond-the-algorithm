@@ -98,34 +98,9 @@ export const LESSONS: Lesson[] = [
     tip: "Keep your fingertip below the line and slide to the next key.",
     targets: melody("C4:0.5 D4:0.5 E4:0.5 F4:0.5 G4:0.5 A4:0.5 B4:0.5 C5:0.5 B4:0.5 A4:0.5 G4:0.5 F4:0.5 E4:0.5 D4:0.5 C4:2"), patch: { piano: pianoBeginner },
   },
-  {
-    id: "rh-quarters", inst: "percussion", title: "Steady beat", level: "Beginner", bpm: 90, sig: "4/4", anyKey: true,
-    desc: "Hit any pad on every click.",
-    tip: "Listen for the click and land with it. Don't chase it.",
-    targets: pattern({ "*": "x---x---x---x---" }, 4), patch: { percussion: { layout: "hand", shake: false } },
-  },
-  {
-    id: "rh-eighths", inst: "percussion", title: "Twice a beat", level: "Intermediate", bpm: 84, sig: "4/4", anyKey: true,
-    desc: "Two even hits per beat. Use both hands.",
-    tip: "Count out loud: 1 and 2 and 3 and 4 and.",
-    targets: pattern({ "*": "x-x-x-x-x-x-x-x-" }, 4), patch: { percussion: { layout: "hand", shake: false } },
-  },
-  {
-    id: "rh-sync", inst: "percussion", title: "Off the beat", level: "Intermediate", bpm: 84, sig: "4/4", anyKey: true,
-    desc: "Hit on 1, halfway after 2, on 3, and halfway after 4.",
-    tip: "The in-between hits land exactly halfway between two clicks.",
-    targets: pattern({ "*": "x-----x-x-----x-" }, 4), patch: { percussion: { layout: "hand", shake: false } },
-  },
-  {
-    id: "rh-clave", inst: "percussion", title: "Son clave", level: "Advanced", bpm: 92, sig: "4/4", anyKey: true,
-    desc: "A two-bar rhythm from Cuba: three hits, then two.",
-    tip: "Bar 1: on 1, halfway after 2, and on 4. Bar 2: on 2 and on 3.",
-    targets: pattern({ "*": "x-----x-----x-------x---x-------" }, 3, 4), patch: { percussion: { layout: "latin", shake: false } },
-  },
 ];
 
 /** Lessons grouped by instrument, in the order of the instrument picker. */
 export const LESSON_GROUPS: { inst: InstrumentId; title: string }[] = [
   { inst: "piano", title: "Piano" },
-  { inst: "percussion", title: "Rhythm on percussion" },
 ];

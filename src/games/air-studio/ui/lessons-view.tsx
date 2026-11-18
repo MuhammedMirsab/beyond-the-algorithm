@@ -17,7 +17,6 @@ import { InstrumentGlyph } from "./instrument-glyph";
 const UNIT: Record<InstrumentId, [string, string]> = {
   piano: ["note", "notes"],
   synth: ["note", "notes"],
-  percussion: ["hit", "hits"],
 };
 
 export const lessonSize = (l: Lesson) => `${l.targets.length} ${UNIT[l.inst][l.targets.length === 1 ? 0 : 1]}`;

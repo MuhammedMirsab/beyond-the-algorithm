@@ -62,19 +62,6 @@ function lines(i: CoachInput): string[] {
   const cam = i.mode === "camera";
   const click = i.touch ? "Tap" : "Click";
   switch (i.instrument) {
-    case "percussion":
-      return cam
-        ? [
-            "Hit the air over a pad. A quick move down plays it.",
-            "That's a hit. The camera saw your hand move down fast.",
-            "Make a fist and shake it for the shaker.",
-            "Hit faster to play louder.",
-          ]
-        : [
-            `${click} a pad, or flick the ${i.touch ? "finger" : "mouse"} down over it.`,
-            "That's a hit. A quick move down counts, just like a real hand.",
-            ...(i.touch ? [] : ["Hold Space for a fist, then shake the mouse for the shaker."]),
-          ];
     case "piano":
       return cam
         ? [

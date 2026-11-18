@@ -10,17 +10,17 @@ import type { InputMode, Story, StudioSession } from "../play/session";
 import { AdaptiveButton } from "./adaptive-button";
 import { HowItWorksModal } from "./how-it-works";
 
-const LEAD = "Play percussion, piano and more in the air. The camera finds 21 points on each of your hands, and the way they move becomes music.";
+const LEAD = "Play piano and synth in the air. The camera finds 21 points on each of your hands, and the way they move becomes music.";
 
 const STEPS = [
   { title: "Raise your hands", text: "The camera finds them by itself." },
-  { title: "Hit the air over a pad", text: "A quick move down plays it. Faster is louder." },
-  { title: "Then try piano, synth or a band", text: "Record a take, or try a lesson with a score." },
+  { title: "Dip a fingertip to press a key", text: "Below the line plays it. Faster is louder." },
+  { title: "Then try the synth or a band", text: "Record a take, or try a lesson with a score." },
 ];
 
 /**
  * The first screen: one tap to playing. "Play with your hands" turns on the
- * camera and the percussion together and goes straight to the stage; there is no
+ * camera and the piano together and goes straight to the stage; there is no
  * setup in between. The art plays a wordless loop of how it works.
  */
 export function IntroScreen({ session, onStart, returning = false }: { session: StudioSession; onStart: (mode: InputMode) => void; returning?: boolean }) {

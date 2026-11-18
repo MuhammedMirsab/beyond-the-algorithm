@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { PIECE_LABEL } from "../audio/instruments/drums";
-import { PERC_LAYOUTS } from "../instruments/percussion";
 import { scaleNotes } from "../music";
 import { DEFAULTS, type Settings } from "../settings";
 import { chordsEvery, LESSON_GROUPS, LESSONS, melody, pattern } from "./lessons";
@@ -34,16 +33,15 @@ describe("lesson helpers", () => {
 function patched(patch: (typeof LESSONS)[number]["patch"]): Settings {
   const s = structuredClone(DEFAULTS);
   if (patch?.piano) Object.assign(s.piano, patch.piano);
-  if (patch?.percussion) Object.assign(s.percussion, patch.percussion);
   return s;
 }
 
 describe("every lesson can be played", () => {
-  it("keeps the piano and percussion lessons from the original app, each in a group", () => {
-    expect(LESSONS).toHaveLength(9);
+  it("keeps the piano lessons from the original app, each in a group", () => {
+    expect(LESSONS).toHaveLength(5);
     for (const l of LESSONS) expect(LESSON_GROUPS.some((g) => g.inst === l.inst)).toBe(true);
-    expect(new Set(LESSONS.map((l) => l.id)).size).toBe(9);
-    expect(LESSONS.some((l) => (l.inst as string) === "drums" || (l.inst as string) === "guitar")).toBe(false);
+    expect(new Set(LESSONS.map((l) => l.id)).size).toBe(5);
+    expect(LESSONS.every((l) => l.inst === "piano")).toBe(true);
   });
 
   it("asks piano lessons only for keys on the beginner keyboard", () => {
@@ -52,14 +50,6 @@ describe("every lesson can be played", () => {
       const base = 12 * (s.octave + 1) + s.key;
       const keys = scaleNotes(s.key, s.scale, base, base + 12);
       for (const t of l.targets) expect(keys).toContain(Number(t.key));
-    }
-  });
-
-  it("lets rhythm lessons use any pad of a real set", () => {
-    for (const l of LESSONS.filter((x) => x.inst === "percussion")) {
-      expect(l.anyKey).toBe(true);
-      expect(PERC_LAYOUTS[patched(l.patch).percussion.layout].pads.length).toBeGreaterThan(0);
-      for (const t of l.targets) expect(t.key).toBe("*");
     }
   });
 
