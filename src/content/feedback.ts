@@ -15,7 +15,7 @@ export const RATINGS = [
 
 export type Rating = (typeof RATINGS)[number]["value"];
 
-/** At or below this, the form asks what to improve. */
+/** At or below this, the form asks what to fix (with options); above it, an optional comment. */
 export const LOW_RATING = 2;
 
 export const ISSUES = [
@@ -34,7 +34,10 @@ export const COMMENT_MAX = 400;
 
 export interface FeedbackInput {
   name: string;
-  game: GameSlug;
+  /** Every game the visitor says they played, the scanned one first. */
+  games: GameSlug[];
+  /** The game whose QR code opened the form, or "" when opened another way. */
+  from: GameSlug | "";
   rating: Rating;
   issues: IssueId[];
   comment: string;
@@ -52,7 +55,8 @@ const clean = (value: unknown, max: number) =>
 export function parseFeedback(body: unknown): FeedbackInput | null {
   if (!body || typeof body !== "object") return null;
   const raw = body as Record<string, unknown>;
-  if (!isGameSlug(raw.game)) return null;
+  const games = Array.isArray(raw.games) ? [...new Set(raw.games.filter(isGameSlug))] : [];
+  if (games.length === 0) return null;
   const rating = raw.rating;
   if (typeof rating !== "number" || !RATINGS.some((r) => r.value === rating)) return null;
   const issues =
@@ -61,9 +65,10 @@ export function parseFeedback(body: unknown): FeedbackInput | null {
       : [];
   return {
     name: clean(raw.name, NAME_MAX),
-    game: raw.game,
+    games,
+    from: isGameSlug(raw.from) ? raw.from : "",
     rating: rating as Rating,
     issues,
-    comment: rating <= LOW_RATING ? clean(raw.comment, COMMENT_MAX) : "",
+    comment: clean(raw.comment, COMMENT_MAX),
   };
 }

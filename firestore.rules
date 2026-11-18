@@ -27,11 +27,16 @@ service cloud.firestore {
     // Visitor feedback: anyone can send one, nobody can read it from the site.
     // Read it in the Firebase console.
     match /feedback/{id} {
-      allow create: if request.resource.data.keys().hasOnly(['name', 'game', 'rating', 'issues', 'comment', 'at'])
-        && request.resource.data.keys().hasAll(['name', 'game', 'rating', 'issues', 'comment', 'at'])
+      allow create: if request.resource.data.keys().hasOnly(['name', 'games', 'from', 'rating', 'issues', 'comment', 'at'])
+        && request.resource.data.keys().hasAll(['name', 'games', 'from', 'rating', 'issues', 'comment', 'at'])
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 40
-        && request.resource.data.game in ['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'air-studio', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone']
+        && request.resource.data.games is list
+        && request.resource.data.games.size() >= 1
+        && request.resource.data.games.size() <= 12
+        && request.resource.data.games.hasOnly(['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone'])
+        && request.resource.data.from is string
+        && (request.resource.data.from == '' || request.resource.data.from in ['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone'])
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5

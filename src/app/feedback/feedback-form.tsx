@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Check } from "lucide-react";
+import { Check, MessageSquarePlus } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { GameGlyph } from "@/components/art/game-glyph";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -15,16 +15,28 @@ import { cn } from "@/lib/cn";
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const SEND_TIMEOUT_MS = 12_000;
 
-/** Native radios, visually hidden: the label is the control people see and tap. */
-const hiddenRadio = "peer sr-only";
+/** Native radios and checkboxes, visually hidden: the label is the control people see and tap. */
+const hiddenInput = "peer sr-only";
+
+/** The comment prompt, asked differently depending on how it went. */
+function commentCopy(rating: Rating) {
+  if (rating <= LOW_RATING) return { label: "Anything else?", placeholder: "What didn't work for you?" };
+  if (rating === 3) return { label: "What would make it better?", placeholder: "One thing we could change." };
+  return { label: "Anything you'd like to tell us?", placeholder: "A favourite moment, an idea, something to fix." };
+}
+
+const textareaStyles =
+  "min-h-24 w-full resize-y rounded-lg bg-sunken px-5 py-4 text-[1.0625rem] font-medium leading-normal text-fg shadow-ring outline-none transition-shadow duration-150 placeholder:text-fg-faint focus:shadow-[0_0_0_2px_var(--color-fg)]";
 
 export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) {
   const id = useId();
   const [name, setName] = useState("");
-  const [game, setGame] = useState<GameSlug | null>(initialGame);
+  // The game whose QR code was scanned starts picked; visitors add any others they played.
+  const [games, setGames] = useState<GameSlug[]>(initialGame ? [initialGame] : []);
   const [rating, setRating] = useState<Rating | null>(null);
   const [issues, setIssues] = useState<IssueId[]>([]);
   const [comment, setComment] = useState("");
+  const [commentOpen, setCommentOpen] = useState(false);
   const [trap, setTrap] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +44,13 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
 
   const low = rating !== null && rating <= LOW_RATING;
   const ratingWord = rating ? RATINGS.find((r) => r.value === rating)?.word : null;
+  // The page takes the colour of the first game picked (the scanned one, when there is one).
+  const accent = games[0];
+
+  const toggleGame = (slug: GameSlug) => {
+    setGames((list) => (list.includes(slug) ? list.filter((g) => g !== slug) : [...list, slug]));
+    if (error) setError(null);
+  };
 
   const toggleIssue = (issue: IssueId) =>
     setIssues((list) => (list.includes(issue) ? list.filter((i) => i !== issue) : [...list, issue]));
@@ -39,8 +58,8 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (sending) return;
-    if (!game || !rating) {
-      setError(!game ? "Pick the game you played." : "Pick a rating from 1 to 5.");
+    if (games.length === 0 || !rating) {
+      setError(games.length === 0 ? "Pick at least one game you played." : "Pick a rating from 1 to 5.");
       return;
     }
     setError(null);
@@ -49,9 +68,9 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
       setSent(true);
       return;
     }
-    const input = parseFeedback({ name, game, rating, issues, comment });
+    const input = parseFeedback({ name, games, from: initialGame ?? "", rating, issues, comment });
     if (!input) {
-      setError("Pick the game you played and a rating.");
+      setError("Pick at least one game and a rating.");
       return;
     }
     setSending(true);
@@ -72,7 +91,7 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
   };
 
   return (
-    <main data-game={game ?? undefined} className="mx-auto flex w-full max-w-[36rem] flex-1 flex-col px-4 pb-[calc(3rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-10">
+    <main data-game={accent} className="mx-auto flex w-full max-w-[36rem] flex-1 flex-col px-4 pb-[calc(3rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-10">
       <AnimatePresence mode="wait" initial={false}>
         {sent ? (
           <ThankYou key="thanks" name={name.trim()} low={low} />
@@ -111,36 +130,48 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
               />
             </div>
 
-            {/* 2. Game */}
-            <fieldset className="enter flex flex-col gap-3 [--enter-delay:240ms]">
-              <legend className="type-title-3 mb-3 text-fg">Which game did you play?</legend>
+            {/* 2. Games (one or more) */}
+            <fieldset className="enter flex flex-col [--enter-delay:240ms]">
+              <legend className="mb-3 flex flex-col gap-1">
+                <span className="type-title-3 text-fg">Which games did you play?</span>
+                <span className="type-small text-fg-subtle">Pick every one you tried.</span>
+              </legend>
               <div className="grid grid-cols-2 gap-2 max-[359px]:grid-cols-1">
-                {GAMES.map((g) => (
-                  <label key={g.slug} data-game={g.slug} className="relative cursor-pointer">
-                    <input
-                      type="radio"
-                      name={`${id}-game`}
-                      value={g.slug}
-                      checked={game === g.slug}
-                      onChange={() => {
-                        setGame(g.slug);
-                        if (error) setError(null);
-                      }}
-                      className={hiddenRadio}
-                    />
-                    <span
-                      className={cn(
-                        "flex min-h-14 items-center gap-3 rounded-md bg-surface px-3.5 py-2.5 text-left shadow-ring",
-                        "transition-[background-color,box-shadow,scale] duration-150 ease-out active:scale-[0.98]",
-                        "hover:bg-raised peer-checked:bg-game-soft peer-checked:shadow-[inset_0_0_0_2px_var(--color-game)]",
-                        "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg",
-                      )}
-                    >
-                      <GameGlyph slug={g.slug} className="size-5 shrink-0 text-game" />
-                      <span className="text-[0.9375rem] font-semibold leading-tight text-fg">{g.short}</span>
-                    </span>
-                  </label>
-                ))}
+                {GAMES.map((g) => {
+                  const picked = games.includes(g.slug);
+                  return (
+                    <label key={g.slug} data-game={g.slug} className="relative cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name={`${id}-games`}
+                        value={g.slug}
+                        checked={picked}
+                        onChange={() => toggleGame(g.slug)}
+                        className={hiddenInput}
+                      />
+                      <span
+                        className={cn(
+                          "flex h-full min-h-14 items-center gap-3 rounded-md bg-surface px-3.5 py-2.5 text-left shadow-ring",
+                          "transition-[background-color,box-shadow,scale] duration-150 ease-out active:scale-[0.98]",
+                          "hover:bg-raised peer-checked:bg-game-soft peer-checked:shadow-[inset_0_0_0_2px_var(--color-game)]",
+                          "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg",
+                        )}
+                      >
+                        <GameGlyph slug={g.slug} className="size-5 shrink-0 text-game" />
+                        <span className="min-w-0 flex-1 text-[0.9375rem] font-semibold leading-tight text-fg">{g.short}</span>
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "grid size-5 shrink-0 place-items-center rounded-full transition-[background-color,box-shadow] duration-150",
+                            picked ? "bg-game text-game-ink" : "shadow-[inset_0_0_0_1.5px_var(--color-line-strong)]",
+                          )}
+                        >
+                          {picked ? <Check strokeWidth={3} className="size-3" /> : null}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </fieldset>
 
@@ -162,7 +193,7 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
                         if (error) setError(null);
                       }}
                       aria-label={`${r.value} of 5, ${r.word.toLowerCase()}`}
-                      className={hiddenRadio}
+                      className={hiddenInput}
                     />
                     <span
                       className={cn(
@@ -215,7 +246,7 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
                     </div>
                     <div className="flex flex-col gap-2">
                       <label htmlFor={`${id}-comment`} className="type-body font-semibold text-fg">
-                        Anything else? <span className="font-medium text-fg-subtle">(optional)</span>
+                        {commentCopy(rating ?? 1).label} <span className="font-medium text-fg-subtle">(optional)</span>
                       </label>
                       <textarea
                         id={`${id}-comment`}
@@ -223,11 +254,44 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
                         onChange={(e) => setComment(e.target.value)}
                         maxLength={COMMENT_MAX}
                         rows={3}
-                        placeholder="What didn't work for you?"
-                        className="min-h-24 w-full resize-y rounded-lg bg-sunken px-5 py-4 text-[1.0625rem] font-medium leading-normal text-fg shadow-ring outline-none transition-shadow duration-150 placeholder:text-fg-faint focus:shadow-[0_0_0_2px_var(--color-fg)]"
+                        placeholder={commentCopy(rating ?? 1).placeholder}
+                        className={textareaStyles}
                       />
                     </div>
                   </div>
+                </motion.div>
+              ) : null}
+
+              {/* It went fine or well: a quiet way to say more, asked a different way. */}
+              {rating !== null && !low ? (
+                <motion.div
+                  key="comment"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto", transition: { duration: 0.35, ease: EASE_OUT } }}
+                  exit={{ opacity: 0, height: 0, transition: { duration: 0.25, ease: EASE_OUT } }}
+                  className="-mt-6 overflow-hidden"
+                >
+                  {commentOpen ? (
+                    <div className="flex flex-col gap-2 pt-1">
+                      <label htmlFor={`${id}-note`} className="type-body font-semibold text-fg">
+                        {commentCopy(rating).label} <span className="font-medium text-fg-subtle">(optional)</span>
+                      </label>
+                      <textarea
+                        id={`${id}-note`}
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        maxLength={COMMENT_MAX}
+                        rows={3}
+                        autoFocus
+                        placeholder={commentCopy(rating).placeholder}
+                        className={textareaStyles}
+                      />
+                    </div>
+                  ) : (
+                    <Button variant="secondary" size="md" icon={<MessageSquarePlus />} onClick={() => setCommentOpen(true)} className="mt-1">
+                      {rating === 3 ? "Suggest a change" : "Add a comment"}
+                    </Button>
+                  )}
                 </motion.div>
               ) : null}
             </AnimatePresence>
@@ -286,8 +350,8 @@ function ThankYou({ name, low }: { name: string; low: boolean }) {
           ? "Sorry it didn't land. We read every answer, and yours tells us what to fix first."
           : "We read every answer. It helps us make the games better for the next person in line."}
       </p>
-      <ButtonLink href="/" variant="secondary" size="lg" className="mt-2">
-        Back to the arcade
+      <ButtonLink href="/" variant="game" size="lg" arrow className="mt-2 max-sm:w-full">
+        Try the other games
       </ButtonLink>
     </motion.section>
   );
