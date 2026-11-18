@@ -40,8 +40,13 @@ interface Group extends Box {
 // Distorted letters: median 0.79, p90 1.18. Random scribbles: p5 1.36, median 1.83.
 const D_GOOD = 0.8;
 const D_BAD = 1.6;
-/** A dictionary word is accepted if it costs at most this much more than the raw best reading. */
-const LEXICON_ACCEPT = 1.22;
+/**
+ * A dictionary word is accepted if it costs at most this much more than the raw best reading.
+ * Loose on purpose: letters written in the air are shaky, and visitors write words.
+ */
+const LEXICON_ACCEPT = 1.3;
+/** ...and no single letter of it may cost more than this much more than that letter's best match. */
+const LEXICON_WORST = 1.8;
 const ALIAS_PENALTY = 1.1;
 const LOWER_ONLY = new Set(["a", "b", "d", "e", "f", "g", "h", "i", "m", "n", "q", "r", "t", "y"]);
 
@@ -100,10 +105,76 @@ function mergeInto(g: Group, other: Box & { strokes: StrokeXY[] }) {
   g.strokes.push(...other.strokes);
 }
 
+// ── Clean-up ──────────────────────────────────────────────────
+/** Distance from p to the polyline s (from index `from` on). */
+function distToPath([px, py]: XY, s: StrokeXY, from = 0): number {
+  let best = Infinity;
+  for (let i = Math.max(1, from + 1); i < s.length; i++) {
+    const [ax, ay] = s[i - 1];
+    const [bx, by] = s[i];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+    best = Math.min(best, Math.hypot(ax + t * dx - px, ay + t * dy - py));
+  }
+  return best;
+}
+
+/**
+ * The start of a stroke written in the air often carries a small hook: the
+ * finger is still travelling into place when the pen goes down, then turns
+ * back to draw the real line. Finds that turn (a sharp reversal close to the
+ * start, short compared with the stroke, whose tip lies back near the line)
+ * and cuts the hook off.
+ */
+function cutStartHook(s: StrokeXY): StrokeXY {
+  const n = s.length;
+  if (n < 5) return s;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]));
+  const total = cum[n - 1];
+  const b = boxOf(s);
+  const extent = Math.max(b.maxX - b.minX, b.maxY - b.minY);
+  if (!(total > 0) || !(extent > 0)) return s;
+  const maxHook = Math.min(0.22 * total, 0.4 * extent);
+  const bodyLen = Math.min(0.25 * total, 0.5 * extent);
+  let bestK = -1;
+  let bestCos = -0.5; // must turn back by more than 120 degrees
+  for (let k = 1; k < n - 2 && cum[k] <= maxHook; k++) {
+    const ax = s[k][0] - s[0][0];
+    const ay = s[k][1] - s[0][1];
+    const aLen = Math.hypot(ax, ay);
+    if (aLen < 0.06 * extent) continue;
+    let m = k + 1;
+    while (m < n - 1 && cum[m] - cum[k] < bodyLen) m++;
+    const bx = s[m][0] - s[k][0];
+    const by = s[m][1] - s[k][1];
+    const bLen = Math.hypot(bx, by);
+    if (!(bLen > 0)) continue;
+    const cos = (ax * bx + ay * by) / (aLen * bLen);
+    if (cos < bestCos) {
+      bestCos = cos;
+      bestK = k;
+    }
+  }
+  if (bestK < 0) return s;
+  // A real hook doubles back along the line; a deliberate spur (G, J) points away from it.
+  if (distToPath(s[0], s, bestK) > 0.18 * extent) return s;
+  return s.slice(bestK);
+}
+
+/** A stroke without the entry hook and the exit hook (the pinch). */
+export function dehook(s: StrokeXY): StrokeXY {
+  const front = cutStartHook(s);
+  return cutStartHook([...front].reverse()).reverse();
+}
+
 /** Splits strokes into words, each a list of letter groups, left to right. */
 export function segment(strokes: StrokeXY[]): Group[][] {
   const items = strokes
     .filter((s) => s.length > 0)
+    .map(dehook)
     .map((s) => ({ ...boxOf(s), strokes: [s] }))
     .sort((a, b) => a.minX - b.minX);
   if (!items.length) return [];
@@ -241,6 +312,11 @@ interface WordReading {
   confidence: number;
   alternatives: string[];
   quality: number;
+  /** Read as a number. */
+  numeric: boolean;
+  /** Settled by the word list; `fit` is its mean cost ratio (1 = the raw best letters). */
+  lexical: boolean;
+  fit: number;
 }
 
 function decodeWord(groups: Group[]): WordReading {
@@ -266,7 +342,7 @@ function decodeWord(groups: Group[]): WordReading {
     const worst = confs.indexOf(Math.min(...confs));
     const alt = picks.map((p, i) => (i === worst ? p.runnerUp : p.char)).join("");
     const lettersInstead = scores.map((s) => pickFrom(s, LETTERS, letterCost).char).join("");
-    return { text, confidence, alternatives: [alt, lettersInstead], quality };
+    return { text, confidence, alternatives: [alt, lettersInstead], quality, numeric: true, lexical: false, fit: Infinity };
   }
 
   const picks = scores.map((s) => pickFrom(s, LETTERS, letterCost));
@@ -293,7 +369,7 @@ function decodeWord(groups: Group[]): WordReading {
   let text = raw;
   const alternatives: string[] = [];
   const top = ranked[0];
-  const isWord = top && top.mean <= LEXICON_ACCEPT && top.worst <= 1.7;
+  const isWord = !!top && top.mean <= LEXICON_ACCEPT && top.worst <= LEXICON_WORST;
 
   // Not a word? Every letter may be a digit look-alike (2026 vs ZOZG): if the
   // digit reading fits about as well, it's the more plausible one.
@@ -308,6 +384,9 @@ function decodeWord(groups: Group[]): WordReading {
         confidence: Math.pow(dConfs.reduce((a, b) => a * b, 1), 1 / dConfs.length),
         alternatives: [raw],
         quality,
+        numeric: true,
+        lexical: false,
+        fit: Infinity,
       };
     }
   }
@@ -317,19 +396,109 @@ function decodeWord(groups: Group[]): WordReading {
     // A dictionary match makes the reading far more trustworthy.
     const fit = Math.min(1, Math.max(0, 1 - (top.mean - 1) / (LEXICON_ACCEPT - 1)));
     confidence = Math.max(confidence, (0.6 + 0.35 * fit) * Math.min(1, quality + 0.25));
-    if (raw !== text) alternatives.push(raw);
   }
-  for (const r of ranked.slice(0, 4)) if (r.w !== text && r.mean <= LEXICON_ACCEPT * 1.15) alternatives.push(r.w);
-  if (text === raw && picks.length) {
-    const worst = confs.indexOf(Math.min(...confs));
-    alternatives.push(picks.map((p, i) => (i === worst ? p.runnerUp : p.char)).join(""));
-  }
+
+  // "Or maybe": the next closest words first, then the letters exactly as
+  // matched, then the same with the least sure letter or two swapped for
+  // their runner-up. The best reading is always the main answer.
+  const push = (s: string) => {
+    if (s && s !== text && !alternatives.includes(s)) alternatives.push(s);
+  };
+  for (const r of ranked.slice(0, 6)) if (r.mean <= LEXICON_ACCEPT * 1.25 && r.worst <= LEXICON_WORST * 1.2) push(r.w);
+  push(raw);
+  const leastSure = confs
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => a.c - b.c)
+    .slice(0, 2);
+  for (const { i } of leastSure) push(picks.map((p, j) => (j === i ? p.runnerUp : p.char)).join(""));
 
   // Keep lowercase if most letters were written in lowercase-only shapes.
   const lowerVotes = best.filter((b) => LOWER_ONLY.has(b.char)).length;
   const lower = lowerVotes * 2 >= groups.length && lowerVotes > 0;
   const fmt = (s: string) => (lower ? s.toLowerCase() : s);
-  return { text: fmt(text), confidence, alternatives: alternatives.map(fmt), quality };
+  return {
+    text: fmt(text),
+    confidence,
+    alternatives: alternatives.map(fmt),
+    quality,
+    numeric: false,
+    lexical: isWord,
+    fit: isWord ? top.mean : Infinity,
+  };
+}
+
+// ── Second opinions on the letter split ───────────────────────
+function groupOf(strokes: StrokeXY[]): Group {
+  const g: Group = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, strokes: [] };
+  for (const s of strokes) mergeInto(g, { ...boxOf(s), strokes: [s] });
+  return g;
+}
+
+/**
+ * Other ways to split one word into letters, one change away from the first
+ * split: two neighbours that are close together joined into one letter (an H
+ * whose bar fell short), or one letter's strokes divided in two (a C whose
+ * tail ran under the next letter, because nobody pinches between letters).
+ */
+function splitVariants(groups: Group[]): Group[][] {
+  const out: Group[][] = [];
+  const letterH = median(groups.map((g) => g.maxY - g.minY)) || 1;
+  for (let i = 0; i + 1 < groups.length; i++) {
+    const gap = groups[i + 1].minX - groups[i].maxX;
+    if (gap > 0.35 * letterH) continue;
+    const joined = groupOf([...groups[i].strokes, ...groups[i + 1].strokes]);
+    out.push([...groups.slice(0, i), joined, ...groups.slice(i + 2)]);
+  }
+  groups.forEach((g, i) => {
+    if (g.strokes.length < 2) return;
+    const byX = g.strokes
+      .map((s) => {
+        const b = boxOf(s);
+        return { s, cx: (b.minX + b.maxX) / 2 };
+      })
+      .sort((a, b) => a.cx - b.cx);
+    for (let c = 1; c < byX.length; c++) {
+      if (byX[c].cx - byX[c - 1].cx < 0.2 * letterH) continue;
+      const left = groupOf(byX.slice(0, c).map((x) => x.s));
+      const right = groupOf(byX.slice(c).map((x) => x.s));
+      out.push([...groups.slice(0, i), left, right, ...groups.slice(i + 1)]);
+    }
+  });
+  return out;
+}
+
+/**
+ * Reads one word. If the first split doesn't make a known word but a split one
+ * change away does, that one wins (the first reading stays as an alternative).
+ */
+function readWord(groups: Group[]): { reading: WordReading; groups: Group[] } {
+  const first = decodeWord(groups);
+  if (first.lexical || groups.length > 10) return { reading: first, groups };
+  let best: { reading: WordReading; groups: Group[] } | null = null;
+  for (const v of splitVariants(groups)) {
+    if (v.length < 2) continue;
+    const r = decodeWord(v);
+    if (!r.lexical || r.quality < first.quality - 0.25) continue;
+    // A number stays a number unless the word fits almost perfectly.
+    if (first.numeric && r.fit > 1.1) continue;
+    if (!best || r.fit < best.reading.fit) best = { reading: r, groups: v };
+  }
+  if (!best) return { reading: first, groups };
+  const alternatives = [...best.reading.alternatives];
+  for (const a of [first.text, ...first.alternatives])
+    if (a !== best.reading.text && !alternatives.includes(a)) alternatives.push(a);
+  return { reading: { ...best.reading, alternatives }, groups: best.groups };
+}
+
+/** The letter split behind the last reading of each stroke list (so the result card shows the same letters). */
+const lastSplit = new WeakMap<StrokeXY[], Group[][]>();
+
+/**
+ * The words and letters the reading of `strokes` used. Pass the same array
+ * that went to recognizeStrokes(); any other array is split afresh.
+ */
+export function readingSegments(strokes: StrokeXY[]): Group[][] {
+  return lastSplit.get(strokes) ?? segment(strokes.filter((s) => s.length > 0));
 }
 
 export interface StrokeInput {
@@ -339,10 +508,13 @@ export interface StrokeInput {
 
 export function recognizeStrokes(strokes: StrokeXY[]): Recognition {
   const started = performance.now();
-  const words = segment(strokes.filter((s) => s.length > 0));
-  if (!words.length) return { text: "", confidence: 0, alternatives: [], kind: "unreadable", ms: 0 };
+  const firstSplit = segment(strokes.filter((s) => s.length > 0));
+  if (!firstSplit.length) return { text: "", confidence: 0, alternatives: [], kind: "unreadable", ms: 0 };
 
-  const readings = words.map(decodeWord);
+  const read = firstSplit.map(readWord);
+  const words = read.map((r) => r.groups);
+  lastSplit.set(strokes, words);
+  const readings = read.map((r) => r.reading);
   const quality = readings.reduce((q, r) => q + r.quality, 0) / readings.length;
   const text = readings.map((r) => r.text).join(" ");
   const letters = words.reduce((n, w) => n + w.length, 0);
@@ -358,6 +530,7 @@ export function recognizeStrokes(strokes: StrokeXY[]): Recognition {
   });
 
   const ms = performance.now() - started;
-  if (quality < 0.12) return { text: "", confidence: 0, alternatives: [], kind: "unreadable", ms };
+  // Shaky air letters still deserve a best guess; only ink that looks like no letter at all is "unreadable".
+  if (quality < 0.05) return { text: "", confidence: 0, alternatives: [], kind: "unreadable", ms };
   return { text, confidence: Math.min(1, Math.max(0, confidence)), alternatives: alternatives.slice(0, 3), kind: "text", ms };
 }

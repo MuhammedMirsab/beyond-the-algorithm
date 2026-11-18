@@ -126,13 +126,16 @@ export function useHandTracking({ store, settings, enabled, initialOn, videoRef,
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      // Writing zone: the part of the camera view that maps onto the writing area.
+      // Writing zone: only outlined when a higher sensitivity zooms in on part of
+      // the camera view; by default the whole view is the writing area.
       const r = frame.region;
-      ctx.strokeStyle = "rgba(255,255,255,0.6)";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.strokeRect(r.x * w + 0.5, r.y * h + 0.5, r.w * w, r.h * h);
-      ctx.setLineDash([]);
+      if (r.w < 0.995 || r.h < 0.995) {
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(r.x * w + 0.5, r.y * h + 0.5, r.w * w, r.h * h);
+        ctx.setLineDash([]);
+      }
 
       if (!lm) return;
       // The video is mirrored on screen, so mirror the points too.

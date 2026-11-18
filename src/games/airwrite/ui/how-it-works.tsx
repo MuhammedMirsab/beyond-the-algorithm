@@ -8,7 +8,7 @@ import type { InkImage } from "../engine/exportImage";
 import { CLOUD_SIZE, letterAnatomy, type LetterAnatomy, type LetterBox } from "../engine/letters";
 import { LEXICON } from "../engine/recognition/lexicon";
 import type { CloudPoint, StrokeXY } from "../engine/recognition/pdollar";
-import { recognizeStrokes, segment, type Recognition } from "../engine/recognition/recognize";
+import { readingSegments, recognizeStrokes, type Recognition } from "../engine/recognition/recognize";
 import { inDisplayCase } from "../engine/words";
 import { TEMPLATES } from "../engine/recognition/templates";
 import { HAND_CONNECTIONS } from "../engine/gesture";
@@ -266,7 +266,7 @@ function SplitVisual({ strokes, text, example }: { strokes: StrokeXY[]; text: st
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
   const fit = useMemo(() => fitTo(strokes.flat(), 30), [strokes]);
-  const groups = useMemo(() => segment(strokes.filter((s) => s.length > 0)).flat(), [strokes]);
+  const groups = useMemo(() => readingSegments(strokes).flat(), [strokes]);
   const chars = text ? [...text.replace(/\s+/g, "")] : [];
   const labelled = chars.length === groups.length;
   const pad = 8;

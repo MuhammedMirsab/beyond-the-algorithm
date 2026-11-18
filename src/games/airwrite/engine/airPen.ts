@@ -25,7 +25,7 @@ export interface PenSettings {
 }
 
 export const DEFAULT_SETTINGS: PenSettings = {
-  sensitivity: 0.5,
+  sensitivity: 0,
   smoothing: 0.5,
   pinch: 0.5,
   center: { x: 0.5, y: 0.5 },
@@ -155,17 +155,23 @@ export class AirPen {
     this.palmTrail = [];
   }
 
-  /** The writing zone: the part of the camera image that maps onto the canvas. */
+  /**
+   * The writing zone: the part of the camera image that maps onto the canvas.
+   * At the default sensitivity (0) it holds the whole camera picture, so the
+   * pen works wherever the camera sees the hand and letters are never cut off
+   * at an edge. Higher sensitivity zooms in on a smaller zone. The scale is the
+   * same on both axes, so letters keep the shape they were written in.
+   */
   region(): Region {
-    let w = lerp(0.88, 0.34, clamp(this.settings.sensitivity, 0, 1));
-    let h = (w * this.videoAspect) / this.canvasAspect;
-    const maxH = 0.94;
-    if (h > maxH) {
-      w *= maxH / h;
-      h = maxH;
-    }
-    const cx = clamp(this.settings.center.x, w / 2, 1 - w / 2);
-    const cy = clamp(this.settings.center.y, h / 2, 1 - h / 2);
+    const zoom = lerp(1, 0.4, clamp(this.settings.sensitivity, 0, 1));
+    // Smallest canvas-shaped rectangle that holds the whole picture
+    // (in camera units, h = w * videoAspect / canvasAspect).
+    const ratio = this.canvasAspect / this.videoAspect;
+    const w = (ratio >= 1 ? ratio : 1) * zoom;
+    const h = (ratio >= 1 ? 1 : 1 / ratio) * zoom;
+    // A zone wider (or taller) than the picture stays centred on it.
+    const cx = w >= 1 ? 0.5 : clamp(this.settings.center.x, w / 2, 1 - w / 2);
+    const cy = h >= 1 ? 0.5 : clamp(this.settings.center.y, h / 2, 1 - h / 2);
     return { x: cx - w / 2, y: cy - h / 2, w, h };
   }
 

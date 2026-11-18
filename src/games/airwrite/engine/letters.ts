@@ -2,11 +2,11 @@
  * Turns the recogniser's own working into things a visitor can see: the
  * letters it split the ink into (boxes on the picture) and, for one letter,
  * the 32-point cloud it compared with the closest shape in its library.
- * Uses the same segment() and toCloud() the recogniser runs, so it shows
+ * Uses the same letter split (readingSegments) and toCloud() the recogniser runs, so it shows
  * exactly what happened.
  */
 import { CLOUD_SIZE, cloudMatch, cloudPairs, cloudSteps, toCloud, type CloudPoint, type StrokeXY } from "./recognition/pdollar";
-import { classify, segment } from "./recognition/recognize";
+import { classify, readingSegments } from "./recognition/recognize";
 import { TEMPLATES } from "./recognition/templates";
 
 export { CLOUD_SIZE };
@@ -46,7 +46,7 @@ const charsOf = (text: string) => [...text.replace(/\s+/g, "")];
  * the reading; pass null to draw the boxes without letters.
  */
 export function segmentLetters(strokes: StrokeXY[], text: string | null, frame: PictureFrame): Segmentation {
-  const words = segment(strokes.filter((s) => s.length > 0));
+  const words = readingSegments(strokes);
   const groups = words.flat();
   const chars = text ? charsOf(text) : [];
   const labelled = chars.length === groups.length;
@@ -84,7 +84,7 @@ function templatesFor(char: string) {
 
 /** The first letter's point cloud next to the library shape it was matched with. */
 export function firstLetterClouds(strokes: StrokeXY[], text: string): LetterClouds | null {
-  const groups = segment(strokes.filter((s) => s.length > 0)).flat();
+  const groups = readingSegments(strokes).flat();
   const chars = charsOf(text);
   if (!groups.length || chars.length !== groups.length) return null;
   const variants = templatesFor(chars[0]);
@@ -135,7 +135,7 @@ export interface LetterAnatomy {
  * what happened. Null when the reading doesn't line up letter for letter.
  */
 export function letterAnatomy(strokes: StrokeXY[], text: string): LetterAnatomy | null {
-  const groups = segment(strokes.filter((s) => s.length > 0)).flat();
+  const groups = readingSegments(strokes).flat();
   const chars = charsOf(text);
   if (!groups.length || chars.length !== groups.length) return null;
   const char = chars[0];
