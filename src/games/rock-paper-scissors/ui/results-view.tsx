@@ -1,14 +1,17 @@
 "use client";
 
 import { ArrowRight, RotateCcw, Trophy, X } from "lucide-react";
-import { motion, useInView } from "motion/react";
-import { useRef, type ReactNode } from "react";
+import { AnimatePresence, motion, useInView } from "motion/react";
+import { useRef, useState, type ReactNode } from "react";
 import { NextPlayerIcon } from "@/components/game/next-player";
 import { ResultPanel } from "@/components/game/panels";
+import { NameEntry, Scoreboard } from "@/components/game/scoreboard";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Score, Stat } from "@/components/ui/score";
 import { cn } from "@/lib/cn";
+import { useBoard } from "@/lib/leaderboard";
+import { BOARD_ID, boardDetail, boardScore, type MatchSummary } from "../engine/board";
 import { GESTURES } from "../engine/aiPredictor";
 import { countHabits, describeHabits, type HabitCounts, type Insight } from "../engine/insights";
 import type { Difficulty, RoundRecord } from "../engine/types";
@@ -151,6 +154,40 @@ function Noticed({ history, habits, insights }: { history: readonly RoundRecord[
   );
 }
 
+/** Today's shared board: a name for this match first (skippable), then the board with the visitor's row lit. */
+function MatchBoard({ summary, entryId, onAdded }: { summary: MatchSummary; entryId: string | null; onAdded: (id: string) => void }) {
+  const board = useBoard(BOARD_ID);
+  const [step, setStep] = useState<"name" | "board">(entryId ? "board" : "name");
+
+  const submitName = (name: string) => {
+    const { id } = board.add({ name, score: boardScore(summary), detail: boardDetail(summary), tiebreak: summary.rounds });
+    onAdded(id);
+    setStep("board");
+  };
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {step === "name" ? (
+        <motion.div
+          key="name"
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-ring sm:p-6"
+        >
+          <NameEntry onSubmit={submitName} onSkip={() => setStep("board")} />
+          <p className="type-caption text-fg-subtle">
+            {boardScore(summary).toLocaleString("en")} points for this match. Only the name you type and your score are saved, on the shared board.
+          </p>
+        </motion.div>
+      ) : (
+        <motion.div key="board" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: EASE_OUT }}>
+          <Scoreboard entries={board.entries} highlightId={entryId} total={board.total} rankOf={board.rankOf} loading={!board.ready} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 /**
  * The end of a match: who won, how often the AI guessed the visitor's move
  * against the 33% that random guessing gets, what it noticed, and how it works.
@@ -173,6 +210,15 @@ export function ResultsView({
   const accuracy = percent(correct, rounds.length);
   const habits = countHabits(history);
   const insights = describeHabits(habits, 4);
+  const [entryId, setEntryId] = useState<string | null>(null);
+  const summary: MatchSummary = {
+    playerScore: match.playerScore,
+    aiScore: match.aiScore,
+    won,
+    rounds: rounds.length,
+    accuracy,
+    difficulty,
+  };
 
   // Honest about small samples: only a clear gap from 33% counts as reading you.
   let verdict: ReactNode;
@@ -214,6 +260,7 @@ export function ResultsView({
         </>
       }
     >
+      <MatchBoard summary={summary} entryId={entryId} onAdded={setEntryId} />
       <Noticed history={history} habits={habits} insights={insights} />
       <RpsHowItWorks history={history} guesses={guesses} rounds={rounds} insights={insights} />
     </ResultPanel>
