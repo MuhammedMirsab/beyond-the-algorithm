@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { SpectrumMark } from "@/components/hub/spectrum-mark";
-import { fetchAllFeedback } from "@/lib/feedback-admin";
+import { fetchAllFeedback, fetchAllVisits } from "@/lib/feedback-admin";
 import { isSignedIn, signOut } from "./auth";
 import { Dashboard } from "./dashboard";
 import { LoginForm } from "./login-form";
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default async function ResponsesPage() {
   if (!(await isSignedIn())) return <LoginForm />;
 
-  const result = await fetchAllFeedback();
+  const [result, visits] = await Promise.all([fetchAllFeedback(), fetchAllVisits()]);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -35,7 +35,12 @@ export default async function ResponsesPage() {
       </header>
 
       {result.ok ? (
-        <Dashboard entries={result.entries} fetchedAt={result.fetchedAt} />
+        <Dashboard
+          entries={result.entries}
+          fetchedAt={result.fetchedAt}
+          visits={visits.ok ? visits.visits : null}
+          visitsError={visits.ok ? undefined : visits.message}
+        />
       ) : (
         <main className="mx-auto flex w-full max-w-[40rem] flex-1 flex-col gap-4 px-4 pt-16 sm:px-6">
           <span className="type-label text-danger">{"Can't read feedback"}</span>

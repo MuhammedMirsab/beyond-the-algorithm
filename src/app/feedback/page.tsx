@@ -6,7 +6,7 @@ import { FeedbackForm } from "./feedback-form";
 
 export const metadata: Metadata = {
   title: "Feedback",
-  description: "Three quick questions about the game you just played.",
+  description: "One tap to tell us how the game went.",
   robots: { index: false, follow: false },
 };
 

@@ -10,8 +10,10 @@ import { Segmented } from "@/components/ui/controls";
 import { Modal } from "@/components/ui/dialog";
 import { ISSUES, RATINGS } from "@/content/feedback";
 import { GAMES, type GameSlug } from "@/content/games";
+import type { Visit } from "@/content/visits";
 import type { FeedbackEntry } from "@/lib/feedback-admin";
 import { cn } from "@/lib/cn";
+import { duration, VisitsPanel, VisitTimeline } from "./visits-panel";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -47,7 +49,18 @@ type Sort = "newest" | "oldest" | "lowest" | "highest";
 
 /* ── Dashboard ────────────────────────────────────────────────────── */
 
-export function Dashboard({ entries, fetchedAt }: { entries: FeedbackEntry[]; fetchedAt: string }) {
+export function Dashboard({
+  entries,
+  fetchedAt,
+  visits,
+  visitsError,
+}: {
+  entries: FeedbackEntry[];
+  fetchedAt: string;
+  /** Tracked opens of the form (since 19 Nov 2026); null when they couldn't be read. */
+  visits: Visit[] | null;
+  visitsError?: string;
+}) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
   const [query, setQuery] = useState("");
@@ -107,6 +120,9 @@ export function Dashboard({ entries, fetchedAt }: { entries: FeedbackEntry[]; fe
   };
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
+  // Which tracked visit produced each answer (answers from before tracking have none).
+  const visitByAnswer = useMemo(() => new Map((visits ?? []).filter((v) => v.feedbackId).map((v) => [v.feedbackId, v])), [visits]);
+
   const openIndex = openId ? shown.findIndex((e) => e.id === openId) : -1;
   const open = openIndex >= 0 ? shown[openIndex] : null;
 
@@ -136,11 +152,14 @@ export function Dashboard({ entries, fetchedAt }: { entries: FeedbackEntry[]; fe
           <h2 className="type-title-2 text-fg">No feedback yet</h2>
           <p className="type-body text-fg-muted">Answers show up here as soon as visitors send the form.</p>
         </section>
+      ) : null}
+      {entries.length === 0 ? (
+        <VisitsSection visits={visits} error={visitsError} now={fetchedAt} />
       ) : (
         <>
           {/* Headline numbers */}
           <section aria-label="Totals" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <BigStat value={String(stats.total)} label="Responses" note={`${stats.named} left a name`} />
+            <BigStat value={String(stats.total)} label="Responses" note={stats.named ? `${stats.named} left a name (asked until 19 Nov)` : "All anonymous"} />
             <BigStat value={stats.avg.toFixed(1)} label="Average rating" note="out of 5" accent="text-game" game="face-control" />
             <BigStat
               value={`${Math.round((stats.happy / stats.total) * 100)}%`}
@@ -187,6 +206,8 @@ export function Dashboard({ entries, fetchedAt }: { entries: FeedbackEntry[]; fe
               <Timeline entries={entries} />
             </Panel>
           </section>
+
+          <VisitsSection visits={visits} error={visitsError} now={fetchedAt} />
 
           {/* Per game */}
           <section className="flex flex-col gap-5">
@@ -320,6 +341,8 @@ export function Dashboard({ entries, fetchedAt }: { entries: FeedbackEntry[]; fe
 
       <AnswerModal
         entry={open}
+        visit={open ? visitByAnswer.get(open.id) ?? null : null}
+        now={fetchedAt}
         index={openIndex}
         count={shown.length}
         onClose={() => setOpenId(null)}
@@ -329,6 +352,26 @@ export function Dashboard({ entries, fetchedAt }: { entries: FeedbackEntry[]; fe
         }}
       />
     </main>
+  );
+}
+
+/* ── Form tracking ────────────────────────────────────────────────── */
+
+function VisitsSection({ visits, error, now }: { visits: Visit[] | null; error?: string; now: string }) {
+  return (
+    <section className="flex flex-col gap-5">
+      <SectionHead
+        title="Everyone who opened the form"
+        line="Sent or not. Anonymous: a random id kept in the browser plus a device fingerprint, no names. Tracked since 19 Nov evening."
+      />
+      {visits ? (
+        <VisitsPanel visits={visits} now={now} />
+      ) : (
+        <p className="type-body rounded-lg bg-surface p-6 text-fg-muted shadow-ring">
+          {"Couldn't read the visits."} <span className="font-mono text-[0.8125rem] text-fg-subtle">{error}</span>
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -503,12 +546,16 @@ function AnswerCard({ entry: e, now, onOpen }: { entry: FeedbackEntry; now: stri
 
 function AnswerModal({
   entry,
+  visit,
+  now,
   index,
   count,
   onClose,
   onStep,
 }: {
   entry: FeedbackEntry | null;
+  visit: Visit | null;
+  now: string;
   index: number;
   count: number;
   onClose: () => void;
@@ -605,9 +652,24 @@ function AnswerModal({
             <dd className="tabular-nums text-fg-muted">{fullDate.format(new Date(e.at))}</dd>
             <dt>Opened from</dt>
             <dd className="text-fg-muted">{e.from ? `${gameName(e.from)} QR code` : "Not a game QR"}</dd>
+            {visit ? (
+              <>
+                <dt>Took</dt>
+                <dd className="tabular-nums text-fg-muted">
+                  {duration(visit.sentMs)} from opening, first tap after {duration(visit.firstTapMs)}
+                </dd>
+              </>
+            ) : null}
             <dt>Record</dt>
             <dd className="truncate font-mono text-[0.75rem] text-fg-faint">{e.id}</dd>
           </dl>
+
+          {visit ? (
+            <div className="flex flex-col gap-3">
+              <span className="type-label text-fg-subtle">What they did on the form</span>
+              <VisitTimeline visit={visit} now={now} />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Modal>

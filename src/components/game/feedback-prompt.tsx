@@ -33,7 +33,7 @@ export function FeedbackPrompt({ className }: { className?: string }) {
         </div>
         <div className="flex max-w-[13rem] flex-col gap-1">
           <span className="type-body font-semibold text-fg">How was it?</span>
-          <span className="type-small text-fg-subtle">Scan with your phone. Three quick questions.</span>
+          <span className="type-small text-fg-subtle">Scan with your phone. One tap is enough.</span>
         </div>
       </div>
 
@@ -48,7 +48,7 @@ export function FeedbackPrompt({ className }: { className?: string }) {
       >
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="type-body font-semibold text-fg">How was it?</span>
-          <span className="type-small text-fg-subtle">Three quick questions.</span>
+          <span className="type-small text-fg-subtle">One tap is enough.</span>
         </span>
         <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-full bg-fg/10 text-fg">
           <ArrowRight strokeWidth={2.5} className="size-5" />

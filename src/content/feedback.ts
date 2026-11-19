@@ -1,7 +1,7 @@
 import { GAMES, type GameSlug } from "@/content/games";
 
 /**
- * The visitor feedback form: three questions, reached only from the QR code
+ * The visitor feedback form: a rating first, the rest optional, reached only from the QR code
  * on each game's result screen (never linked from the hub).
  */
 
