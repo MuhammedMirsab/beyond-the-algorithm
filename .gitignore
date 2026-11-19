@@ -22,3 +22,8 @@ next-env.d.ts
 *.pem
 npm-debug.log*
 bun-debug.log*
+
+# Firebase service-account keys and feedback exports: never commit
+*-firebase-adminsdk-*.json
+service-account*.json
+/feedback-export
