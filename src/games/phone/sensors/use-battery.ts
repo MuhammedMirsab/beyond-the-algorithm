@@ -14,6 +14,9 @@ export interface BatteryReading {
 
 const EVENTS = ["levelchange", "chargingchange", "chargingtimechange", "dischargingtimechange"] as const;
 
+/** A browser that never answers counts as one that didn't share the battery. */
+const GIVE_UP_MS = 4000;
+
 /**
  * navigator.getBattery() where the browser has it (Chrome, Edge, Android).
  * No permission needed, so it reads as soon as `enabled` is true, and its
@@ -38,9 +41,14 @@ export function useBattery(enabled: boolean) {
         dischargingTime: manager.dischargingTime,
       });
     };
+    const giveUp = window.setTimeout(() => {
+      if (!cancelled && !manager) setFailed(true);
+    }, GIVE_UP_MS);
     getBattery()
       .then((m) => {
         if (cancelled) return;
+        window.clearTimeout(giveUp);
+        setFailed(false);
         manager = m;
         read();
         for (const name of EVENTS) m.addEventListener(name, read);
@@ -50,6 +58,7 @@ export function useBattery(enabled: boolean) {
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(giveUp);
       if (manager) for (const name of EVENTS) manager.removeEventListener(name, read);
     };
   }, [enabled]);

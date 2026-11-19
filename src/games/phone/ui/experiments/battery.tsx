@@ -17,7 +17,9 @@ const SLEEP = sleepWindow(CHARGING_WEEK);
 
 export function BatteryExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
-  const [mode, setMode] = useState<Source>(caps.battery ? "live" : "sim");
+  const [chosen, setMode] = useState<Source>(caps.battery ? "live" : "sim");
+  // Safari and Firefox have no battery API: the simulation is all there is, never a reading that can't arrive.
+  const mode: Source = caps.battery ? chosen : "sim";
   const battery = useBattery(mode !== "sim");
   const [simLevel, setSimLevel] = useState(FULL);
   const [simCharging, setSimCharging] = useState(false);
@@ -124,7 +126,7 @@ export function BatteryExperiment({ ctx }: ExperimentProps) {
     <p className="type-body text-fg-muted">This browser didn&apos;t share the battery. Try the simulation.</p>
   ) : (
     <p className="type-body text-fg-muted">
-      These are this {caps.touch ? "phone's" : "laptop's"} real battery readings. Any website can read them, without asking.
+      These are this {caps.touch ? "phone's" : "laptop's"} real battery readings. This browser lets any website read them, without asking.
     </p>
   );
 

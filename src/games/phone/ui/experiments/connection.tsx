@@ -15,7 +15,9 @@ import { ModeSwitch, STAGE_BOTTOM, StageScore, StageShell, useLatch, type Readou
 
 export function ConnectionExperiment({ ctx }: ExperimentProps) {
   const caps = useCapabilities();
-  const [mode, setMode] = useState<Source>(caps.connection ? "live" : "sim");
+  const [chosen, setMode] = useState<Source>(caps.connection ? "live" : "sim");
+  // Safari and Firefox have no connection API: the simulation is all there is, never a reading that can't arrive.
+  const mode: Source = caps.connection ? chosen : "sim";
   const local = useConnection(mode !== "sim");
   const [placeId, setPlaceId] = useState<WifiPlaceId>("home");
   const [visited, setVisited] = useState<WifiPlaceId[]>([]);
@@ -79,7 +81,7 @@ export function ConnectionExperiment({ ctx }: ExperimentProps) {
     </div>
   ) : (
     <p className="type-body text-fg-muted">
-      These are this {caps.touch ? "phone's" : "laptop's"} real connection readings. Any website can read them, without asking. The browser rounds them on
+      These are this {caps.touch ? "phone's" : "laptop's"} real connection readings. This browser lets any website read them, without asking. The browser rounds them on
       purpose.
     </p>
   );
