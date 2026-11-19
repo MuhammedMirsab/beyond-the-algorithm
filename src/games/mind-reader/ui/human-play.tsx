@@ -10,7 +10,7 @@ import { cn } from "@/lib/cn";
 import { parseCustomClue } from "../engine/custom-clue-parser";
 import { numberRange } from "../engine/game-engine";
 import { cluesLeft, humanCards, possibleNumbers, type AskedClue, type ClueCardView, type HumanAction, type HumanState } from "../engine/human";
-import { formatNumber } from "../engine/ranges";
+import { formatNumber, parseWholeNumber } from "../engine/ranges";
 import { AnswerChip } from "./bits";
 import { useKeys, useScreenFocus } from "./hooks";
 import { EASE_OUT } from "./motion";
@@ -156,8 +156,8 @@ function GuessForm({
   const id = useId();
   const [error, setError] = useState<string | null>(null);
 
-  const n = draft === "" ? null : Number(draft);
-  const valid = n !== null && Number.isInteger(n) && n >= 1 && n <= max;
+  const n = parseWholeNumber(draft, max);
+  const valid = n !== null;
   const crossedOut = valid && !possible.includes(n);
 
   const submit = (e?: FormEvent) => {
@@ -203,7 +203,7 @@ function GuessForm({
           value={draft}
           disabled={disabled}
           onChange={(e) => {
-            setDraft(e.target.value.replace(/\D/g, "").slice(0, 4));
+            setDraft(e.target.value);
             if (error) setError(null);
           }}
           inputMode="numeric"

@@ -20,6 +20,18 @@ export function formatNumber(n: number): string {
   return n.toLocaleString("en");
 }
 
+/**
+ * What a visitor typed in a number box, read strictly: digits only, from 1 to
+ * `max`. Anything else ("-5", "1.5", "5e1", "") is null, so the box can say
+ * so instead of quietly turning it into a different number.
+ */
+export function parseWholeNumber(text: string, max: number): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return n >= 1 && n <= max ? n : null;
+}
+
 /** "1 to 100". Plain words instead of a dash, per the copy rules. */
 export function rangeLabel(range: RangeId): string {
   return `1 to ${formatNumber(RANGE_MAX[range])}`;

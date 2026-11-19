@@ -10,7 +10,7 @@ import { Score, Stat } from "@/components/ui/score";
 import { cn } from "@/lib/cn";
 import { machineGuess, type MachineAction, type MachineState } from "../engine/machine";
 import { binaryFact, binaryQuestionText, findContradiction } from "../engine/prediction-engine";
-import { doublingSum, formatNumber, halvingsFor, RANGE_MAX, rangeLabel, type RangeId } from "../engine/ranges";
+import { doublingSum, formatNumber, halvingsFor, parseWholeNumber, RANGE_MAX, rangeLabel, type RangeId } from "../engine/ranges";
 import { useHeadingFocus, useKeys } from "./hooks";
 import { CapacityGrid, ParityComb, RaceBars, SlipRows } from "./how-visuals";
 import { SearchReplay } from "./search-replay";
@@ -205,8 +205,8 @@ function AnswerChecker({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const n = Number(value);
-    if (value === "" || !Number.isInteger(n) || n < 1 || n > max) {
+    const n = parseWholeNumber(value, max);
+    if (n === null) {
       setError(`Type a whole number from ${rangeLabel(machine.range)}.`);
       onCheck(null);
       return;
@@ -256,7 +256,7 @@ function AnswerChecker({
             id={`${id}-number`}
             value={value}
             onChange={(e) => {
-              setValue(e.target.value.replace(/\D/g, "").slice(0, 4));
+              setValue(e.target.value);
               if (error) setError(null);
             }}
             inputMode="numeric"
