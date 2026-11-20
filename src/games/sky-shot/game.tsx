@@ -1,10 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { SoundToggle } from "@/components/game/game-shell";
+import { GameShell } from "@/components/game/game-shell";
+import { track } from "@/lib/play-tracker";
 import { readJSON, storageKey, writeJSON } from "@/lib/storage";
 import { cn } from "@/lib/cn";
 import type { Runtime, RuntimeStatus } from "./engine/runtime";
@@ -28,7 +26,6 @@ export function SkyShotGame() {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<RuntimeStatus>({ camera: "starting", hand: false });
-  const router = useRouter();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -47,6 +44,11 @@ export function SkyShotGame() {
         setStatus,
         () => readJSON<number>(BEST_KEY, 0),
         (n) => writeJSON(BEST_KEY, n),
+        {
+          onStart: () => track.start(runtime?.inputMode() ?? "hand"),
+          onRound: (round) => track.step("round", round),
+          onGameOver: (score, round) => track.end({ score, label: `out on round ${round}` }),
+        },
       );
     });
     return () => {
@@ -55,20 +57,11 @@ export function SkyShotGame() {
     };
   }, []);
 
-  // Staff shortcut, unlisted like the rest of the arcade: B goes back.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.key === "b" || e.key === "B") router.push("/");
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [router]);
-
   const cameraLive = status.camera === "ready" || status.camera === "loading-model";
   const hint = status.camera === "ready" && status.hand ? null : STATUS_TEXT[status.camera];
 
   return (
+    <GameShell slug="sky-shot" immersive sound>
     <div className="relative flex h-dvh w-full items-center justify-center overflow-hidden bg-[#0d0c12] select-none">
       {/* 16:9 stage, as big as the screen allows. */}
       <div className="relative aspect-video w-full max-w-[calc(100dvh*16/9)]">
@@ -78,20 +71,6 @@ export function SkyShotGame() {
           className="absolute inset-0 size-full [image-rendering:pixelated]"
         />
         <canvas ref={overlayRef} className="absolute inset-0 size-full cursor-none touch-none" />
-      </div>
-
-      {/* Top bar floats over the letterbox. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-3 p-3 sm:p-4">
-        <Link
-          href="/"
-          className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-full bg-black/55 px-4 text-[0.9375rem] font-semibold text-white backdrop-blur-sm transition-colors hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        >
-          <ArrowLeft className="size-[18px]" />
-          Arcade
-        </Link>
-        <div className="pointer-events-auto rounded-full bg-black/55 text-white backdrop-blur-sm">
-          <SoundToggle />
-        </div>
       </div>
 
       {/* Camera preview: the player sees that the game sees their hand. */}
@@ -114,5 +93,6 @@ export function SkyShotGame() {
         </div>
       ) : null}
     </div>
+    </GameShell>
   );
 }

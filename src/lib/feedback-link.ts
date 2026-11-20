@@ -20,6 +20,7 @@ export const FEEDBACK_CODES: Record<GameSlug, string> = {
   "how-ai-learns": "7",
   "real-or-ai": "8",
   phone: "9",
+  "sky-shot": "10",
 };
 
 /** Where /F/<code> leads: the form, with the game ticked when the code is known. */

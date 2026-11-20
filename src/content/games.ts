@@ -9,6 +9,7 @@ export type GameSlug =
   | "face-control"
   | "airwrite"
   | "viewfinder"
+  | "sky-shot"
   | "train-the-machine"
   | "how-ai-learns"
   | "real-or-ai"
@@ -135,6 +136,18 @@ export const GAMES: Game[] = [
     skill: "Two-hand tracking, 42 points",
     group: "sees",
     minutes: 2,
+    needs: ["camera"],
+    bestOn: "laptop",
+    curator: "mirsab",
+  },
+  {
+    slug: "sky-shot",
+    title: "Sky Shot",
+    short: "Sky Shot",
+    hook: "Make a finger gun and shoot pixel birds out of the sky. The camera follows where your finger points.",
+    skill: "Hand tracking, 21 points",
+    group: "sees",
+    minutes: 3,
     needs: ["camera"],
     bestOn: "laptop",
     curator: "mirsab",

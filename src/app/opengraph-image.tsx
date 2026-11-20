@@ -1,14 +1,15 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Beyond the Algorithm: nine games that show what AI can work out about you";
+export const alt = "Beyond the Algorithm: ten games that show what AI can work out about you";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-/** The brand mark: one dot per game in hue order, on a 3 x 3 grid (see SpectrumMark). */
+/** The brand mark: one dot per game in hue order, stacked 1, 2, 3, 4 (see SpectrumMark). */
 const ROWS = [
-  ["#ff6fa6", "#ff7a5c", "#ffa64d"],
-  ["#ffd93d", "#b6f04a", "#4fe0b0"],
-  ["#4fd6e8", "#6ec8ff", "#7aa0ff"],
+  ["#ff6fa6"],
+  ["#ff7a5c", "#ffa64d"],
+  ["#f8c452", "#ffd93d", "#b6f04a"],
+  ["#4fe0b0", "#4fd6e8", "#6ec8ff", "#7aa0ff"],
 ];
 
 const TITLE = "How much can a machine work out about you?";
@@ -55,7 +56,7 @@ export default async function OpengraphImage() {
           fontFamily: "Mona Body, sans-serif",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 180, gap: 8 }}>
           {ROWS.map((row) => (
             <div key={row.join()} style={{ display: "flex", gap: 12 }}>
               {row.map((c) => (

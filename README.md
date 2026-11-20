@@ -1,6 +1,6 @@
 # Beyond the Algorithm
 
-Nine short games that show what AI can work out about you. Built by IISJ Computer Science students for **EDEX 2026** at International Indian School Jeddah (19 and 20 November 2026).
+Ten short games that show what AI can work out about you. Built by IISJ Computer Science students for **EDEX 2026** at International Indian School Jeddah (19 and 20 November 2026).
 
 | Group | Game | Route | What the AI does |
 | --- | --- | --- | --- |
@@ -9,6 +9,7 @@ Nine short games that show what AI can work out about you. Built by IISJ Compute
 | It sees you | Face Control | `/face-control` | 478 face landmarks become a controller |
 | | AirWrite | `/airwrite` | 21 hand landmarks write; an on-device matcher reads the letters |
 | | Finger frame | `/viewfinder` | Two-hand tracking: 4 fingertips frame a live filter |
+| | Sky Shot | `/sky-shot` | 21 hand landmarks become a finger gun: aim and fire at pixel birds |
 | It learns from you | Train the machine | `/train-the-machine` | Pose classification from your examples |
 | | See how AI learns | `/how-ai-learns` | Transfer learning on MobileNet |
 | It's already around you | Real or AI? | `/real-or-ai` | Spot the AI-edited photo |

@@ -46,7 +46,7 @@ function Hero() {
         <div className="relative z-10 flex flex-col gap-5">
           <h1 className="type-display-1 enter max-w-[15ch] text-fg">How much can a machine work out about you?</h1>
           <p className="type-body-lg enter max-w-[32rem] text-fg-muted [--enter-delay:90ms]">
-            Nine quick games made by IISJ Computer Science students. Play one, then see exactly how the AI did it.
+            Ten quick games made by IISJ Computer Science students. Play one, then see exactly how the AI did it.
           </p>
         </div>
         <figure className="enter relative mx-auto w-[min(100%,22rem)] [--enter-delay:180ms] md:w-full md:max-w-[24rem]">
@@ -109,16 +109,16 @@ function SiteFooter() {
               The apps on your phone do the same thing all day, with far more data. Now you know how.
             </p>
           </div>
-          <WatchingMark className="w-[min(47vw,10.25rem)] justify-self-center md:w-[11.75rem] md:justify-self-end lg:w-[13.25rem]" />
+          <WatchingMark className="w-[min(64vw,14rem)] justify-self-center md:w-[16rem] md:justify-self-end lg:w-[18rem]" />
         </div>
 
         <nav aria-labelledby="footer-games" className="flex flex-col gap-4">
           <h2 id="footer-games" className="type-label text-fg-subtle">
-            Nine games, nine ideas from machine learning
+            Ten games, ten ideas from machine learning
           </h2>
-          <ul className="grid grid-cols-2 gap-2 md:grid-cols-3">
+          <ul className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
             {GAMES.map((game, i) => (
-              <li key={game.slug} className="reveal flex" style={{ ["--reveal-shift" as string]: `${(i % 3) * 12}%` }}>
+              <li key={game.slug} className="reveal flex" style={{ ["--reveal-shift" as string]: `${(i % 5) * 12}%` }}>
                 <Link
                   href={gamePath(game.slug)}
                   data-game={game.slug}

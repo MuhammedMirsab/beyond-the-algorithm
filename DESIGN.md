@@ -1,6 +1,6 @@
 # Beyond the Algorithm: design system
 
-The arcade for EDEX 2026 (IISJ Computer Science). Nine short games, each showing one thing AI can work out about a person. This file is the source of truth for how every screen looks, moves and reads. The live reference is `/design`.
+The arcade for EDEX 2026 (IISJ Computer Science). Ten short games, each showing one thing AI can work out about a person. This file is the source of truth for how every screen looks, moves and reads. The live reference is `/design`.
 
 ## 1. Who it's for and what they should leave with
 
@@ -53,6 +53,7 @@ Dark "console" base so the cartridge colours carry the colour. One neutral ramp 
 | Train the machine | mint 165 | growth |
 | See how AI learns | cyan 205 | study |
 | AirWrite | sky 238 | air |
+| Sky Shot | gold 80 | a laser dot |
 | Your phone | blue 262 | device |
 
 No purple anywhere (it is the most recognisable AI-generated look).
@@ -168,7 +169,7 @@ Every animation needs a job: feedback, where something came from, a state change
 
 `src/components/hub` (the arcade's front page):
 
-- `SpectrumMark`: the logo, nine dots in hue order on a 3 x 3 grid. Also the favicon and the share image.
+- `SpectrumMark`: the logo, ten dots in hue order stacked 1, 2, 3, 4. Also the favicon and the share image.
 - `Globe`: the world as a few thousand points with the visitor pinned on it ("You are here" and a locating ping, CSS-anchored to cobe's marker). It sways gently around the visitor's dot; spin it away and it swings back to find you.
 - `WatchingMark`: the logo drawn large in the footer. Its dots open their eyes when it scrolls into view, follow the pointer and blink now and then; on touch screens they glance around. Still under reduced motion.
 - `GameTile`: one link per game, art on the game colour, hover moves the art.

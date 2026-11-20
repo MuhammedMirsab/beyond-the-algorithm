@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { GameSlug } from "@/content/games";
+import { SkyShotArt } from "./games/sky-shot-art";
 import { AirWriteArt } from "./games/airwrite-art";
 import { FaceControlArt } from "./games/face-control-art";
 import { LearnsArt } from "./games/learns-art";
@@ -38,6 +39,7 @@ const ART: Record<GameSlug, ComponentType<ArtProps>> = {
   "face-control": FaceControlArt,
   airwrite: AirWriteArt,
   viewfinder: ViewfinderArt,
+  "sky-shot": SkyShotArt,
   "train-the-machine": TrainArt,
   "how-ai-learns": LearnsArt,
   "real-or-ai": RealOrAiArt,

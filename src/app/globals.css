@@ -42,6 +42,7 @@
   --color-how-ai-learns: oklch(0.84 0.13 205);
   --color-airwrite: oklch(0.8 0.13 238);
   --color-phone: oklch(0.76 0.145 262);
+  --color-sky-shot: oklch(0.86 0.16 80);
 
   /* Type families (variables come from next/font in app/layout.tsx). */
   --font-sans: var(--font-mona), ui-sans-serif, system-ui, sans-serif;
@@ -184,6 +185,11 @@
   --game: oklch(0.82 0.155 62);
   --game-deep: oklch(0.74 0.17 50);
   --game-ink: oklch(0.18 0.05 55);
+}
+[data-game="sky-shot"] {
+  --game: oklch(0.86 0.16 80);
+  --game-deep: oklch(0.78 0.17 66);
+  --game-ink: oklch(0.18 0.05 75);
 }
 [data-game="rock-paper-scissors"] {
   --game: oklch(0.89 0.17 98);

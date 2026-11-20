@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { gameBySlug } from "@/content/games";
 import { SkyShotGame } from "@/games/sky-shot/game";
 
+const game = gameBySlug("sky-shot");
+
 export const metadata: Metadata = {
-  title: "Sky Shot",
-  description: "A pixel-art bird shooter played with a finger gun. Hand tracking runs on this laptop.",
+  title: game.title,
+  description: game.hook,
 };
 
 export default function SkyShotPage() {

@@ -11,7 +11,7 @@ import { HandAim, pickHand, type Landmark, type Point } from "./aim";
 import { Sfx } from "./audio";
 import { HandTracker } from "./tracker";
 import { H, W } from "./sprites";
-import { World } from "./world";
+import { World, type WorldEvents } from "./world";
 
 export type CameraStatus = "starting" | "loading-model" | "ready" | "no-camera" | "no-tracking";
 
@@ -58,6 +58,7 @@ export class Runtime {
     private readonly onStatus: (s: RuntimeStatus) => void,
     readonly bestKeyRead: () => number,
     private readonly bestKeyWrite: (n: number) => void,
+    events: WorldEvents = {},
   ) {
     canvas.width = W;
     canvas.height = H;
@@ -68,8 +69,10 @@ export class Runtime {
     this.ctx = ctx;
     this.octx = octx;
     this.world = new World(this.sfx, {
-      onGameOver: (score) => {
+      ...events,
+      onGameOver: (score, round) => {
         if (score > this.bestKeyRead()) this.bestKeyWrite(score);
+        events.onGameOver?.(score, round);
       },
     });
     this.world.best = bestKeyRead();
@@ -148,6 +151,11 @@ export class Runtime {
   }
 
   /* ── Input ────────────────────────────────────────────────────────── */
+
+  /** "hand" while a hand is tracked, else "mouse": for analytics. */
+  inputMode(): "hand" | "mouse" {
+    return this.handActive(performance.now()) ? "hand" : "mouse";
+  }
 
   private handActive(now: number) {
     return now - this.handSeenAt < HAND_GRACE_MS;

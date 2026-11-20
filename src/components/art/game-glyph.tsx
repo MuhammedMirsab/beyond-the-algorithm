@@ -55,6 +55,14 @@ const GLYPHS: Record<GameSlug, React.ReactNode> = {
       <circle cx="19.5" cy="14.5" r="2" fill="currentColor" stroke="none" />
     </>
   ),
+  // A crosshair with a dot: where the finger points.
+  "sky-shot": (
+    <>
+      <circle cx="12" cy="12" r="7" />
+      <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
+      <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+    </>
+  ),
   // Four corners of a hand-made frame.
   viewfinder: (
     <>

@@ -4,19 +4,29 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
 import { BY_HUE } from "./spectrum-mark";
 
-/* The brand mark drawn large, in user units: nine dots on a 3 x 3 grid. */
+/* The brand mark drawn large, in user units: ten dots stacked 1, 2, 3, 4. */
 const GAP = 100;
+const RISE = GAP * 0.866;
 const R = 40;
 const PUPIL = 16;
 /** How far a pupil can travel from the centre of its eye. */
 const TRAVEL = R - PUPIL - 6;
-const W = GAP * 2 + R * 2;
-const H = W;
+const W = GAP * 3 + R * 2;
+const H = Math.round((RISE * 3 + R * 2) * 10) / 10;
 
-const EYES = BY_HUE.map((slug, i) => ({ cx: R + (i % 3) * GAP, cy: R + Math.floor(i / 3) * GAP, slug }));
+const EYES = (() => {
+  const eyes: { cx: number; cy: number; slug: (typeof BY_HUE)[number] }[] = [];
+  let i = 0;
+  for (let row = 0; row < 4; row++) {
+    for (let k = 0; k <= row; k++) {
+      eyes.push({ cx: Math.round(W / 2 + (k - row / 2) * GAP), cy: Math.round(R + row * RISE), slug: BY_HUE[i++] });
+    }
+  }
+  return eyes;
+})();
 
 /**
- * The footer's sign-off: the brand mark's nine dots open their eyes and follow
+ * The footer's sign-off: the brand mark's ten dots open their eyes and follow
  * the visitor's pointer, blinking now and then. It is the arcade's whole idea
  * as a joke: every game here was watching. Left alone (or on a touch screen)
  * the eyes glance around by themselves. Decorative; under reduced motion the
