@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { ArrowRight } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { useGameSlug } from "@/lib/game-context";
+import { feedbackQrUrl } from "@/lib/feedback-link";
 import { cn } from "@/lib/cn";
 
 const subscribe = () => () => {};
@@ -20,7 +21,9 @@ export function FeedbackPrompt({ className }: { className?: string }) {
   const slug = useGameSlug();
   const origin = useSyncExternalStore(subscribe, getOrigin, getServerOrigin);
   const path = slug ? `/feedback?game=${slug}` : "/feedback";
-  const url = origin ? `${origin}${path}` : null;
+  // The QR carries a short upper-case link (see feedback-link.ts): fewer,
+  // bigger squares, so phones read it in the dark booth.
+  const url = origin ? feedbackQrUrl(origin, slug) : null;
 
   return (
     <div className={cn("shrink-0", className)}>
@@ -28,7 +31,7 @@ export function FeedbackPrompt({ className }: { className?: string }) {
       <div className="flex items-center gap-4 rounded-lg bg-sunken p-2 pr-5 shadow-ring pointer-coarse:hidden">
         <div className="grid size-[100px] shrink-0 place-items-center rounded-md bg-white">
           {url ? (
-            <QRCodeSVG value={url} size={84} level="M" marginSize={0} bgColor="#ffffff" fgColor="#0e1015" title="QR code for the feedback form" />
+            <QRCodeSVG value={url} size={84} level="L" marginSize={0} bgColor="#ffffff" fgColor="#0e1015" title="QR code for the feedback form" />
           ) : null}
         </div>
         <div className="flex max-w-[13rem] flex-col gap-1">

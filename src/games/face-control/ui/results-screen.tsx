@@ -158,6 +158,16 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
         </>
       }
     >
+      <RunBoard
+        run={{
+          outcome: summary.outcome,
+          score: summary.score,
+          levelIndex: summary.levelIndex,
+          furthest: summary.furthest,
+          levelCount: LEVEL_COUNT,
+          runTime: summary.runTime,
+        }}
+      />
       {face ? (
         <section
           aria-label="Your camera"
@@ -169,16 +179,6 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
           </div>
         </section>
       ) : null}
-      <RunBoard
-        run={{
-          outcome: summary.outcome,
-          score: summary.score,
-          levelIndex: summary.levelIndex,
-          furthest: summary.furthest,
-          levelCount: LEVEL_COUNT,
-          runTime: summary.runTime,
-        }}
-      />
       <FaceHowItWorks session={session} calibration={view.calibration} stats={view.faceStats} tracking={view.tracking} />
     </ResultPanel>
   );
