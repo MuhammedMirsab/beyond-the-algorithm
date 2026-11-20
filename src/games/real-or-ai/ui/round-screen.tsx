@@ -6,6 +6,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { Button } from "@/components/ui/button";
 import { KeyHints } from "@/components/ui/key-hints";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import type { SoundSynthesizer } from "../engine/audio";
 import { freeCorner, type ClueSpot } from "../engine/clues";
 import { pairAspect, photoOn } from "../engine/pairs";
@@ -188,6 +189,7 @@ export function RoundScreen({
 
   const openViewer = (side: Side, focus: ClueSpot | null = null) => {
     if (!reveal) sound.playSelect();
+    track.step(reveal ? "viewer-clues" : "viewer", side);
     loupe.hide();
     viewerUpRef.current = true;
     setViewer({ open: true, side, focus });

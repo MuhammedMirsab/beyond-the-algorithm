@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { track } from "@/lib/play-tracker";
 import { IntroScreen } from "./ui/intro-screen";
 import { WriteScreen, type InputMode } from "./ui/write-screen";
 
@@ -17,10 +18,13 @@ export function AirWriteGame() {
 
   const start = useCallback((mode: InputMode) => {
     window.scrollTo({ top: 0 });
+    track.start(mode);
     setScreen({ name: "write", mode });
   }, []);
 
   const nextPlayer = useCallback(() => {
+    // Next player button and the 90 s idle reset both come through here.
+    track.nextPlayer();
     window.scrollTo({ top: 0 });
     setScreen({ name: "intro", returning: true });
   }, []);

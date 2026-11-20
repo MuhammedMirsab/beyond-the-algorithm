@@ -9,6 +9,7 @@ import { IconButton } from "@/components/ui/button";
 import { GameGlyph } from "@/components/art/game-glyph";
 import { useSoundOn } from "@/lib/sound";
 import { GameSlugContext } from "@/lib/game-context";
+import { openPage } from "@/lib/play-tracker";
 import { cn } from "@/lib/cn";
 
 /**
@@ -40,6 +41,8 @@ export function GameShell({
 }) {
   const game = gameBySlug(slug);
   useBackKey();
+  // Analytics: one session per player of this game (see src/lib/play-tracker.ts).
+  useEffect(() => openPage(slug), [slug]);
   return (
     <GameSlugContext.Provider value={slug}>
     <div data-game={slug} className={cn("relative flex min-h-dvh flex-col bg-canvas", className)}>

@@ -8,10 +8,11 @@ import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { entrance } from "@/lib/entrance";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import { SoundSynthesizer } from "./engine/audio";
 import { getGameQuestions, questionSources } from "./engine/pairs";
 import { warmUp } from "./engine/preload";
-import { ROUNDS, SECONDS_PER_ROUND } from "./engine/scoring";
+import { MAX_SCORE, ROUNDS, SECONDS_PER_ROUND, summarize, verdict } from "./engine/scoring";
 import type { ActiveQuestion, PlayerAnswer } from "./engine/types";
 import { PlayScreen, type Run } from "./ui/play-screen";
 import { ResultsScreen } from "./ui/results-screen";
@@ -50,6 +51,7 @@ export function RealOrAiGame() {
   const start = () => {
     const questions = upcoming.current ?? getGameQuestions(ROUNDS);
     upcoming.current = null;
+    track.start(run ? "again" : "first", questions.length);
     setRun((prev) => ({ id: (prev?.id ?? 0) + 1, questions, index: 0, answers: [] }));
     setPhase("playing");
     sound.playWhoosh();
@@ -57,6 +59,10 @@ export function RealOrAiGame() {
   };
 
   const recordAnswer = (answer: PlayerAnswer) => {
+    if (run && !run.answers.some((a) => a.questionIndex === answer.questionIndex)) {
+      const outcome = answer.selectedOptionKey === null ? "timeout" : answer.isCorrect ? "right" : "wrong";
+      track.step(`round-${answer.questionIndex + 1}`, outcome);
+    }
     setRun((r) =>
       r && !r.answers.some((a) => a.questionIndex === answer.questionIndex) ? { ...r, answers: [...r.answers, answer] } : r,
     );
@@ -67,6 +73,13 @@ export function RealOrAiGame() {
     if (fromIndex + 1 < run.questions.length) {
       setRun((r) => (r && r.index === fromIndex ? { ...r, index: fromIndex + 1 } : r));
     } else {
+      const summary = summarize(run.answers);
+      track.end({
+        score: summary.score,
+        outOf: MAX_SCORE,
+        won: summary.correct * 2 > summary.total,
+        label: verdict(summary.correct, summary.total).toLowerCase(),
+      });
       setPhase("results");
       sound.playFanfare();
       toTop();
@@ -75,6 +88,7 @@ export function RealOrAiGame() {
 
   /** Booth reset: back to the intro with nothing of this visitor left in memory. */
   const nextPlayer = () => {
+    track.nextPlayer();
     setPhase("intro");
     setRun(null);
     sound.playPop();

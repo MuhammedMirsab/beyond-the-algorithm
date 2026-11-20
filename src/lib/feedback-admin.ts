@@ -1,5 +1,6 @@
 import { listCollection, NoKeyError, plainFields, type FsDocument } from "@/lib/firestore-rest";
 import { toVisit, type Visit } from "@/content/visits";
+import { sessionsFromDoc, type PlaySession } from "@/content/plays";
 
 /**
  * Server only. Reads the Firestore `feedback` and `visits` collections with
@@ -25,6 +26,8 @@ export interface FeedbackEntry {
 export type FeedbackResult =
   | { ok: true; entries: FeedbackEntry[]; fetchedAt: string }
   | { ok: false; reason: "no-key" | "error"; message: string };
+
+export type PlaysResult = { ok: true; sessions: PlaySession[]; docs: number; fetchedAt: string } | { ok: false; reason: "no-key" | "error"; message: string };
 
 export type VisitsResult = { ok: true; visits: Visit[] } | { ok: false; message: string };
 
@@ -67,5 +70,21 @@ export async function fetchAllVisits(): Promise<VisitsResult> {
     return { ok: true, visits };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Every game session (since 20 Nov 2026), newest first. One read per
+ * device-hour document, not per session (see src/content/plays.ts).
+ */
+export async function fetchAllPlays(): Promise<PlaysResult> {
+  try {
+    const docs = await listCollection("plays");
+    const sessions = docs.flatMap((doc) => sessionsFromDoc(doc.name.split("/").pop() ?? doc.name, plainFields(doc), doc.createTime));
+    sessions.sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+    return { ok: true, sessions, docs: docs.length, fetchedAt: new Date().toISOString() };
+  } catch (err) {
+    if (err instanceof NoKeyError) return { ok: false, reason: "no-key", message: err.message };
+    return { ok: false, reason: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }

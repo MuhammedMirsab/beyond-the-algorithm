@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useCallback, useReducer, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { useIdle } from "@/lib/idle";
-import { randomSecret, type HumanAction } from "./engine/human";
+import { track } from "@/lib/play-tracker";
+import { humanScore, randomSecret, type HumanAction } from "./engine/human";
 import type { MachineAction } from "./engine/machine";
 import { DEFAULT_RANGE, type RangeId } from "./engine/ranges";
 import { describeSession, initialSession, sessionReducer, type Session } from "./engine/session";
@@ -42,17 +43,66 @@ export function MindReaderGame() {
   const [resultRound, setResultRound] = useState(-1);
   const stage = stageOf(session, resultRound);
 
-  const nextPlayer = useCallback(() => dispatch({ type: "next-player" }), []);
-  const setRange = useCallback((range: RangeId) => dispatch({ type: "set-range", range }), []);
-  const startMachine = useCallback(() => dispatch({ type: "start-machine" }), []);
-  const playRange = useCallback((range: RangeId) => dispatch({ type: "start-machine", range }), []);
-  const startHuman = useCallback(
-    () => dispatch({ type: "start-human", secret: randomSecret(session.range), now: Date.now() }),
-    [session.range],
-  );
-  const machineDispatch = useCallback((action: MachineAction) => dispatch({ type: "machine", action }), []);
-  const humanDispatch = useCallback((action: HumanAction) => dispatch({ type: "human", action }), []);
+  const nextPlayer = useCallback(() => {
+    track.nextPlayer();
+    dispatch({ type: "next-player" });
+  }, []);
+  const setRange = useCallback((range: RangeId) => {
+    track.step("range", range);
+    dispatch({ type: "set-range", range });
+  }, []);
+  const startMachine = useCallback(() => {
+    track.start("machine-guesses", session.range);
+    dispatch({ type: "start-machine" });
+  }, [session.range]);
+  const playRange = useCallback((range: RangeId) => {
+    track.start("machine-guesses", range);
+    dispatch({ type: "start-machine", range });
+  }, []);
+  const startHuman = useCallback(() => {
+    track.start("you-guess", session.range);
+    dispatch({ type: "start-human", secret: randomSecret(session.range), now: Date.now() });
+  }, [session.range]);
+  const machineDispatch = useCallback((action: MachineAction) => {
+    if (action.type === "answer") track.step("answer", action.answer ? "yes" : "no");
+    else if (action.type === "undo") track.step("undo");
+    dispatch({ type: "machine", action });
+  }, []);
+  const humanDispatch = useCallback((action: HumanAction) => {
+    if (action.type === "guess") track.step("guess");
+    else track.step("clue", action.type === "ask-card" ? "card" : "typed");
+    dispatch({ type: "human", action });
+  }, []);
   const showHumanResult = useCallback(() => setResultRound(session.round), [session.round]);
+
+  // Analytics: one end per finished round, when its result screen comes up.
+  const endedRound = useRef(-1);
+  useEffect(() => {
+    if (stage === "machine-right" || stage === "machine-wrong") {
+      if (session.screen !== "machine") return;
+      const asked = session.machine.steps.length;
+      if (endedRound.current === session.round) {
+        // A mis-tapped "No" fixed afterwards: wrong becomes right.
+        if (stage === "machine-right") track.step("corrected", asked);
+        return;
+      }
+      endedRound.current = session.round;
+      track.end(
+        stage === "machine-right"
+          ? { score: asked, label: `found in ${asked} questions` }
+          : { score: asked, label: "answers didn't match" },
+      );
+    } else if (stage === "human-result" && session.screen === "human" && endedRound.current !== session.round) {
+      endedRound.current = session.round;
+      const h = session.human;
+      const n = h.guesses.length;
+      track.end(
+        h.status === "won"
+          ? { score: humanScore(h)?.finalScore ?? 0, won: true, label: `found in ${n} guesses, ${h.clues.length} clues` }
+          : { score: 0, won: false, label: "out of guesses" },
+      );
+    }
+  }, [stage, session]);
 
   // Booth: an abandoned screen resets itself. A fresh intro has nothing to reset.
   const playing = stage === "machine-play" || stage === "human-play";

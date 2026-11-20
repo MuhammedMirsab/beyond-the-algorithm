@@ -2,6 +2,7 @@
 
 import { useEffect, useReducer, useSyncExternalStore } from "react";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import {
   disposeClassifier,
   scoreEmbedding,
@@ -20,6 +21,7 @@ import {
   LIBRARY_BATCH,
   perGroupCounts,
   reducer,
+  tallyResults,
   testPhotosFor,
   trainingGroups,
   truthFor,
@@ -76,6 +78,19 @@ export function useLearnGame() {
   const go = (step: StepId) => {
     dispatch({ type: "go", step });
     window.scrollTo({ top: 0 });
+    if (step === "test") track.step("test", testPhotos.length);
+    if (step === "results") endRun();
+  };
+
+  /** The results screen: library test photos right of total, or the live camera only. */
+  const endRun = () => {
+    if (state.train.phase !== "done") return;
+    if (testPhotos.length === 0) {
+      track.end({ label: "camera only" });
+      return;
+    }
+    const t = tallyResults(state.results, state.threshold, state.train.run.similarityCutoff);
+    track.end({ score: t.right, outOf: t.total, won: t.total > 0 && t.wrong === 0, label: `${t.right} of ${t.total} right` });
   };
 
   const start = () => {
@@ -98,10 +113,14 @@ export function useLearnGame() {
     const taken = new Set((state.examples[groupId] ?? []).map((p) => p.id));
     const photos = drawFromPool(libraryPoolFor(groupId), taken, LIBRARY_BATCH).map((p) => libraryExample(p, groupId, label));
     dispatch({ type: "add-examples", category: groupId, photos });
+    track.step("library-add", photos.length);
   };
 
   /** From naming to examples: the camera opens first, for the first thing that has no photos. */
   const toExamples = () => {
+    // Where the examples come from, never the names typed.
+    const fromLibrary = state.groups.filter((g) => g.library).length;
+    track.start(fromLibrary === 0 ? "camera" : fromLibrary === state.groups.length ? "library" : "mixed", state.groups.length);
     go("examples");
     const first = state.groups.find((g) => !g.library && !(state.examples[g.id] ?? []).length);
     if (first) dispatch({ type: "capture", category: first.id });
@@ -179,6 +198,7 @@ export function useLearnGame() {
     const photos = testPhotos;
     const groups = state.groups;
     if (keepFirst) dispatch({ type: "keep-first", count: keepFirst });
+    track.step(keepFirst ? "experiment" : "train", examples.length);
     // The old model is not needed while a new one trains: free its tensors now.
     session.setClassifier(null);
     session.clearLive();
@@ -227,6 +247,7 @@ export function useLearnGame() {
         return;
       }
       session.setClassifier(classifier);
+      track.step("trained", `${items.length} in ${((performance.now() - t0 - paused) / 1000).toFixed(1)}s`);
       // The "photos become numbers" sample: the first example.
       const firstIndex = 0;
       const first = examples[firstIndex];
@@ -252,10 +273,12 @@ export function useLearnGame() {
     } catch (error) {
       if (run !== activeRun || error instanceof TrainingCancelled) return;
       dispatch({ type: "train", train: { phase: "error", message: trainingErrorText(error) } });
+      track.step("train-error");
     }
   };
 
   const nextPlayer = () => {
+    track.nextPlayer();
     activeRun++;
     getSession().resetVisitor();
     dispatch({ type: "reset" });

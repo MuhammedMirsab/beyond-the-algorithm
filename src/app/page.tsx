@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Rotate3d, ShieldCheck } from "lucide-react";
 import { CURATORS, GAMES, GROUPS, gamePath, gamesInGroup, type Group } from "@/content/games";
 import { GameGlyph } from "@/components/art/game-glyph";
+import { ArcadeTracker } from "@/components/hub/arcade-tracker";
 import { GameTile } from "@/components/hub/game-tile";
 import { Globe } from "@/components/hub/globe";
 import { SpectrumMark } from "@/components/hub/spectrum-mark";
@@ -11,6 +12,7 @@ import { cn } from "@/lib/cn";
 export default function Home() {
   return (
     <div className="flex min-h-dvh flex-col">
+      <ArcadeTracker />
       <SiteHeader />
       <main className="flex flex-1 flex-col">
         <Hero />

@@ -7,8 +7,10 @@ import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { entrance } from "@/lib/entrance";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import { isSoundOn, subscribeSound } from "@/lib/sound";
 import { EXPERIMENT_COUNT, EXPERIMENTS, experimentIndex } from "./data/experiments";
+import { QUIZ_LENGTH } from "./data/quiz";
 import { sound } from "./engine/sound";
 import { LinkProvider, LinkScope, NAV_KEY, useLink, useRemoteValue } from "./link/link";
 import { HostLinkStatus, PausedOverlay, PhoneLinkBanner, PhoneLinkButton } from "./link/link-ui";
@@ -51,7 +53,10 @@ function isPressable(target: EventTarget | null) {
 export function PhoneGame() {
   const [round, setRound] = useState(0);
   // Next player, or a session the booth screen ended: start over, forgetting everything.
-  const onReset = useCallback(() => setRound((r) => r + 1), []);
+  const onReset = useCallback(() => {
+    track.nextPlayer();
+    setRound((r) => r + 1);
+  }, []);
   return (
     <LinkProvider onReset={onReset}>
       <PhoneGameRound key={round} />
@@ -90,6 +95,8 @@ function PhoneGameRound() {
       setMoved(true);
       setScreen(next);
       setVisit((v) => v + 1);
+      if (next.name === "experiment") track.step("experiment", next.id);
+      else if (next.name === "lab" || next.name === "quiz") track.step(next.name);
       // On a phone each screen is a history entry, so the back gesture steps back through the game.
       if (phoneHistory) {
         entryId.current ??= newToken();
@@ -145,9 +152,21 @@ function PhoneGameRound() {
   // A short chime the first time each sensor is tried.
   const testedCount = useRef(0);
   useEffect(() => {
-    if (tested.size > testedCount.current) sound.success();
+    if (tested.size > testedCount.current) {
+      sound.success();
+      // A booth screen mirroring a phone leaves the counting to the phone.
+      if (!following) track.step("sensors-tried", tested.size);
+    }
     testedCount.current = tested.size;
-  }, [tested]);
+  }, [tested, following]);
+
+  // The phone link coming and going, once per change.
+  const linkedRef = useRef(link.linked);
+  useEffect(() => {
+    if (link.linked === linkedRef.current) return;
+    linkedRef.current = link.linked;
+    track.step("link", link.linked ? "connected" : "dropped");
+  }, [link.linked]);
 
   // Sound follows the arcade-wide switch, and stops with the game.
   useEffect(() => {
@@ -171,9 +190,10 @@ function PhoneGameRound() {
 
   // Start: on a phone, the motion prompt opens inside this tap (iPhone only allows it there).
   const start = useCallback(() => {
-    if (role === "phone") void requestMotionPermission();
+    if (role === "phone") void requestMotionPermission().then((answer) => track.step("motion-permission", answer));
+    track.start(role === "host" ? "laptop" : link.controller ? "phone-linked" : role === "phone" ? "phone" : "browser");
     go(FIRST);
-  }, [role, go]);
+  }, [role, link.controller, go]);
 
   // Enter starts on the booth laptop.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
@@ -226,7 +246,16 @@ function PhoneGameRound() {
       break;
     }
     case "quiz":
-      content = <Quiz key={screenKey} keys={!following} onDone={(score) => go({ name: "takeaway", score }, "replace")} />;
+      content = (
+        <Quiz
+          key={screenKey}
+          keys={!following}
+          onDone={(score) => {
+            track.end({ score, outOf: QUIZ_LENGTH, won: score === QUIZ_LENGTH, label: `quiz ${score} of ${QUIZ_LENGTH}, ${tested.size} sensors` });
+            go({ name: "takeaway", score }, "replace");
+          }}
+        />
+      );
       break;
     case "takeaway":
       content = (

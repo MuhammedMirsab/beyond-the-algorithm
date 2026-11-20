@@ -161,7 +161,12 @@ export async function listCollection(collection: string): Promise<FsDocument[]> 
 export async function mergeDocument(
   path: string,
   fields: Record<string, unknown>,
-  opts: { serverTimeFields?: string[]; append?: Record<string, unknown[]> } = {},
+  opts: {
+    serverTimeFields?: string[];
+    append?: Record<string, unknown[]>;
+    /** Field paths to write (dotted for nested maps). Defaults to the top-level keys of `fields`. */
+    mask?: string[];
+  } = {},
 ): Promise<void> {
   const account = serviceAccount();
   const token = await accessToken(account);
@@ -174,7 +179,7 @@ export async function mergeDocument(
   ];
   const write = {
     update: { name: `${root}/${path}`, fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, encode(v)])) },
-    updateMask: { fieldPaths: Object.keys(fields) },
+    updateMask: { fieldPaths: opts.mask ?? Object.keys(fields) },
     ...(transforms.length ? { updateTransforms: transforms } : {}),
   };
   const res = await fetch(`https://firestore.googleapis.com/v1/${root}:commit`, {

@@ -9,6 +9,7 @@ import { GameShell } from "@/components/game/game-shell";
 import { Button, IconButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import {
   ViewfinderError,
   cameraPermission,
@@ -22,6 +23,7 @@ import {
 } from "./engine/camera";
 import { ViewfinderEngine } from "./engine/engine";
 import { disposeFaceTracker } from "./engine/face";
+import { LENSES, LENS_COUNT } from "./engine/lenses";
 import type { LensPreview } from "./engine/preview";
 import { EngineStore, type EngineSnapshot } from "./engine/store";
 import {
@@ -243,6 +245,7 @@ export function ViewfinderGame() {
         engineRef.current = engine;
         engine.start();
         liveSinceRef.current = performance.now();
+        track.start("camera", facing);
         setPhase("live");
 
         stream.getVideoTracks()[0]?.addEventListener(
@@ -254,6 +257,7 @@ export function ViewfinderGame() {
             void issueForEndedCamera().then((next) => {
               if (runRef.current !== lost) return;
               store.resetSession();
+              track.step("camera-issue", next);
               setIssue(next);
               setHowOpen(false);
               setPhase("error");
@@ -272,7 +276,9 @@ export function ViewfinderGame() {
         if (!alive()) return;
         release();
         setCameraPending(false);
-        setIssue(issueFrom(err));
+        const problem = issueFrom(err);
+        track.step("camera-issue", problem);
+        setIssue(problem);
         setPhase("error");
       }
     },
@@ -281,6 +287,7 @@ export function ViewfinderGame() {
 
   /** Next player, idle timeouts and nobody-there: forget everything, back to the first screen. */
   const resetToIntro = useCallback(() => {
+    track.nextPlayer();
     stop();
     store.reset();
     setSummary(null);
@@ -312,6 +319,10 @@ export function ViewfinderGame() {
       videoHeight: live.videoHeight,
       seconds,
     });
+    const locks = counts?.locks ?? 0;
+    const lensesTried = counts?.lensesTried ?? 0;
+    track.step("frames-locked", locks);
+    track.end({ score: lensesTried, outOf: LENS_COUNT, label: `${lensesTried} lenses, ${locks} frames` });
     stop();
     store.resetSession();
     setHowOpen(false);
@@ -415,13 +426,46 @@ export function ViewfinderGame() {
   });
 
   const live = phase === "live";
+
+  // Analytics: lens changes (settled for a second, so holding an arrow key sends one) and the AI view toggle.
+  const reportedLens = useRef(0);
+  useEffect(() => {
+    if (!live) {
+      reportedLens.current = snap.lens;
+      return;
+    }
+    if (snap.lens === reportedLens.current) return;
+    const lens = snap.lens;
+    const timer = window.setTimeout(() => {
+      reportedLens.current = lens;
+      track.step("lens", LENSES[lens]?.id ?? lens);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [live, snap.lens]);
+  const reportedSkeleton = useRef(false);
+  useEffect(() => {
+    const was = reportedSkeleton.current;
+    reportedSkeleton.current = snap.skeleton;
+    if (live && was !== snap.skeleton) track.step("ai-view", snap.skeleton ? "on" : "off");
+  }, [live, snap.skeleton]);
+
   const waitingForPermission = cameraPending && (permission === "prompt" || permission === "unknown");
 
   return (
     <GameShell
       slug="viewfinder"
       immersive={live}
-      actions={live ? <LiveActions onHowItWorks={() => setHowOpen(true)} onEnd={endSession} /> : null}
+      actions={
+        live ? (
+          <LiveActions
+            onHowItWorks={() => {
+              track.step("how-it-works");
+              setHowOpen(true);
+            }}
+            onEnd={endSession}
+          />
+        ) : null
+      }
     >
       {/* Stage: always mounted, so the video element is stable; canvases are new each session.
           The video stays composited under the opaque GL canvas so requestVideoFrameCallback keeps firing. */}
@@ -443,7 +487,10 @@ export function ViewfinderGame() {
           canFlip={canFlip}
           onLens={(i) => engineRef.current?.setLens(i)}
           onSkeleton={() => engineRef.current?.setSkeleton(!store.getSnapshot().skeleton)}
-          onFlip={() => void start(facingRef.current === "user" ? "environment" : "user")}
+          onFlip={() => {
+            track.step("flip-camera");
+            void start(facingRef.current === "user" ? "environment" : "user");
+          }}
           connectPreview={connectPreview}
         />
       ) : (

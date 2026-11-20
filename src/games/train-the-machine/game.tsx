@@ -9,6 +9,7 @@ import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { entrance } from "@/lib/entrance";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import { ActionClassifier, DEFAULT_REJECTION_THRESHOLD, trainFromExamples, type Prediction } from "./engine/classifier";
 import { analyzeTemporalMotion, extractFeatureVector } from "./engine/features";
 import { Sounds } from "./engine/sound";
@@ -19,7 +20,7 @@ import { CollectStep } from "./ui/collect-step";
 import { EXAMPLES_NEEDED, MAX_EXAMPLES, NO_EXAMPLES, type Example, type Examples, type Move, type MoveId } from "./ui/model";
 import { PickMoves, type MovePair } from "./ui/pick-moves";
 import { ResultsStep } from "./ui/results-step";
-import { EMPTY_TALLY, tallyFrame, type TestTally } from "./ui/test-tally";
+import { EMPTY_TALLY, tallyFrame, triesDone, type TestTally } from "./ui/test-tally";
 import { TestStep } from "./ui/test-step";
 import { TrainStep } from "./ui/train-step";
 import { useCamera } from "./ui/use-camera";
@@ -174,6 +175,8 @@ export function TrainTheMachineGame() {
   const pickMoves = (pair: MovePair) => {
     const toMove = (id: MoveId, preset: MovePair[number]): Move => ({ id, ...preset, traits: classTraits(preset.name) });
     setMoves([toMove("a", pair[0]), toMove("b", pair[1])]);
+    // Icons only, never the names a visitor typed for custom moves.
+    track.start(pair[0].icon === "custom" ? "custom" : `${pair[0].icon}-${pair[1].icon}`);
     setExamples(NO_EXAMPLES);
     setActive("a");
     classifierRef.current?.reset();
@@ -196,6 +199,7 @@ export function TrainTheMachineGame() {
     const started = performance.now();
     const result = trainFromExamples(classifier, moves, examples);
     if (!result.success) return;
+    track.step("trained", result.totalSamples);
     setTrainMs(performance.now() - started);
     go("train");
   };
@@ -206,6 +210,7 @@ export function TrainTheMachineGame() {
     setTally(EMPTY_TALLY);
     setPrediction(null);
     if (camera.status !== "live") openCamera();
+    track.step("test");
     go("test");
   };
 
@@ -213,17 +218,28 @@ export function TrainTheMachineGame() {
     setPrediction(null);
     // Straight to the move that needs examples most.
     if (moves) setActive(examples.a.length <= examples.b.length ? "a" : "b");
+    track.step("add-more", examples.a.length + examples.b.length);
     if (camera.status !== "live") openCamera();
     go("collect");
   };
 
   const showResults = () => {
-    setResults({ tally: tallyRef.current, rate: perception.status.rate });
+    const final = tallyRef.current;
+    setResults({ tally: final, rate: perception.status.rate });
+    const tries = triesDone(final);
+    const bestPct = Math.round(Math.max(final.best.a, final.best.b) * 100);
+    track.end({
+      score: tries,
+      outOf: 3,
+      won: tries === 3,
+      label: final.frames > 0 ? `best match ${bestPct}%, ${final.frames} frames` : "not tested",
+    });
     stopCamera();
     go("results");
   };
 
   const startOver = () => {
+    track.step("start-over");
     stopCamera();
     classifierRef.current?.reset();
     setMoves(null);
@@ -233,6 +249,7 @@ export function TrainTheMachineGame() {
   };
 
   const nextPlayer = useCallback(() => {
+    track.nextPlayer();
     stopCamera();
     // Forget the trackers too: the next visitor gets fresh ones, loaded while they pick moves.
     loadRef.current += 1;
@@ -260,6 +277,7 @@ export function TrainTheMachineGame() {
   const retryModels = () => {
     // Loaded fine but every frame failed: the graphics driver is the likely cause, so use the CPU.
     if (perception.failed) preferCpu();
+    track.step("model-retry", perception.failed ? "cpu" : "reload");
     disposeVision();
     setModels(null);
     requestModels();

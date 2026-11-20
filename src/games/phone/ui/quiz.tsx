@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { KeyHints } from "@/components/ui/key-hints";
 import { StepDots } from "@/components/ui/progress";
 import { cn } from "@/lib/cn";
+import { track } from "@/lib/play-tracker";
 import { correctIndex, QUIZ_LENGTH, QUIZ_QUESTIONS, quizScore } from "../data/quiz";
 import { sound } from "../engine/sound";
 import { useShared } from "../link/link";
@@ -38,6 +39,7 @@ export function Quiz({ keys = true, onDone }: { keys?: boolean; onDone: (score: 
   const choose = (option: number) => {
     if (locked || option >= question.options.length) return;
     setAnswers((list) => list.map((v, i) => (i === index ? option : v)));
+    track.step("quiz-answer", option === right ? "right" : "wrong");
     if (option === right) sound.success();
     else sound.beep();
   };

@@ -8,6 +8,7 @@ import { SliderRow, Segmented } from "@/components/ui/controls";
 import { Modal } from "@/components/ui/dialog";
 import { Stat } from "@/components/ui/score";
 import { cn } from "@/lib/cn";
+import { track } from "@/lib/play-tracker";
 import { photoUrl, type DatasetPhoto } from "../engine/dataset";
 import { decide, outcomeOf, THRESHOLD_MAX, THRESHOLD_MIN, type Decision, type Outcome } from "../engine/rules";
 import { withArticle } from "./copy";
@@ -96,6 +97,7 @@ export function TestStep({ game }: { game: LearnGame }) {
 
   const setMode = (mode: "photos" | "camera") => {
     dispatch({ type: "test-mode", mode });
+    track.step("test-mode", mode);
     if (mode === "photos") stop();
   };
 

@@ -7,9 +7,10 @@ import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
 import { useIdle } from "@/lib/idle";
+import { track } from "@/lib/play-tracker";
 import { countHabits } from "./engine/insights";
-import type { Difficulty, Gesture } from "./engine/types";
-import { isRoundLive, MatchController, type MatchView } from "./match-controller";
+import type { Difficulty, Gesture, RoundOutcome } from "./engine/types";
+import { isRoundLive, MatchController, TARGET_WINS, type MatchView } from "./match-controller";
 import { ActionBar } from "./ui/action-bar";
 import { aiCardState, AiPanel, dealKey, GuessBlock, guessInfo, Notes } from "./ui/ai-panel";
 import { CameraView } from "./ui/camera-view";
@@ -26,6 +27,8 @@ import { HandTracker, INITIAL_TRACKER_STATUS, type TrackerStatus } from "./visio
 type Screen = "intro" | "play" | "results";
 
 const KEY_TO_GESTURE: Record<string, Gesture> = { r: "rock", p: "paper", s: "scissors" };
+
+const OUTCOME_STEP: Record<RoundOutcome, string> = { player_win: "win", ai_win: "ai", draw: "draw" };
 
 const getServerTrackerStatus = () => INITIAL_TRACKER_STATUS;
 
@@ -63,6 +66,30 @@ export function RockPaperScissorsGame() {
     };
   }, [tracker, controller]);
 
+  // Analytics: each scored round, each missed throw, and the match result, once each.
+  useEffect(() => {
+    let lastRound = controller.getSnapshot().match.lastResolvedRound?.id ?? null;
+    let missed = controller.getSnapshot().missed;
+    let endedMatch: string | null = null;
+    return controller.subscribe(() => {
+      const { match, missed: nowMissed } = controller.getSnapshot();
+      if (nowMissed && !missed) track.step("missed");
+      missed = nowMissed;
+      const round = match.lastResolvedRound;
+      if (round && round.id !== lastRound) track.step(`round-${round.roundNumber}`, OUTCOME_STEP[round.outcome]);
+      lastRound = round?.id ?? null;
+      if (match.phase === "match_complete" && endedMatch !== match.matchId) {
+        endedMatch = match.matchId;
+        track.end({
+          score: match.playerScore,
+          outOf: TARGET_WINS,
+          won: match.winner === "player",
+          label: `${match.playerScore}-${match.aiScore} in ${match.matchRounds.length} rounds`,
+        });
+      }
+    });
+  }, [controller]);
+
   // Camera frames drive the throw at Shoot.
   useEffect(() => tracker.onFrame((frame) => controller.onFrame(frame)), [tracker, controller]);
 
@@ -78,6 +105,7 @@ export function RockPaperScissorsGame() {
   const toTop = () => window.scrollTo({ top: 0 });
 
   const playWithCamera = () => {
+    track.start("camera", difficulty);
     controller.unlockAudio();
     controller.setInputMode("camera");
     controller.newMatch(difficulty);
@@ -87,6 +115,7 @@ export function RockPaperScissorsGame() {
   };
 
   const playWithKeys = () => {
+    track.start(touch ? "touch" : "keys", difficulty);
     controller.unlockAudio();
     controller.setInputMode("keys");
     controller.newMatch(difficulty);
@@ -97,6 +126,7 @@ export function RockPaperScissorsGame() {
 
   /** Next player: the AI forgets this visitor, scores reset, the camera goes off. */
   const nextPlayer = () => {
+    track.nextPlayer();
     controller.forget("normal");
     tracker.stop();
     setDifficulty("normal");
@@ -106,6 +136,8 @@ export function RockPaperScissorsGame() {
 
   /** Rematch: same visitor, so the AI keeps what it learned. */
   const rematch = () => {
+    track.start(view.inputMode === "camera" ? "camera" : touch ? "touch" : "keys", difficulty);
+    track.step("rematch");
     controller.unlockAudio();
     controller.newMatch(difficulty);
     if (view.inputMode === "camera" && status.camera !== "live") tracker.start();
@@ -118,18 +150,25 @@ export function RockPaperScissorsGame() {
     controller.startRound();
   };
 
+  const chooseDifficulty = (next: Difficulty) => {
+    track.step("difficulty", next);
+    setDifficulty(next);
+  };
+
   const seeResults = () => {
     setScreen("results");
     toTop();
   };
 
   const switchToCamera = () => {
+    track.step("input", "camera");
     controller.unlockAudio();
     controller.setInputMode("camera");
     tracker.start();
   };
 
   const switchToKeys = () => {
+    track.step("input", touch ? "touch" : "keys");
     controller.setInputMode("keys");
     tracker.stop();
   };
@@ -170,7 +209,7 @@ export function RockPaperScissorsGame() {
   return (
     <GameShell slug="rock-paper-scissors" sound actions={screen === "play" ? <NextPlayerButton onClick={nextPlayer} /> : null}>
       {screen === "intro" ? (
-        <IntroView difficulty={difficulty} onDifficultyChange={setDifficulty} onCamera={playWithCamera} onKeys={playWithKeys} />
+        <IntroView difficulty={difficulty} onDifficultyChange={chooseDifficulty} onCamera={playWithCamera} onKeys={playWithKeys} />
       ) : null}
 
       {screen === "play" ? (

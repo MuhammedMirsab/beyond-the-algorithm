@@ -7,6 +7,7 @@ import { CameraProblem, CameraWaiting, ModelLoading } from "@/components/game/ca
 import { GameShell } from "@/components/game/game-shell";
 import { NextPlayerButton } from "@/components/game/next-player";
 import { Button } from "@/components/ui/button";
+import { track } from "@/lib/play-tracker";
 import { DEFAULT_SETTINGS, pinchThresholds, type PenSettings } from "../engine/airPen";
 import { cssColor } from "../engine/canvasColor";
 import { exportInk } from "../engine/exportImage";
@@ -14,7 +15,7 @@ import { letterAnatomy, segmentLetters } from "../engine/letters";
 import { recognizeStrokes } from "../engine/recognition/recognize";
 import { StrokeStore } from "../engine/strokes";
 import { useHandTracking } from "../engine/useHandTracking";
-import { forTheScreen, inDisplayCase } from "../engine/words";
+import { forTheScreen, inDisplayCase, normaliseWord } from "../engine/words";
 import { AdaptiveButton } from "./adaptive-button";
 import { CameraDock } from "./camera-dock";
 import { HowItWorksModal, type ReadingStory } from "./how-it-works";
@@ -87,6 +88,10 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
   const resultCount = useRef(0);
   const lastActivity = useRef(0);
   const nextPlayerRef = useRef(onNextPlayer);
+  /** Analytics: a result was reported, so the next attempt counts as a new round. */
+  const endedRef = useRef(false);
+  const cameraWasOn = useRef(initialMode === "camera");
+  const issueSeen = useRef<string | null>(null);
 
   const paused = settingsOpen || how.open;
   const tracking = useHandTracking({
@@ -107,6 +112,24 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
   useEffect(() => {
     nextPlayerRef.current = onNextPlayer;
   });
+
+  // Analytics: camera switched on or off, and camera problems, once per change.
+  useEffect(() => {
+    if (cameraOn === cameraWasOn.current) return;
+    cameraWasOn.current = cameraOn;
+    track.step("camera", cameraOn ? "on" : "off");
+  }, [cameraOn]);
+  const issue = cameraOn && status.phase === "error" ? status.issue : null;
+  useEffect(() => {
+    if (issue === issueSeen.current) return;
+    issueSeen.current = issue;
+    if (issue) track.step("camera-issue", issue);
+  }, [issue]);
+
+  const chooseTarget = useCallback((next: Target | null) => {
+    track.step("target", next?.word ?? "none");
+    setTarget(next);
+  }, []);
 
   const touch = useCallback(() => {
     lastActivity.current = performance.now();
@@ -167,6 +190,17 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
     if (controller.signal.aborted) return;
     const first = resultCount.current === 0;
     resultCount.current += 1;
+    // Analytics: never the visitor's own writing, only whether it matched the game's word.
+    const readable = story.result.kind === "text" && !story.hidden;
+    const matched = req.target && readable ? normaliseWord(story.result.text) === normaliseWord(req.target) : null;
+    if (matched !== null) track.step("word", matched ? "right" : "wrong");
+    track.end({
+      score: readable ? Math.round(story.result.confidence * 100) : 0,
+      outOf: 100,
+      won: matched ?? undefined,
+      label: matched ? `wrote ${req.target}` : matched === false ? `not quite ${req.target}` : story.hidden ? "reading hidden" : readable ? "read free writing" : "could not read",
+    });
+    endedRef.current = true;
     setStory({ ...story, usedCamera: req.usedCamera, fps: req.fps });
     setPhase({ kind: "result", story, first, ...req });
   }, []);
@@ -200,9 +234,13 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
     abortRef.current?.abort();
     abortRef.current = null;
     setPhase(null);
+    if (endedRef.current) {
+      endedRef.current = false;
+      track.start(cameraOn ? "camera" : "pointer");
+    }
     // Give keyboard focus back to the main action once the panel has gone.
     window.requestAnimationFrame(() => readButtonRef.current?.focus({ preventScroll: true }));
-  }, []);
+  }, [cameraOn]);
 
   const onTryAgain = useCallback(() => {
     closePanel();
@@ -234,7 +272,9 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
       if (tip) {
         setSettings((s) => ({ ...s, center: tip }));
         showToast("Writing area centred", "success");
+        track.step("centre", "done");
       } else {
+        track.step("centre", "no-hand");
         showToast("No hand found. Try again.");
       }
       setCountdown(null);
@@ -335,7 +375,7 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
   } else if (ink.empty) {
     centre = {
       key: ready ? "empty-camera" : "empty-pointer",
-      node: <EmptyState camera={ready} handVisible={tracking.indicator.handVisible} target={target} onTarget={setTarget} />,
+      node: <EmptyState camera={ready} handVisible={tracking.indicator.handVisible} target={target} onTarget={chooseTarget} />,
       interactive: false,
     };
   }
@@ -351,7 +391,10 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
           <AdaptiveButton
             icon={<CircleHelp />}
             label="How it works"
-            onClick={() => setHow({ open: true, fps: cameraOn && statsRef.current.fps ? statsRef.current.fps : null })}
+            onClick={() => {
+              track.step("how-it-works");
+              setHow({ open: true, fps: cameraOn && statsRef.current.fps ? statsRef.current.fps : null });
+            }}
           />
           <NextPlayerButton onClick={onNextPlayer} />
         </>
@@ -400,7 +443,7 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
             )}
           >
             {ready && countdown === null ? <StatusChip indicator={tracking.indicator} /> : null}
-            {target && !ink.empty ? <TargetPill target={target.word} onClear={() => setTarget(null)} /> : null}
+            {target && !ink.empty ? <TargetPill target={target.word} onClear={() => chooseTarget(null)} /> : null}
           </div>
 
           {/* Mounted always (the video element must exist before the camera starts); shown while the camera is live. */}
@@ -435,7 +478,10 @@ export function WriteScreen({ initialMode, onNextPlayer }: { initialMode: InputM
               readRef={readButtonRef}
               onUndo={() => store.undo()}
               onClear={() => store.clear()}
-              onSettings={() => setSettingsOpen(true)}
+              onSettings={() => {
+                track.step("settings");
+                setSettingsOpen(true);
+              }}
               onRead={onRead}
             />
           </div>

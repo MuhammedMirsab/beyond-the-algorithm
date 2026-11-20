@@ -1,3 +1,4 @@
+import { track } from "@/lib/play-tracker";
 import { isSoundOn, setSoundOn } from "@/lib/sound";
 import { audio } from "../engine/audio/audio";
 import { Emitter, GameInput, newRun, START_LIVES, type GameEvents, type RunState } from "../engine/game/bridge";
@@ -326,6 +327,7 @@ export class FaceControlSession {
 
   openSettings = () => {
     if (this.machine.phase === "playing" || this.machine.phase === "countdown") this.dispatch({ type: "pause" });
+    track.step("settings");
     this.setView({ settingsOpen: true });
   };
 
@@ -365,6 +367,7 @@ export class FaceControlSession {
     this.profile = profile;
     this.controller?.setProfile(profile);
     this.setView({ calibration: { ...result, profile, aspect: this.surface?.aspect ?? 4 / 3 } });
+    track.step("calibrated");
     this.dispatch({ type: "calibrated" });
   };
 
@@ -387,6 +390,7 @@ export class FaceControlSession {
           this.dirty = true;
         }
         for (const effect of effects) this.runEffect(effect);
+        if (state.mode !== prev.mode && state.mode) track.step("mode", state.mode);
         if (state.phase !== prev.phase) this.onPhaseChange(prev, state);
       }
     } finally {
@@ -404,6 +408,10 @@ export class FaceControlSession {
     if (next.phase === "calibrate") void this.ensureHost();
     audio.duck(next.phase === "paused" || next.phase === "face-lost");
     if (next.phase === "practice") this.practiceHold = { left: 0, right: 0 };
+    // Analytics: one step per real screen change (never per frame).
+    if (prev.phase === "practice" && next.phase === "level-intro") track.step("practice", prev.practiceComplete ? "done" : "skipped");
+    if (next.phase === "face-lost") track.step("face-lost");
+    if (next.phase === "error") track.step("camera-issue", next.issue ?? "unknown");
     // Space must jump, not press whichever button kept focus from the last panel.
     if (next.phase === "playing" && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
       document.activeElement.blur();
@@ -469,16 +477,23 @@ export class FaceControlSession {
       case "record-level": {
         const { result } = effect;
         this.sparksBanked += result.sparks;
+        track.step("level-done", result.levelIndex + 1);
         const level = LEVELS[result.levelIndex];
         const { newBestTime, previousBest } = submitLevel(level.id, result.time, result.sparks);
         this.setView({ bestTimes: this.readBestTimes() });
         this.dispatch({ type: "level-recorded", previousBest, newBestTime });
         break;
       }
-      case "finish-run":
-        this.dispatch({ type: "summary", summary: this.summarise(effect.outcome) });
+      case "finish-run": {
+        const summary = this.summarise(effect.outcome);
+        const won = summary.outcome === "victory";
+        track.end({ score: summary.score, won, label: won ? "won all levels" : `game over on level ${summary.levelIndex + 1}` });
+        this.dispatch({ type: "summary", summary });
         break;
+      }
       case "reset-visitor":
+        // Next player, the idle reset and the empty-camera reset all end here.
+        track.nextPlayer();
         this.resetVisitor();
         break;
       case "toast":
@@ -491,20 +506,24 @@ export class FaceControlSession {
     const run = this.run;
     switch (op) {
       case "new":
+        track.start(this.machine.mode ?? "keyboard");
         Object.assign(run, newRun());
         this.sparksBanked = 0;
         this.livesAtLevelStart = START_LIVES;
         break;
       case "level-start":
         run.levelIndex = index ?? run.levelIndex;
+        track.step("level", run.levelIndex + 1);
         run.scoreAtLevelStart = run.score;
         this.livesAtLevelStart = run.lives;
         break;
       case "restart-level":
+        track.step("restart-level", run.levelIndex + 1);
         run.score = run.scoreAtLevelStart;
         run.lives = this.livesAtLevelStart;
         break;
       case "retry-level":
+        track.step("retry-level", run.levelIndex + 1);
         run.score = run.scoreAtLevelStart;
         run.lives = START_LIVES;
         break;
@@ -844,6 +863,7 @@ export class FaceControlSession {
     ev.on("finished", () => this.dispatch({ type: "level-finished" }));
     ev.on("checkpoint", () => this.toast("Checkpoint"));
     ev.on("died", ({ lives }) => {
+      if (this.machine.phase !== "practice") track.step("life-lost", lives);
       if (this.machine.phase === "practice") this.toast("No lives lost in practice");
       else if (lives > 1) this.toast(`${lives} lives left`);
       else if (lives === 1) this.toast("1 life left");
