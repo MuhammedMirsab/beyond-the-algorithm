@@ -29,6 +29,8 @@ type Screen = "intro" | "play" | "results";
 const KEY_TO_GESTURE: Record<string, Gesture> = { r: "rock", p: "paper", s: "scissors" };
 
 const OUTCOME_STEP: Record<RoundOutcome, string> = { player_win: "win", ai_win: "ai", draw: "draw" };
+/** The match-over banner ("You won the match") lands ~0.3 s after the last round, then shows 3 s before the results open by themselves. */
+const AUTO_RESULTS_MS = 3300;
 
 const getServerTrackerStatus = () => INITIAL_TRACKER_STATUS;
 
@@ -172,6 +174,18 @@ export function RockPaperScissorsGame() {
     controller.setInputMode("keys");
     tracker.stop();
   };
+
+  // Match over: the results open by themselves once the banner has had 3 s
+  // (shorter queue at the booth). See results and Space still open them sooner.
+  const completedMatch = view.match.phase === "match_complete" ? view.match.matchId : null;
+  useEffect(() => {
+    if (screen !== "play" || !completedMatch) return;
+    const timer = window.setTimeout(() => {
+      setScreen("results");
+      window.scrollTo({ top: 0 });
+    }, AUTO_RESULTS_MS);
+    return () => window.clearTimeout(timer);
+  }, [screen, completedMatch]);
 
   // Keyboard: Space starts a round (or opens the results), R / P / S throw.
   useEffect(() => {
