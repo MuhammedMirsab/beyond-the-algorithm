@@ -18,6 +18,7 @@ import { formatScore, formatTime } from "../engine/format";
 import { LEVELS } from "../engine/game/levels";
 import { LEVEL_COUNT, type RunSummary } from "../play/machine";
 import type { FaceControlSession, SessionView } from "../play/session";
+import { CameraSlot } from "./camera-slot";
 import { FaceHowItWorks } from "./how-it-works";
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
@@ -107,6 +108,7 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
   const summary = machine.summary;
   if (!summary) return null;
   const victory = summary.outcome === "victory";
+  const face = machine.mode === "face" && machine.camera;
   const { label, title } = verdict(summary);
 
   return (
@@ -166,6 +168,17 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
           runTime: summary.runTime,
         }}
       />
+      {face ? (
+        <section
+          aria-label="Your camera"
+          className="grid items-center gap-4 rounded-xl bg-surface p-4 shadow-ring sm:grid-cols-[10rem_minmax(0,1fr)] sm:p-5"
+        >
+          <CameraSlot session={session} density="outline" className="aspect-[4/3] w-full max-w-[14rem] rounded-md" />
+          <div className="flex flex-col gap-2">
+            <p className="type-small px-1 text-fg-subtle">The camera is still on. Next player turns it off.</p>
+          </div>
+        </section>
+      ) : null}
       <FaceHowItWorks session={session} calibration={view.calibration} stats={view.faceStats} tracking={view.tracking} />
     </ResultPanel>
   );
