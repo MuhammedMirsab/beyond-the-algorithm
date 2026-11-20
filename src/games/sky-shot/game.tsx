@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Camera, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { GameArt } from "@/components/art/game-art";
+import { PRIVACY_LINE } from "@/components/game/camera-notice";
+import { GameIntro } from "@/components/game/game-intro";
 import { GameShell } from "@/components/game/game-shell";
+import { NextPlayerButton } from "@/components/game/next-player";
+import { cn } from "@/lib/cn";
+import { useIdle } from "@/lib/idle";
 import { track } from "@/lib/play-tracker";
 import { readJSON, storageKey, writeJSON } from "@/lib/storage";
-import { cn } from "@/lib/cn";
-import type { Runtime, RuntimeStatus } from "./engine/runtime";
+import type { Runtime, RunSummary, RuntimeStatus } from "./engine/runtime";
+import { MAX_ROUNDS } from "./engine/world";
+import { ResultsScreen } from "./ui/results-screen";
 
 const BEST_KEY = storageKey("sky-shot", "best");
 
@@ -17,15 +25,100 @@ const STATUS_TEXT: Record<RuntimeStatus["camera"], string> = {
   "no-tracking": "Hand tracking could not start: use the mouse",
 };
 
+const STEPS = [
+  { title: "Make a finger gun", text: "Point your index finger at the screen, thumb up. A yellow dot shows where you aim." },
+  { title: "Drop your thumb to fire", text: "Three shots for every two birds. Hit enough birds to clear the round." },
+  { title: `${MAX_ROUNDS} rounds`, text: "The birds get faster in round 2. Then see your score and put your name on the board." },
+];
+
+type Screen = { kind: "intro" } | { kind: "play"; run: number } | { kind: "result"; run: RunSummary };
+
+/** Where typing happens: Space is a letter there, not a shortcut. */
+const TYPING = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
+
 /**
  * Sky Shot: a pixel-art bird shooter played with a finger gun.
- * Point with the index finger, drop the thumb to fire.
+ * Intro, then two rounds on the camera, then the results with the board.
  */
 export function SkyShotGame() {
+  const [screen, setScreen] = useState<Screen>({ kind: "intro" });
+  const runs = useRef(0);
+
+  const play = useCallback(() => {
+    runs.current += 1;
+    setScreen({ kind: "play", run: runs.current });
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  /** Next player: the camera goes off and the next visitor starts at the intro. */
+  const nextPlayer = useCallback(() => {
+    track.nextPlayer();
+    setScreen({ kind: "intro" });
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  const finish = useCallback((run: RunSummary) => {
+    track.end({ score: run.score, won: run.cleared, label: run.cleared ? "cleared both rounds" : `out on round ${run.round}` });
+    setScreen({ kind: "result", run });
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  // Space starts from the intro and plays again from the results.
+  useEffect(() => {
+    if (screen.kind === "play") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat || e.defaultPrevented) return;
+      if (e.target instanceof Element && e.target.closest(TYPING)) return;
+      e.preventDefault();
+      play();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [screen.kind, play]);
+
+  // An abandoned results screen resets for the next visitor.
+  useIdle(nextPlayer, { enabled: screen.kind === "result" });
+
+  return (
+    <GameShell
+      slug="sky-shot"
+      immersive={screen.kind === "play"}
+      sound
+      actions={screen.kind === "play" ? <NextPlayerButton onClick={nextPlayer} /> : null}
+    >
+      {screen.kind === "intro" ? (
+        <GameIntro
+          slug="sky-shot"
+          art={<GameArt slug="sky-shot" mode="intro" />}
+          steps={STEPS}
+          primary={{ label: "Turn on camera", icon: <Camera />, onClick: play }}
+          footnote={
+            <span className="flex items-start gap-1.5">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+              {PRIVACY_LINE}
+            </span>
+          }
+          keys={[{ keys: ["Space"], label: "Start" }]}
+        />
+      ) : screen.kind === "play" ? (
+        <PlayView key={screen.run} onFinish={finish} />
+      ) : (
+        <ResultsScreen run={screen.run} onPlayAgain={play} onNextPlayer={nextPlayer} />
+      )}
+    </GameShell>
+  );
+}
+
+/** The game itself: canvas, laser overlay and camera preview. Mounting it turns the camera on; unmounting turns it off. */
+function PlayView({ onFinish }: { onFinish: (run: RunSummary) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<RuntimeStatus>({ camera: "starting", hand: false });
+  const finishRef = useRef(onFinish);
+  useEffect(() => {
+    finishRef.current = onFinish;
+  }, [onFinish]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -47,7 +140,7 @@ export function SkyShotGame() {
         {
           onStart: () => track.start(runtime?.inputMode() ?? "hand"),
           onRound: (round) => track.step("round", round),
-          onGameOver: (score, round) => track.end({ score, label: `out on round ${round}` }),
+          onGameOver: (run) => finishRef.current(run),
         },
       );
     });
@@ -61,15 +154,10 @@ export function SkyShotGame() {
   const hint = status.camera === "ready" && status.hand ? null : STATUS_TEXT[status.camera];
 
   return (
-    <GameShell slug="sky-shot" immersive sound>
     <div className="relative flex h-dvh w-full items-center justify-center overflow-hidden bg-[#0d0c12] select-none">
       {/* 16:9 stage, as big as the screen allows. */}
       <div className="relative aspect-video w-full max-w-[calc(100dvh*16/9)]">
-        <canvas
-          ref={canvasRef}
-          aria-label="Sky Shot game screen"
-          className="absolute inset-0 size-full [image-rendering:pixelated]"
-        />
+        <canvas ref={canvasRef} aria-label="Sky Shot game screen" className="absolute inset-0 size-full [image-rendering:pixelated]" />
         <canvas ref={overlayRef} className="absolute inset-0 size-full cursor-none touch-none" />
       </div>
 
@@ -93,6 +181,5 @@ export function SkyShotGame() {
         </div>
       ) : null}
     </div>
-    </GameShell>
   );
 }

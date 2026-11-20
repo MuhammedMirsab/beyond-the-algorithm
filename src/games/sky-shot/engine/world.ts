@@ -30,7 +30,9 @@ import {
   type FoxPose,
 } from "./sprites";
 
-const BIRDS_PER_ROUND = 10;
+export const BIRDS_PER_ROUND = 10;
+/** A visit is at most this many rounds, so the queue keeps moving. */
+export const MAX_ROUNDS = 2;
 const PER_WAVE = 2;
 const SHOTS = 3;
 const FLY = { x0: 6, x1: W - BIRD_W - 6, y0: 6, y1: GRASS_Y - BIRD_H - 14 };
@@ -75,7 +77,7 @@ type Phase =
   | { kind: "wave"; t: number }
   | { kind: "fox"; t: number; caught: number; x: number }
   | { kind: "tally"; t: number; passed: boolean }
-  | { kind: "over"; t: number };
+  | { kind: "over"; t: number; cleared: boolean; reported: boolean };
 
 export interface Button {
   label: string;
@@ -85,11 +87,24 @@ export interface Button {
   h: number;
 }
 
+export interface RunSummary {
+  score: number;
+  /** Rounds passed, 0 to MAX_ROUNDS. */
+  roundsCleared: number;
+  /** The round the run ended on. */
+  round: number;
+  hits: number;
+  birds: number;
+  shots: number;
+  cleared: boolean;
+}
+
 export interface WorldEvents {
   onStart?: () => void;
   onRound?: (round: number) => void;
   onShot?: (hit: boolean) => void;
-  onGameOver?: (score: number, round: number) => void;
+  /** The run ended (failed a round, or cleared the last one); fires once the end banner has shown. */
+  onGameOver?: (run: RunSummary) => void;
 }
 
 export class World {
@@ -119,6 +134,7 @@ export class World {
   private time = 0;
   private flapClock = 0;
   private lastFall = { x: W / 2 };
+  private totals = { hits: 0, shots: 0, birds: 0, roundsCleared: 0 };
 
   constructor(
     private readonly sfx: Sfx,
@@ -145,7 +161,6 @@ export class World {
 
   button(): Button | null {
     if (this.phase.kind === "title" && this.phase.t > 0.4) return { label: "START", x: W / 2 - 34, y: 96, w: 68, h: 18 };
-    if (this.phase.kind === "over" && this.phase.t > 2.2) return { label: "PLAY AGAIN", x: W / 2 - 42, y: 104, w: 84, h: 18 };
     return null;
   }
 
@@ -163,6 +178,7 @@ export class World {
   private startGame() {
     this.round = 1;
     this.score = 0;
+    this.totals = { hits: 0, shots: 0, birds: 0, roundsCleared: 0 };
     this.sfx.start();
     this.events.onStart?.();
     this.startRound();
@@ -238,6 +254,7 @@ export class World {
       return false;
     }
     this.shots -= 1;
+    this.totals.shots += 1;
     this.sfx.shot();
     this.shake = 0.12;
     this.flash = 0.05;
@@ -257,6 +274,7 @@ export class World {
     }
     if (target) {
       hitAny = true;
+      this.totals.hits += 1;
       target.state = "hit";
       target.t = 0;
       target.caught = true;
@@ -323,6 +341,8 @@ export class World {
           if (this.wave * PER_WAVE >= BIRDS_PER_ROUND) {
             const hits = this.results.filter((r) => r === true).length;
             const passed = hits >= this.need;
+            this.totals.birds += BIRDS_PER_ROUND;
+            if (passed) this.totals.roundsCleared += 1;
             this.phase = { kind: "tally", t: 0, passed };
             if (passed) {
               this.sfx.roundClear();
@@ -340,20 +360,31 @@ export class World {
         break;
       case "tally":
         if (p.t > 3.4) {
-          if (p.passed) {
+          if (p.passed && this.round < MAX_ROUNDS) {
             this.round += 1;
             this.startRound();
           } else {
             this.best = Math.max(this.best, this.score);
-            this.phase = { kind: "over", t: 0 };
-            this.sfx.laugh();
-            this.events.onGameOver?.(this.score, this.round);
+            this.phase = { kind: "over", t: 0, cleared: p.passed, reported: false };
+            if (p.passed) this.sfx.cheer();
+            else this.sfx.laugh();
           }
         }
         break;
       case "over":
-        // Nobody playing: back to the title on its own.
-        if (p.t > 30) this.toTitle();
+        // A moment on the end banner, then the results screen takes over.
+        if (!p.reported && p.t > 1.8) {
+          p.reported = true;
+          this.events.onGameOver?.({
+            score: this.score,
+            roundsCleared: this.totals.roundsCleared,
+            round: this.round,
+            hits: this.totals.hits,
+            birds: this.totals.birds,
+            shots: this.totals.shots,
+            cleared: p.cleared,
+          });
+        }
         break;
     }
   }
@@ -481,7 +512,7 @@ export class World {
     ctx.globalAlpha = 1;
 
     if (p.kind === "fox") this.drawFox(ctx, p.t, p.caught, p.x);
-    if (p.kind === "over") this.drawFox(ctx, p.t, 0, 236);
+    if (p.kind === "over") this.drawFox(ctx, p.t, p.cleared ? 1 : 0, 236);
     if (p.kind === "title") this.drawFoxWave(ctx, p.t);
 
     ctx.drawImage(this.foreground, 0, 0);
@@ -493,14 +524,15 @@ export class World {
     if (p.kind === "title") this.drawTitle(ctx, p.t);
     else this.drawHud(ctx);
 
-    if (p.kind === "roundIntro") this.drawBanner(ctx, ["ROUND", String(this.round)], `HIT ${this.need} OF ${BIRDS_PER_ROUND}`);
+    if (p.kind === "roundIntro") this.drawBanner(ctx, ["ROUND", `${this.round} OF ${MAX_ROUNDS}`], `HIT ${this.need} OF ${BIRDS_PER_ROUND}`);
     if (p.kind === "wave" && this.escapeTint > 0.3) this.drawBanner(ctx, ["FLEW AWAY"]);
     if (p.kind === "tally") {
       const hits = this.results.filter((r) => r === true).length;
-      if (p.passed) this.drawBanner(ctx, [hits === BIRDS_PER_ROUND ? "PERFECT!" : "CLEAR!"], hits === BIRDS_PER_ROUND ? "BONUS 5000" : `${hits} OF ${BIRDS_PER_ROUND} HIT`);
+      if (p.passed && this.round >= MAX_ROUNDS) this.drawBanner(ctx, ["ALL CLEAR!"], hits === BIRDS_PER_ROUND ? "BONUS 5000" : `${hits} OF ${BIRDS_PER_ROUND} HIT`);
+      else if (p.passed) this.drawBanner(ctx, [hits === BIRDS_PER_ROUND ? "PERFECT!" : "CLEAR!"], hits === BIRDS_PER_ROUND ? "BONUS 5000" : `${hits} OF ${BIRDS_PER_ROUND} HIT`);
       else this.drawBanner(ctx, ["OUT OF LUCK"], `${hits} OF ${this.need} NEEDED`);
     }
-    if (p.kind === "over") this.drawGameOver(ctx, p.t);
+    if (p.kind === "over") this.drawGameOver(ctx, p.cleared);
 
     if (this.flash > 0) {
       ctx.globalAlpha = 0.18;
@@ -579,7 +611,7 @@ export class World {
   private drawHud(ctx: CanvasRenderingContext2D) {
     const y = HUD_Y + 5;
     // Round tag.
-    drawText(ctx, `R${this.round}`, 14, y - 1, "#b7f08a", 1, INK);
+    drawText(ctx, `R${this.round}/${MAX_ROUNDS}`, 14, y - 1, "#b7f08a", 1, INK);
 
     // Shots.
     this.panel(ctx, 12, y + 6, 24, 18);
@@ -670,15 +702,11 @@ export class World {
     else drawTextCentered(ctx, "HAND TRACKED ON THIS LAPTOP. NO PICTURES SAVED.", W / 2, HUD_Y + 12, "#e9d8a6", 1, INK);
   }
 
-  private drawGameOver(ctx: CanvasRenderingContext2D, t: number) {
+  private drawGameOver(ctx: CanvasRenderingContext2D, cleared: boolean) {
     const w = 150;
     const x = W / 2 - w / 2;
-    this.panel(ctx, x, 30, w, 64);
-    drawTextCentered(ctx, "GAME OVER", W / 2, 37, "#ffffff", 2);
+    this.panel(ctx, x, 30, w, 44);
+    drawTextCentered(ctx, cleared ? "WELL DONE!" : "GAME OVER", W / 2, 37, "#ffffff", 2);
     drawTextCentered(ctx, `SCORE ${this.score}`, W / 2, 56, "#f2c14e", 1);
-    drawTextCentered(ctx, `REACHED ROUND ${this.round}`, W / 2, 66, "#7ad3f0", 1);
-    drawTextCentered(ctx, this.score >= this.best && this.score > 0 ? "NEW TOP SCORE!" : `TOP ${this.best}`, W / 2, 78, "#b7f08a", 1);
-    const b = this.button();
-    if (b) this.drawButton(ctx, b, t);
   }
 }

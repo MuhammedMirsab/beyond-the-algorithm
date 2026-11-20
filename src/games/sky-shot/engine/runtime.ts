@@ -11,7 +11,9 @@ import { HandAim, pickHand, type Landmark, type Point } from "./aim";
 import { Sfx } from "./audio";
 import { HandTracker } from "./tracker";
 import { H, W } from "./sprites";
-import { World, type WorldEvents } from "./world";
+import { World, type RunSummary, type WorldEvents } from "./world";
+
+export type { RunSummary };
 
 export type CameraStatus = "starting" | "loading-model" | "ready" | "no-camera" | "no-tracking";
 
@@ -70,9 +72,9 @@ export class Runtime {
     this.octx = octx;
     this.world = new World(this.sfx, {
       ...events,
-      onGameOver: (score, round) => {
-        if (score > this.bestKeyRead()) this.bestKeyWrite(score);
-        events.onGameOver?.(score, round);
+      onGameOver: (run) => {
+        if (run.score > this.bestKeyRead()) this.bestKeyWrite(run.score);
+        events.onGameOver?.(run);
       },
     });
     this.world.best = bestKeyRead();
