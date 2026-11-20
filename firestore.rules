@@ -36,7 +36,7 @@ service cloud.firestore {
         && request.resource.data.games.size() <= 12
         && request.resource.data.games.hasOnly(['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone', 'sky-shot'])
         && request.resource.data.from is string
-        && (request.resource.data.from == '' || request.resource.data.from in ['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone'])
+        && (request.resource.data.from == '' || request.resource.data.from in ['mind-reader', 'rock-paper-scissors', 'face-control', 'airwrite', 'viewfinder', 'train-the-machine', 'how-ai-learns', 'real-or-ai', 'phone', 'sky-shot'])
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5

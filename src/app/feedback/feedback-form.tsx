@@ -8,12 +8,6 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/chip";
 import { COMMENT_MAX, ISSUES, LOW_RATING, parseFeedback, RATINGS, type IssueId, type Rating } from "@/content/feedback";
 import { GAMES, type GameSlug } from "@/content/games";
-
-/**
- * Games the form offers. The live Firestore rules (firestore.rules) only accept
- * these slugs; Sky Shot joins once the rules that list it are deployed.
- */
-const FORM_GAMES = GAMES.filter((g) => g.slug !== "sky-shot");
 import { entrance } from "@/lib/entrance";
 import { getDb } from "@/lib/firebase";
 import { VisitTracker } from "@/lib/visit-tracker";
@@ -71,9 +65,9 @@ export function FeedbackForm({ initialGame }: { initialGame: GameSlug | null }) 
 
   const low = rating !== null && rating <= LOW_RATING;
   const ratingWord = rating ? RATINGS.find((r) => r.value === rating)?.word : null;
-  const scanned = initialGame ? FORM_GAMES.find((g) => g.slug === initialGame) : undefined;
+  const scanned = initialGame ? GAMES.find((g) => g.slug === initialGame) : undefined;
   // With a scanned game, the others are optional extras; without one, the visitor must say which.
-  const otherGames = scanned ? FORM_GAMES.filter((g) => g.slug !== scanned.slug) : FORM_GAMES;
+  const otherGames = scanned ? GAMES.filter((g) => g.slug !== scanned.slug) : GAMES;
   // The page takes the colour of the first game picked (the scanned one, when there is one).
   const accent = games[0];
 
