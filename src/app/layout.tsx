@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Doto, Martian_Mono, Mona_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
@@ -57,6 +58,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${sans.variable} ${mono.variable} ${dots.variable}`}>
       <body>
         <Providers>{children}</Providers>
+        {/* Vercel Web Analytics: page views and visitors, alongside our own game sessions in Firestore. */}
+        <Analytics />
       </body>
     </html>
   );
