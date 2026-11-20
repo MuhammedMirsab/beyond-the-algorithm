@@ -23,7 +23,14 @@ export function Intro({
   const label = rangeLabel(range);
   const max = RANGE_MAX[range];
   const questions = halvingsFor(max);
-  useKeys({ Enter: onReadMyMind, f: onFindItsNumber });
+  // 1, 2, 3 pick 1 to 10, 1 to 100, 1 to 1,000 (unlisted, for booth staff).
+  useKeys({
+    Enter: onReadMyMind,
+    f: onFindItsNumber,
+    "1": () => onRangeChange("10"),
+    "2": () => onRangeChange("100"),
+    "3": () => onRangeChange("1000"),
+  });
 
   return (
     <GameIntro
