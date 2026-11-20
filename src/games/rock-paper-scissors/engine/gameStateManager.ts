@@ -46,6 +46,8 @@ export interface ActiveMatchState {
 
 export function getTargetWinsForMode(mode: GameMode): number | null {
   switch (mode) {
+    case "first_to_three":
+      return 3;
     case "first_to_five":
       return 5;
     case "best_of_three":

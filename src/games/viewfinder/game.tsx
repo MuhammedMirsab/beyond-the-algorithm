@@ -356,7 +356,8 @@ export function ViewfinderGame() {
   }, [phase]);
 
   // Keyboard: ← → filters, H AI view, F full screen (shown with KeyHints);
-  // 1 to 0 and - pick a filter directly and M mirrors (unlisted, for booth staff).
+  // 1 to 0 and - pick a filter directly, M mirrors and E ends the session
+  // (unlisted, for booth staff).
   useEffect(() => {
     if (phase !== "live" || howOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -381,10 +382,11 @@ export function ViewfinderGame() {
       } else if (key === "m") engine.setMirror(!store.getSnapshot().mirror);
       else if (key === "h") engine.setSkeleton(!store.getSnapshot().skeleton);
       else if (key === "f") toggleFullscreen();
+      else if (key === "e") endSession();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, howOpen, store, toggleFullscreen]);
+  }, [phase, howOpen, store, toggleFullscreen, endSession]);
 
   // Booth: camera play sends no input events, so "nobody there" means no hands
   // in the picture and no key or mouse for a minute. Paused while reading.

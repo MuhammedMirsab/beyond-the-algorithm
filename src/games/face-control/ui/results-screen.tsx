@@ -20,7 +20,6 @@ import { LEVEL_COUNT, type RunSummary } from "../play/machine";
 import type { FaceControlSession, SessionView } from "../play/session";
 import { CameraSlot } from "./camera-slot";
 import { FaceHowItWorks } from "./how-it-works";
-import { MouthPrompt } from "./meters";
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
@@ -161,12 +160,11 @@ export function ResultsScreen({ session, view }: { session: FaceControlSession; 
     >
       {face ? (
         <section
-          aria-label="Carry on with your face"
+          aria-label="Your camera"
           className="grid items-center gap-4 rounded-xl bg-surface p-4 shadow-ring sm:grid-cols-[10rem_minmax(0,1fr)] sm:p-5"
         >
           <CameraSlot session={session} density="outline" className="aspect-[4/3] w-full max-w-[14rem] rounded-md" />
           <div className="flex flex-col gap-2">
-            <MouthPrompt session={session} label={victory ? "Open your mouth to play again" : "Open your mouth to try again"} />
             <p className="type-small px-1 text-fg-subtle">The camera is still on. Next player turns it off.</p>
           </div>
         </section>

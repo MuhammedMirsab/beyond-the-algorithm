@@ -45,7 +45,7 @@ export type PracticeTask = "left" | "right" | "jump";
 export const FACE_BACK_MS = 600;
 /** Overlays ignore mouth-"continue" for a moment so the jump that ended a level can't skip a screen. */
 export const CONTINUE_GUARD_MS = 900;
-/** Results screens wait longer: a cheer at the finish shouldn't restart the game. */
+/** Results screens: Space and Enter wait this long before they act (the mouth never acts there). */
 export const RESULT_GUARD_MS = 2500;
 /** Booth: no face for this long during play turns "face lost" into a real pause. */
 export const ABSENT_PAUSE_MS = 60_000;
@@ -541,8 +541,9 @@ export function transition(state: MachineState, event: MachineEvent, now: number
       if (now < state.continueAt) return step(state);
       if (phase === "level-intro" && state.levelReady) return transition(state, { type: "start-level" }, now);
       if (phase === "level-complete") return transition(state, { type: "next" }, now);
-      if (phase === "game-over" && state.summary) return transition(state, { type: "retry-level" }, now);
-      if (phase === "victory" && state.summary) return transition(state, { type: "play-again" }, now);
+      // Results (game over, victory) never restart on the mouth: an open mouth
+      // there kept restarting while a parent scanned the feedback QR. Space or
+      // the button only.
       return step(state);
     }
 

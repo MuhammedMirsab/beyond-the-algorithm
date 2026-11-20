@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Volume2, VolumeX } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { gameBySlug, type GameSlug } from "@/content/games";
 import { IconButton } from "@/components/ui/button";
 import { GameGlyph } from "@/components/art/game-glyph";
@@ -15,6 +16,10 @@ import { cn } from "@/lib/cn";
  * gives a consistent way back to the arcade, and a slot for game actions.
  *
  * immersive: the header floats over full-bleed content (camera games).
+ *
+ * B goes back to the arcade, same as the Arcade link. Deliberately unlisted:
+ * it's for booth staff. A game that uses B itself (Real or AI's answer key)
+ * claims it with preventDefault, and typing in a field never triggers it.
  */
 export function GameShell({
   slug,
@@ -34,6 +39,7 @@ export function GameShell({
   className?: string;
 }) {
   const game = gameBySlug(slug);
+  useBackKey();
   return (
     <GameSlugContext.Provider value={slug}>
     <div data-game={slug} className={cn("relative flex min-h-dvh flex-col bg-canvas", className)}>
@@ -75,6 +81,28 @@ export function GameShell({
     </div>
     </GameSlugContext.Provider>
   );
+}
+
+/** Where typing happens: B is a letter there, not a shortcut. */
+const TYPING = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
+
+/** Booth staff: B leaves the game for the arcade hub. Not shown on screen. */
+function useBackKey() {
+  const router = useRouter();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key !== "b" && e.key !== "B") return;
+      if (e.target instanceof Element && e.target.closest(TYPING)) return;
+      // Decide once every other listener has seen the key: a game's own handler
+      // may be registered after this one and claim B with preventDefault.
+      window.setTimeout(() => {
+        if (!e.defaultPrevented) router.push("/");
+      }, 0);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
 }
 
 export function SoundToggle() {

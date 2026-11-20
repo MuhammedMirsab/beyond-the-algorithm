@@ -16,6 +16,7 @@ import {
   SHOOT_GRACE_MS,
   SHOOT_TIMEOUT_MS,
   STEP_MS,
+  TARGET_WINS,
   TO_SHOOT_MS,
 } from "../match-controller";
 
@@ -188,7 +189,7 @@ describe("A round in the arena", () => {
     expect(controller.getSnapshot().history).toHaveLength(2);
   });
 
-  it("ends the match at 5 wins and refuses another round", () => {
+  it("ends the match at 3 wins (first to 3) and refuses another round", () => {
     const controller = new MatchController("normal");
     controller.setInputMode("keys");
     for (let i = 0; i < 40 && controller.getSnapshot().match.phase !== "match_complete"; i++) {
@@ -201,7 +202,8 @@ describe("A round in the arena", () => {
     const view = controller.getSnapshot();
     expect(view.match.phase).toBe("match_complete");
     expect(view.match.winner).toBe("player");
-    expect(view.match.playerScore).toBe(5);
+    expect(view.match.playerScore).toBe(3);
+    expect(TARGET_WINS).toBe(3);
     expect(controller.startRound()).toBe(false);
   });
 });

@@ -5,8 +5,8 @@
  *   (your wins x 100 - its wins x 30 + 150 for winning the match
  *    + how hard you were to read, 0-100) x difficulty (1, 1.5, 2)
  *
- * Ties go to the match with fewer rounds. A perfect Hard match (5 to 0, never
- * guessed) is 1,500.
+ * Ties go to the match with fewer rounds. A perfect Hard match (3 to 0, never
+ * guessed) is 1,100 (matches were first to 5 until 20 Nov: 5 to 0 was 1,500).
  */
 import type { Difficulty } from "./types";
 

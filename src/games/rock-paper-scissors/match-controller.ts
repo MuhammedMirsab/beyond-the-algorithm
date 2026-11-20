@@ -64,8 +64,8 @@ export interface MatchView {
   beat: Beat | null;
 }
 
-export const MODE = "first_to_five" as const;
-export const TARGET_WINS = 5;
+export const MODE = "first_to_three" as const;
+export const TARGET_WINS = 3;
 /** The lock gets a beat to itself before the chant, so the order is visible. */
 export const LEAD_IN_MS = 700;
 /** One beat of "rock, paper, scissors". */

@@ -183,13 +183,14 @@ describe("CONTINUE_GUARD_MS: the jump that ended a screen can't skip the next on
     expect(transition(s, { type: "mouth" }, 5000 + CONTINUE_GUARD_MS).state.phase).toBe("level-intro");
   });
 
-  test("results wait longer, and only once the summary is there", () => {
+  test("results never restart on the mouth; Try again still works", () => {
     const over = transition(facePlaying(), { type: "game-over" }, 0).state;
     expect(over.continueAt).toBe(RESULT_GUARD_MS);
     expect(transition(over, { type: "mouth" }, RESULT_GUARD_MS).state).toBe(over);
     const withSummary = transition(over, { type: "summary", summary: SUMMARY }, 0).state;
-    expect(transition(withSummary, { type: "mouth" }, RESULT_GUARD_MS - 1).state).toBe(withSummary);
-    const retry = transition(withSummary, { type: "mouth" }, RESULT_GUARD_MS);
+    expect(transition(withSummary, { type: "mouth" }, RESULT_GUARD_MS).state).toBe(withSummary);
+    expect(transition(withSummary, { type: "mouth" }, RESULT_GUARD_MS * 10).state).toBe(withSummary);
+    const retry = transition(withSummary, { type: "retry-level" }, RESULT_GUARD_MS);
     expect(retry.state.phase).toBe("level-intro");
     expect(retry.effects[0]).toEqual({ type: "run", op: "retry-level" });
   });

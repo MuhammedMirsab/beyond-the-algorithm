@@ -34,7 +34,7 @@ function useLandedScore(score: number): number {
   return Math.min(shown, score);
 }
 
-/** One side of the scoreboard: name, dot-matrix score and five pips (first to five). */
+/** One side of the scoreboard: name, dot-matrix score and one pip per win needed (TARGET_WINS). */
 function Side({ who, score: actual, align }: { who: "you" | "ai"; score: number; align: "left" | "right" }) {
   const ai = who === "ai";
   const score = useLandedScore(actual);

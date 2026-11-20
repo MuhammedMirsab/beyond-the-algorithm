@@ -225,6 +225,9 @@ export function RoundScreen({
     if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
     // The closer look takes its own keys, and answering waits until it closes.
     if (viewerUp) return;
+    // B answers here, so it never doubles as the arcade's back key during a round
+    // (an early or late press would otherwise leave the game).
+    if (e.key === "b" || e.key === "B") e.preventDefault();
     if (!reveal) {
       if (!gate.current.started || e.repeat) return;
       const side = sideForKey(e.key);

@@ -10,8 +10,8 @@ export type DetectedGesture = Gesture | "none" | "uncertain";
 
 export type RoundOutcome = "player_win" | "ai_win" | "draw";
 
-/** The arcade only plays `first_to_five`; the others stay for the engine tests. */
-export type GameMode = "quick_play" | "first_to_five" | "best_of_three" | "practice" | "ai_challenge";
+/** The arcade plays `first_to_three` (shorter queue at the booth); the others stay for the engine tests. */
+export type GameMode = "quick_play" | "first_to_three" | "first_to_five" | "best_of_three" | "practice" | "ai_challenge";
 
 export type Difficulty = "easy" | "normal" | "hard";
 
